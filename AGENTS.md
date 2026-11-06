@@ -1,53 +1,36 @@
 # BipMe — repository agent instructions
 
-These instructions apply to the entire repo. For files under `apps/api/` or `apps/web/`, follow that application's **nested `AGENTS.md`** as well. `AGENTS.md` is for durable working rules, **not a copy of every product specification**.
+Applies to the whole repository. Also follow `apps/api/AGENTS.md` or `apps/web/AGENTS.md` when editing those areas. Keep detailed product, architecture and setup information in the linked docs, not here.
 
-## What this project is
+## Purpose and reference map
 
-BipMe is a creator-specific X distribution-intelligence product. The first milestone is one authorized X account using real history to validate matched historical baselines, evidence-backed Distribution Outlooks and post-publish evaluation. It is **not** a social scheduler, automatic publisher, viral-guarantee tool, or public multi-user launch.
+BipMe is a private, single-creator X distribution-intelligence experiment: historical comparables, evidence-backed Distribution Outlooks and post-publish evaluation. It is not an automatic publisher, viral guarantee or public multi-user launch. Check the code before claiming that a planned feature works.
 
-The current application is still a **scaffold**. Do not claim OAuth, history ingestion or predictions already work.
-
-## Where to find context
-
-| Task | Read |
+| Task | Source of truth |
 | --- | --- |
-| Product scope or UX | `docs/product.md` |
-| System architecture, database and intelligence logic | `docs/architecture.md` |
-| Setup, checks, branches and PR workflow | `docs/development.md` |
-| Correctness constraints and data boundaries | `docs/architecture.md` and `docs/security.md` |
-| OAuth, tokens, X API costs, privacy, third-party processing | `docs/security.md` |
-| Detailed comparable-post methodology or original research | `docs/research/README.md` and its relevant source file |
+| Product scope and UX | `docs/product.md` |
+| System/data boundaries and intelligence | `docs/architecture.md` |
+| Setup, CI commands and Git workflow | `docs/development.md` |
+| OAuth, X API costs, data policy and privacy | `docs/security.md` |
+| Original scoring/retrieval methodology | `docs/research/README.md` and relevant source |
 
-Read **only the documents relevant to the requested change**. Historical `docs/adr/` records explain past decisions; the living docs above describe the current implementation contract.
+Read only the relevant docs. Historical ADRs explain past decisions; living docs describe current requirements.
 
-## Engineering rules
+## Engineering invariants
 
-- Respect the one-repo layout: `apps/api` (Python/FastAPI + in-process intelligence and future worker), `apps/web` (React/Vite), PostgreSQL + pgvector.
-- Use uv for Python and pnpm for web. Commit **genuine** generated lockfiles; never hand-edit/fabricate them.
-- Keep SQLAlchemy and Alembic changes aligned. FastAPI OpenAPI is the authoritative API definition for generated web API types.
-- Implement only agreed scope; keep changes focused, tested and reviewable. Do not introduce microservices, new platforms or elaborate scaling infrastructure by default.
-- Preserve source-of-truth boundaries: features separate from observed outcomes; no look-ahead in predictions/backtests; real observation timestamps; explicit data gaps.
-- Never represent uncalibrated confidence as a probability or X's internal ranking as known.
-- No committed secrets or private creator datasets, no X API calls in PR CI, and **no live X data ingestion before hard cost limits and relevant protections exist**.
+- Keep the modular monorepo: FastAPI/Python in `apps/api`, React/Vite in `apps/web`, PostgreSQL/pgvector, SQLAlchemy/Alembic. Use uv and pnpm; commit genuine generated lockfiles.
+- FastAPI OpenAPI owns the API contract; generate frontend types. Coordinate schema/API changes with the responsible lane.
+- Keep descriptive post features separate from outcomes; prevent look-ahead in predictions and backtests. Use real observation timestamps and explicit data gaps.
+- Do not imply knowledge of X's hidden ranking or present uncalibrated confidence as a probability.
+- Never commit secrets or private creator data, run live X API calls in CI, or ingest live X data before verifying access, data-processing rights and cost limits.
+- Stay within issue scope. Avoid unnecessary services, frameworks, empty modules and new Markdown planning files.
 
-## Linear issue execution (Codex and human contributors)
+## Linear issues, ownership and PRs
 
-- **Source of truth for implementation tasks:** [BipMe V1 project](https://linear.app/codeddevs/project/bipme-v1-distribution-intelligence-efa2574db806) in the **CodedDevs** Linear workspace (issues `COD-344` onward). Do not turn existing issues into separate Markdown task plans by default.
-- Before implementation, retrieve the requested issue **and its blocking dependencies** through an authorized Linear connector (for Codex CLI/IDE, the user can connect the Linear MCP server at `https://mcp.linear.app/mcp`). `AGENTS.md` does not itself grant access or configure authentication. If Linear is inaccessible, ask for the issue's full text; **never invent acceptance criteria**.
-- Treat the issue's acceptance criteria, owned paths, dependencies and milestone as the task contract. Confirm blockers are complete before integrating; independent fixture/mock work may proceed without pretending downstream dependencies are ready.
-- Use **one issue per focused branch/PR** (example: `cod-351-embedding-benchmark`), branched from the latest `main`. Include the Linear issue ID in the branch/PR title or body and link the issue.
-- Respect the three workstream boundaries: **Platform & Data** owns X integration, authentication, SQLAlchemy/Alembic and published HTTP contracts; **Intelligence** owns `apps/api/src/bipme/intelligence/` and algorithm tests; **Web** owns `apps/web/` and generated-client integration. Coordinate shared data/OpenAPI changes with the owning lane first; do not silently modify another lane's files.
-- If permitted to update Linear, move the issue to **In Progress** when beginning work; add the PR link and verification notes, then move to **In Review** when ready. Move to **Done** only after the PR is confirmed merged and acceptance criteria are satisfied. If write access is absent, report the intended status changes instead of claiming they happened.
-- Do not assign issues to people, change milestones, bypass dependency blockers, merge PRs, or close issues unless explicitly authorized.
-- Before marking work complete, run applicable checks, verify the diff and current CI, and summarize implementation, tests, limitations, and the remaining blocker/handoff in the Linear issue/PR.
-
-## Workflow
-
-1. Inspect current code and relevant scoped instructions.
-2. Create a short-lived branch from current `main`; make changes with tests.
-3. Run relevant local checks and review the diff; update living docs when behavior changes.
-4. Open a PR against `main`; address actionable review comments and confirm CI results on the latest head.
-5. **Never merge, force-push, delete protected branches or deploy without explicit user authorization.**
-
-Existing GitHub CI jobs are `api-checks`, `web-checks`, and `workspace-checks`. The existence of an ADR or workflow file does **not** prove remote branch protection settings are configured.
+- **Task source:** [BipMe V1 in CodedDevs Linear](https://linear.app/codeddevs/project/bipme-v1-distribution-intelligence-efa2574db806). Retrieve the assigned issue, acceptance criteria and blockers from an authorized Linear connection; if unavailable, request the issue text rather than inventing requirements. For Codex, the Linear MCP endpoint is `https://mcp.linear.app/mcp` (connection requires separate user authorization).
+- Follow issue dependencies and owned paths. **Platform & Data** owns X integration, auth, SQLAlchemy/Alembic and HTTP contracts; **Intelligence** owns `apps/api/src/bipme/intelligence/` and algorithm tests; **Web** owns `apps/web/`. Coordinate cross-lane changes with the owner first.
+- Create one focused, short-lived branch and PR per issue from current `main`. **Name branches for the task and Linear ID**, e.g. `cod-351-embedding-adapter` or `fix/cod-346-oauth`. Do **not voluntarily** include the name of Codex, Claude, ChatGPT, Cursor or any other coding agent as a branch prefix/name, PR title or commit subject.
+- Do not add optional agent credit or branding (for example, `Co-authored-by: Codex`, “Generated by AI”, agent-name signatures or contributor-list entries) to commits, PRs, code comments or documentation. Preserve truthful Git author information, platform-generated audit history and any attribution required by tools, policies or the user; never forge or conceal provenance.
+- When authorized, move the issue to **In Progress** on start, add the PR/verification notes and move it to **In Review** when ready; mark **Done** only after the PR is merged and acceptance criteria are met. Without Linear write access, report needed status changes instead.
+- Run relevant tests and review the diff; address actionable review comments and verify CI on the latest head. Keep the issue ID linked in the PR and report blockers and remaining work.
+- **Do not merge PRs, deploy, force-push, delete protected branches, reassign issues, change milestones or close issues without explicit user authorization.** See `docs/development.md` for the detailed PR workflow.
