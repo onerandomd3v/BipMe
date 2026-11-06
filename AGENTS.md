@@ -15,7 +15,7 @@ The current application is still a **scaffold**. Do not claim OAuth, history ing
 | Product scope or UX | `docs/product.md` |
 | System architecture, database and intelligence logic | `docs/architecture.md` |
 | Setup, checks, branches and PR workflow | `docs/development.md` |
-| High-risk correctness constraints | `docs/important.md` |
+| Correctness constraints and data boundaries | `docs/architecture.md` and `docs/security.md` |
 | OAuth, tokens, X API costs, privacy, third-party processing | `docs/security.md` |
 | Detailed comparable-post methodology or original research | `docs/research/README.md` and its relevant source file |
 
