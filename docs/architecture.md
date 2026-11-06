@@ -120,4 +120,4 @@ All other endpoints are **proposals**, not committed API contracts. When introdu
 
 ## Security, constraints and references
 
-See [Security](security.md), [Important](important.md), [Product](product.md), [Development](development.md), and the [original engineering blueprint](research/X_DISTRIBUTION_INTELLIGENCE_V1_IMPLEMENTATION_BLUEPRINT.md). Avoid elevating dated research about API prices, permissions or X's internal algorithm into current implementation fact without verification.
+See [Security](security.md), [Product](product.md), [Development](development.md), and the [original engineering blueprint](research/X_DISTRIBUTION_INTELLIGENCE_V1_IMPLEMENTATION_BLUEPRINT.md). Avoid elevating dated research about API prices, permissions or X's internal algorithm into current implementation fact without verification.
