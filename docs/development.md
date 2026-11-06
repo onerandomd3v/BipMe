@@ -104,7 +104,7 @@ No permanent `dev`/`beta` branch is needed for the one-account phase. GitHub rul
 
 ## Testing live X integration
 
-No real X API credentials are required for routine local/CI scaffold tests. Before testing real OAuth or ingesting post data, see [Security](security.md) and [Important](important.md); verify developer console permissions, enforce an API budget, and use a small initial read. Do not commit screenshots, logs or fixtures containing tokens or private creator data.
+No real X API credentials are required for routine local/CI scaffold tests. Before testing real OAuth or ingesting post data, see [Security](security.md); verify developer console permissions, enforce an API budget, and use a small initial read. Do not commit screenshots, logs or fixtures containing tokens or private creator data.
 
 ## Troubleshooting
 
