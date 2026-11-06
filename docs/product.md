@@ -4,9 +4,23 @@
 
 ## Product definition
 
-BipMe is a **creator-specific distribution-intelligence product**, starting with X. It helps a creator understand how a draft might perform **relative to their own comparable posts**, shows the evidence for that outlook, then measures what happened after publication.
+BipMe is a **creator-specific distribution-intelligence product**, starting with X. It helps creators understand what has worked for their content, make better-informed publishing decisions, and learn from how their posts actually perform. It compares new drafts with relevant posts from the creator's own history, explains the supporting evidence, and evaluates original predictions against observed outcomes.
 
 The product is **not** an X algorithm cracker, a universal content-quality score, a viral guarantee, an automated publisher, or a generic AI writing assistant.
+
+## Creator value and learning loop
+
+The core creator experience is **Understand → Evaluate → Improve → Experiment → Learn**: examine historical performance patterns; compare a new draft with relevant prior posts; offer one or two specific, evidence-linked observations when justified; let the creator revise or publish a new idea; and use actual results to inform future comparisons.
+
+Creators should be able to:
+
+- Recognize which historical content patterns have tended to perform better or worse for their own audience.
+- Evaluate a draft using inspectable, relevant historical examples rather than generic advice.
+- Consider evidence-backed revisions or new experiments without being told what they must publish.
+- See what actually happened after publishing and whether the original outlook held up.
+- Discover themes and approaches worth exploring over time, without expecting a guaranteed formula.
+
+These are intended **product benefits**, not proven improvements in reach or evidence of causation. Historical associations cannot identify X's private ranking decisions or establish why any specific post was distributed.
 
 ## Initial scope
 
@@ -32,6 +46,7 @@ BipMe's result should distinguish:
 
 - **Observed:** Post content, timestamps, X-provided metrics and historical records.
 - **Inferred:** Topic/format fit, matched performance range and evidence strength.
+- **Evidence-backed explanation:** One or two concise observations connected to the selected comparables and calculations, or an explicit explanation that there is insufficient evidence. V1 can generate these from deterministic logic without a generative LLM.
 - **Unknown:** Exact X ranking score, who saw each candidate, private recommendation decisions and unobserved early-history trajectories.
 
 Use wording such as **Expected relative reach: top 25–40% of comparable historical posts; Evidence: Moderate** only when backed by real calculations and eligible data. Do not use invented figures in actual product responses.
