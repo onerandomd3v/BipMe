@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  workspace-checks:
+    name: workspace-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate repository foundation
+        run: |
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          required = [
+              "AGENTS.md",
+              "compose.yaml",
+              "apps/api/pyproject.toml",
+              "apps/api/uv.lock",
+              "apps/api/src/bipme/api/app.py",
+              "apps/web/package.json",
+              "apps/web/pnpm-lock.yaml",
+              "apps/web/src/App.tsx",
+          ]
+          missing = [p for p in required if not Path(p).exists()]
+          if missing:
+              raise SystemExit("Missing required files: " + ", ".join(missing))
+          PY
+
+  api-checks:
+    name: api-checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Install Python dependencies
+        run: uv sync --locked --group dev
+      - name: Ruff lint
+        run: uv run ruff check src tests alembic
+      - name: Ruff format
+        run: uv run ruff format --check src tests alembic
+      - name: Python types
+        run: uv run mypy src
+      - name: Python tests
+        run: uv run pytest -q
+
+  web-checks:
+    name: web-checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+      - name: ESLint
+        run: pnpm lint
+      - name: TypeScript
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build

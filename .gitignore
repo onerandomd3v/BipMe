@@ -1,0 +1,33 @@
+# Local secrets and runtime configuration
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node / frontend
+node_modules/
+apps/web/dist/
+.playwright/
+playwright-report/
+test-results/
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

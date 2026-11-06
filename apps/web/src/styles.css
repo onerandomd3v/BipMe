@@ -1,0 +1,48 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #eaf0ff;
+  background: #0b1222;
+  font-synthesis: none;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.shell {
+  max-width: 760px;
+  margin: 10vh auto;
+  padding: 32px;
+}
+
+.eyebrow {
+  color: #a2b5dc;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.75rem;
+}
+
+h1 {
+  font-size: clamp(2rem, 6vw, 3.7rem);
+  line-height: 1.08;
+  max-width: 720px;
+}
+
+p {
+  color: #cbd7ef;
+  line-height: 1.6;
+}
+
+.status {
+  margin-top: 36px;
+  padding: 14px 18px;
+  border: 1px solid #304365;
+  border-radius: 12px;
+  display: inline-block;
+}
+
+.footnote {
+  font-size: 0.85rem;
+  color: #9baccd;
+}
