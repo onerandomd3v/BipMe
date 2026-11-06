@@ -20,8 +20,10 @@ jobs:
               "AGENTS.md",
               "compose.yaml",
               "apps/api/pyproject.toml",
+              "apps/api/uv.lock",
               "apps/api/src/bipme/api/app.py",
               "apps/web/package.json",
+              "apps/web/pnpm-lock.yaml",
               "apps/web/src/App.tsx",
           ]
           missing = [p for p in required if not Path(p).exists()]
@@ -41,13 +43,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install Python dependencies
-        run: uv sync --group dev
-      - name: Export Python resolver lock for source control
-        run: |
-          echo BIPME_UV_LOCK_START
-          base64 -w 0 uv.lock
-          echo
-          echo BIPME_UV_LOCK_END
+        run: uv sync --locked --group dev
       - name: Ruff lint
         run: uv run ruff check src tests alembic
       - name: Ruff format
@@ -72,13 +68,7 @@ jobs:
         with:
           node-version: "24"
       - name: Install web dependencies
-        run: pnpm install --no-frozen-lockfile
-      - name: Export pnpm resolver lock for source control
-        run: |
-          echo BIPME_PNPM_LOCK_START
-          base64 -w 0 pnpm-lock.yaml
-          echo
-          echo BIPME_PNPM_LOCK_END
+        run: pnpm install --frozen-lockfile
       - name: ESLint
         run: pnpm lint
       - name: TypeScript
