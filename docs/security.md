@@ -52,7 +52,7 @@ Do **not** hardcode old X prices or assume a discounted owned-read tier is gener
 
 ## References
 
-- [Architecture](architecture.md), [Important](important.md), [Development](development.md)
+- [Architecture](architecture.md), [Product](product.md), [Development](development.md)
 - [Official X OAuth documentation](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code)
 - [Official X API pricing](https://docs.x.com/x-api/getting-started/pricing)
 - [Official X developer guidelines](https://docs.x.com/developer-guidelines)
