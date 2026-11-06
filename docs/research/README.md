@@ -1,6 +1,6 @@
 # Original BipMe research and design documents
 
-These source specifications were produced in September 2026. They provide **detailed research and historical design rationale**; use the [living documentation index](../README.md) for current product scope, architectural boundaries, setup and risk constraints.
+These source specifications were produced in September 2026. They provide **detailed research and historical design rationale**; use the [root README](../../README.md) to find the current [product guide](../product.md), [architecture](../architecture.md), [development guide](../development.md), and [security controls](../security.md).
 
 1. [X Discovery & Distribution MVP](X_DISCOVERY_DISTRIBUTION_MVP.md) — original thesis and X-first scope.
 2. [X Distribution Intelligence Research Findings](X_DISTRIBUTION_INTELLIGENCE_RESEARCH_FINDINGS.md) — platform architecture, exposed data, limits and API/policy research.
