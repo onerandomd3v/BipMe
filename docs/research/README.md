@@ -1,10 +1,18 @@
-# BipMe research and design documents
+# Original BipMe research and design documents
 
-The original source specifications are stored here. The implementation should use these documents as **source evidence**, and newer approved ADRs take precedence for tooling and phase scope.
+These source specifications were produced in September 2026. They provide **detailed research and historical design rationale**; use the [living documentation index](../README.md) for current product scope, architectural boundaries, setup and risk constraints.
 
-1. [X Discovery & Distribution MVP](X_DISCOVERY_DISTRIBUTION_MVP.md) — product thesis, X-first scope, creator workflow.
-2. [X Distribution Intelligence Research Findings](X_DISTRIBUTION_INTELLIGENCE_RESEARCH_FINDINGS.md) — X recommendation architecture, API data, policy boundaries, and research.
-3. [X Distribution Outlook V1 Design](X_DISTRIBUTION_OUTLOOK_V1_DESIGN.md) — Post Profiles, comparable retrieval, creator baselines, evidence, prediction, and calibration.
-4. [X Distribution Intelligence V1 Implementation Blueprint](X_DISTRIBUTION_INTELLIGENCE_V1_IMPLEMENTATION_BLUEPRINT.md) — original engineering blueprint, API contracts, schemas, phase plan, and tests.
+1. [X Discovery & Distribution MVP](X_DISCOVERY_DISTRIBUTION_MVP.md) — original thesis and X-first scope.
+2. [X Distribution Intelligence Research Findings](X_DISTRIBUTION_INTELLIGENCE_RESEARCH_FINDINGS.md) — platform architecture, exposed data, limits and API/policy research.
+3. [X Distribution Outlook V1 Design](X_DISTRIBUTION_OUTLOOK_V1_DESIGN.md) — Post Profiles, comparable retrieval, baselines, prediction and evaluation.
+4. [X Distribution Intelligence Implementation Blueprint](X_DISTRIBUTION_INTELLIGENCE_V1_IMPLEMENTATION_BLUEPRINT.md) — original detailed engineering plan and test ideas.
 
-**Versioning note:** These are original September 2026 research documents. API pricing, access, policy, and recommendation-repository details must be checked against current official sources before use. The initial Python/FastAPI stack and workflow are governed by ADR-0001 and ADR-0002 rather than the original blueprint's implementation language recommendation.
+## How to use these sources
+
+- Read the relevant portion when implementing or validating creator intelligence, not all four files for every minor task.
+- The original blueprint contains a **historical recommended TypeScript/NestJS stack**. The accepted application now uses Python/FastAPI; see [Architecture](../architecture.md).
+- Example weights, confidence values, scoring outputs and UX numbers are hypotheses or **illustrations** until validated with actual creator data.
+- Recheck X API fields, prices, access tiers, licenses and policies against current official information. These documents are not perpetual live references.
+- When research conflicts with current code or an approved living specification, determine why and update the appropriate current guide; don't silently override it.
+
+The original content is preserved for traceability rather than rewritten to make outdated assumptions appear current.
