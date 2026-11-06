@@ -42,6 +42,12 @@ jobs:
           python-version: "3.13"
       - name: Install Python dependencies
         run: uv sync --group dev
+      - name: Export Python resolver lock for source control
+        run: |
+          echo BIPME_UV_LOCK_START
+          base64 -w 0 uv.lock
+          echo
+          echo BIPME_UV_LOCK_END
       - name: Ruff lint
         run: uv run ruff check src tests alembic
       - name: Ruff format
@@ -67,6 +73,12 @@ jobs:
           node-version: "24"
       - name: Install web dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Export pnpm resolver lock for source control
+        run: |
+          echo BIPME_PNPM_LOCK_START
+          base64 -w 0 pnpm-lock.yaml
+          echo
+          echo BIPME_PNPM_LOCK_END
       - name: ESLint
         run: pnpm lint
       - name: TypeScript
