@@ -34,7 +34,7 @@ The API and future worker share one `apps/api/src/bipme` Python codebase. The in
 | Python dependencies | uv, pinned lockfile |
 | Data / schema | PostgreSQL 17 with pgvector, SQLAlchemy 2, Alembic |
 | Intelligence computations | NumPy, SciPy, scikit-learn (add dependencies when implementation needs them) |
-| Semantic embeddings | SentenceTransformers with pretrained inference, model candidate to be benchmarked |
+| Semantic embeddings | CPU-first local SentenceTransformers inference; initial implementation model `intfloat/multilingual-e5-small` (384d), replaceable via a narrow embedding adapter |
 | Browser | React 19, TypeScript, Vite |
 | Frontend dependencies | pnpm 10, committed lockfile |
 | Jobs | PostgreSQL-backed delayed jobs; choose maintained runner after a narrow test |
@@ -101,6 +101,20 @@ Draft -> draft Post Profile -> comparable post retrieval
 6. Audit prediction error via time-respecting backtests before making accuracy claims.
 
 See [the original detailed scoring design](research/X_DISTRIBUTION_OUTLOOK_V1_DESIGN.md). Experimental default weights in that document are hypotheses, not validated facts.
+
+## Embedding inference and portability (approved direction, not yet implemented)
+
+- **V1 starting model:** `intfloat/multilingual-e5-small` (384 dimensions), run locally on a **CPU** first. This is the practical implementation default, **not a validated accuracy winner**. Confirm resource use and actual retrieval quality on the intended machine before declaring readiness.
+- **Hosting:** run pretrained inference in the existing Python application/worker environment (local development machine or CPU VPS). No dedicated model-serving microservice, GPU or paid hosted embedding endpoint is required for the first version. Load model weights once per process rather than per post.
+- **Model-agnostic boundary:** intelligence logic calls a small internal embedding interface for batched text encoding; the selected model, its text-prefix/task rules and local/hosted inference mechanism remain behind that boundary. Do not create an elaborate plugin framework in advance.
+- **Model identity and reproducibility:** persist model identifier, pinned checkpoint revision, vector dimension, normalization, text preprocessing/prompt strategy and embedding generation version alongside the indexed data. For E5, follow the official `query:`/`passage:` task guidance. Do not compare vectors created by different models/configurations; a model change requires a deliberate re-embedding and index migration or version-partitioned indexes.
+- **Evaluation:** implement small deterministic synthetic relevance/quality tests plus CPU latency and memory measurements in V1. Keep `Qwen/Qwen3-Embedding-0.6B` and `google/embeddinggemma-2` as optional challengers for a later task-driven comparison; do not block the first working retrieval pipeline on a three-model competition.
+- **Policy/security:** before processing real X-derived post text, verify that the applicable X terms permit this inference use case. Local inference is preferred to limit unnecessary external data transfer; do not train/fine-tune on X content without independently verified permission.
+- **Deployment portability:** the same internal embedding contract can later use a local CPU/GPU, a self-managed inference process or an approved external provider without rewriting feature extraction, retrieval or baselines. Hosted inference is not part of V1.
+
+### Social-platform boundary
+
+Keep X-specific authentication, API field mapping, pagination, cost policy and metric availability in `integrations/`. The canonical post/profile/outcome representations and intelligence algorithms should not rely on raw X response objects. This makes future platforms possible **without** promising that different networks expose interchangeable metrics or building additional integrations now.
 
 ## X integration boundary (planned)
 
