@@ -14,9 +14,11 @@ From the repository root, `apps/api` and `apps/web` are independent dependency r
 ## Local database
 
 ```bash
-docker compose up -d db
+docker compose up -d --wait db
 docker compose ps
 ```
+
+The `--wait` flag waits for the configured PostgreSQL health check to pass before proceeding to migrations. If the service never becomes healthy, check `docker compose logs db` before continuing.
 
 The local service exposes PostgreSQL on `127.0.0.1:5432` with **development-only** credentials in `compose.yaml`. Never reuse them outside local development. The volume persists between restarts.
 
@@ -58,6 +60,8 @@ pnpm dev
 Open the Vite URL printed by the process. The Vite development proxy forwards `/api` calls to `http://127.0.0.1:8000`. The web UI is currently only a development shell with health status.
 
 ## Verify changes
+
+Run each block **from the repository root** (or in a separate terminal). The first `cd` changes your working directory.
 
 API:
 
