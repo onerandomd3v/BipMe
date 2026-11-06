@@ -64,11 +64,9 @@ The Vite URL appears in the terminal. The shell displays API health at `/api/hea
 
 ## Documentation
 
-- [Documentation index](docs/README.md)
 - [Product definition and milestone scope](docs/product.md)
 - [Living system architecture](docs/architecture.md)
 - [Local development and contribution workflow](docs/development.md)
-- [Important engineering invariants](docs/important.md)
 - [Security, privacy and X API cost controls](docs/security.md)
 - [Original research and design specifications](docs/research/README.md)
 
