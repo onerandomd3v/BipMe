@@ -31,6 +31,17 @@ Read **only the documents relevant to the requested change**. Historical `docs/a
 - Never represent uncalibrated confidence as a probability or X's internal ranking as known.
 - No committed secrets or private creator datasets, no X API calls in PR CI, and **no live X data ingestion before hard cost limits and relevant protections exist**.
 
+## Linear issue execution (Codex and human contributors)
+
+- **Source of truth for implementation tasks:** [BipMe V1 project](https://linear.app/codeddevs/project/bipme-v1-distribution-intelligence-efa2574db806) in the **CodedDevs** Linear workspace (issues `COD-344` onward). Do not turn existing issues into separate Markdown task plans by default.
+- Before implementation, retrieve the requested issue **and its blocking dependencies** through an authorized Linear connector (for Codex CLI/IDE, the user can connect the Linear MCP server at `https://mcp.linear.app/mcp`). `AGENTS.md` does not itself grant access or configure authentication. If Linear is inaccessible, ask for the issue's full text; **never invent acceptance criteria**.
+- Treat the issue's acceptance criteria, owned paths, dependencies and milestone as the task contract. Confirm blockers are complete before integrating; independent fixture/mock work may proceed without pretending downstream dependencies are ready.
+- Use **one issue per focused branch/PR** (example: `cod-351-embedding-benchmark`), branched from the latest `main`. Include the Linear issue ID in the branch/PR title or body and link the issue.
+- Respect the three workstream boundaries: **Platform & Data** owns X integration, authentication, SQLAlchemy/Alembic and published HTTP contracts; **Intelligence** owns `src/bipme/intelligence/` and algorithm tests; **Web** owns `apps/web/` and generated-client integration. Coordinate shared data/OpenAPI changes with the owning lane first; do not silently modify another lane's files.
+- If permitted to update Linear, move the issue to **In Progress** when beginning work; add the PR link and verification notes, then move to **In Review** when ready. Move to **Done** only after the PR is confirmed merged and acceptance criteria are satisfied. If write access is absent, report the intended status changes instead of claiming they happened.
+- Do not assign issues to people, change milestones, bypass dependency blockers, merge PRs, or close issues unless explicitly authorized.
+- Before marking work complete, run applicable checks, verify the diff and current CI, and summarize implementation, tests, limitations, and the remaining blocker/handoff in the Linear issue/PR.
+
 ## Workflow
 
 1. Inspect current code and relevant scoped instructions.
