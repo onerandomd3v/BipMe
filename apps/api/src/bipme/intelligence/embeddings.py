@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 import re
+from importlib import import_module
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -52,13 +53,15 @@ class TextEmbedder(Protocol):
 def _load_model(model_id: str, revision: str) -> Any:
     """Load once per process. SentenceTransformers is an optional runtime dependency."""
     try:
-        from sentence_transformers import SentenceTransformer
+        sentence_transformers = import_module("sentence_transformers")
     except ImportError as exc:
         raise RuntimeError(
             "Local embedding inference requires sentence-transformers. "
             "Install it via uv and regenerate uv.lock before deployment."
         ) from exc
-    return SentenceTransformer(model_id, revision=revision, device="cpu", trust_remote_code=False)
+    return sentence_transformers.SentenceTransformer(
+        model_id, revision=revision, device="cpu", trust_remote_code=False
+    )
 
 
 class E5TextEmbedder:
