@@ -10,6 +10,7 @@ import pytest
 from bipme.intelligence.embeddings import (
     E5TextEmbedder,
     EmbeddingIdentity,
+    E5_CHECKPOINT_REVISION,
     e5_from_environment,
 )
 
@@ -94,7 +95,7 @@ def test_shape_and_non_finite_values_are_rejected() -> None:
 
 def test_configuration_requires_pinned_checkpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("BIPME_EMBEDDING_REVISION", raising=False)
-    with pytest.raises(ValueError, match="immutable"):
-        e5_from_environment()
+    assert e5_from_environment().identity.revision == E5_CHECKPOINT_REVISION
     monkeypatch.setenv("BIPME_EMBEDDING_REVISION", REV)
+    assert e5_from_environment().identity.revision == REV
     assert e5_from_environment().identity.dimensions == 384
