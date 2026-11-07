@@ -11,6 +11,7 @@ from functools import lru_cache
 from importlib import import_module
 from typing import Any, Literal, Protocol
 
+E5_CHECKPOINT_REVISION = "fd1525a9fd15316a2d503bf26ab031a61d056e98"
 EmbeddingRole = Literal["query", "passage"]
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 
@@ -126,7 +127,7 @@ class E5TextEmbedder:
 
 def e5_from_environment() -> E5TextEmbedder:
     """Choose a pinned local checkpoint without embedding secrets or X data."""
-    revision = os.getenv("BIPME_EMBEDDING_REVISION", "")
+    revision = os.getenv("BIPME_EMBEDDING_REVISION", E5_CHECKPOINT_REVISION)
     return E5TextEmbedder(
         EmbeddingIdentity(
             model_id="intfloat/multilingual-e5-small",
