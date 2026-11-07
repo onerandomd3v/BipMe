@@ -82,11 +82,11 @@ Sources: [X timeline reference](https://docs.x.com/x-api/posts/timelines/introdu
 2. Confirm OAuth 2.0 app type, read-only permissions and exact registered callback `http://127.0.0.1:8000/api/auth/x/callback` **if the console accepts that exact development callback**; this is a planned route, not yet implemented. Request `tweet.read`, `users.read`, and `offline.access` only when token renewal is required.
 3. Configure allowlist for the **immutable X numeric user ID**, resolved securely after OAuth; don't rely on handle strings. Store the real ID and OAuth secrets outside the repository.
 4. Record a yes/no decision from X or applicable contractual guidance for local pretrained-embedding inference; until resolved, use synthetic data only.
-5. After COD-346/COD-347 safeguards have passed, run a **single bounded owner-authorized read** and record only endpoint, observed fields, cost and timestamp—not private raw payloads—to close this gate.
+5. Hand off the first **single bounded owner-authorized read** to COD-349 **after** COD-346/COD-347 safeguards have passed. COD-344 itself must not make a live read or wait for COD-349 to finish; that would create a circular dependency. COD-349 records the observed endpoint, fields, cost and timestamp without committing private raw payloads.
 
 ### Exit criteria
 
-COD-344 may be marked **Done** only after real console/access review, numeric billing/app caps, user ID and OAuth configuration, and a documented X-content inference decision. If legal/API restrictions prevent the planned approach, flag the blocker explicitly and do **not** bypass policy with scraping or unapproved model processing.
+COD-344 may be marked **Done** after the owner has confirmed the relevant developer-console access and OAuth *configuration* (not implemented OAuth code), the real numeric X ID and registered redirect, approved numeric billing-cycle and proposed app-level budget settings, and an authoritative determination of whether the intended X-text embedding inference is allowed. The subsequent implementation and first billable read are owned by COD-346/347/349; they are **not** prerequisites to completing this upstream issue. If legal/API restrictions prevent the proposed approach, record the restriction and revise scope before proceeding; do **not** bypass policy with scraping or unapproved processing.
 
 ## Verification gates
 
