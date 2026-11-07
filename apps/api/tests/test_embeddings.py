@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 
 from bipme.intelligence.embeddings import (
+    E5_CHECKPOINT_REVISION,
     E5TextEmbedder,
     EmbeddingIdentity,
-    E5_CHECKPOINT_REVISION,
     e5_from_environment,
 )
 
