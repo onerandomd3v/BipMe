@@ -116,6 +116,14 @@ See [the original detailed scoring design](research/X_DISTRIBUTION_OUTLOOK_V1_DE
 
 Keep X-specific authentication, API field mapping, pagination, cost policy and metric availability in `integrations/`. The canonical post/profile/outcome representations and intelligence algorithms should not rely on raw X response objects. This makes future platforms possible **without** promising that different networks expose interchangeable metrics or building additional integrations now.
 
+### COD-351 embedding contract (initial implementation, not yet fully deployable)
+
+- `apps/api/src/bipme/intelligence/embeddings.py` now defines a `TextEmbedder` protocol, `EmbeddingIdentity`, and CPU-only E5 adapter with official `query:`/`passage:` prefixes and normalized, validated 384-dimensional vectors. The model is loaded lazily and cached per process.
+- `EmbeddingIdentity.index_key` records model ID, **immutable checkpoint commit SHA**, vector dimensions, preprocessing version, and normalization; persistence/index design is owned by COD-345. A change in any of these must trigger re-embedding and reindexing, never cross-model vector comparison.
+- The runtime uses `BIPME_EMBEDDING_REVISION` (an explicit 40-character model commit SHA). No checkpoint weights or X data are committed. Unit tests use synthetic text and a fake encoder; they do **not** download weights.
+- **Still required to close COD-351:** add `sentence-transformers` through uv with a genuine regenerated `uv.lock`, choose/verify the pinned checkpoint hash, and run a measured real CPU-only smoke test (latency/memory and retrieval sanity) on the intended hardware. Do not claim real embeddings are deployed based on fake encoder tests.
+- Processing real X post text remains disallowed until COD-344 resolves applicable inference data-use rights; archive-based data imports are a separate future ingestion decision, not an authorization bypass.
+
 ## X integration boundary (planned)
 
 - Use official X OAuth 2.0 PKCE and only necessary read scopes.
