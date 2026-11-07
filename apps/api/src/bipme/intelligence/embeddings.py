@@ -5,10 +5,10 @@ from __future__ import annotations
 import math
 import os
 import re
-from importlib import import_module
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
+from importlib import import_module
 from typing import Any, Literal, Protocol
 
 EmbeddingRole = Literal["query", "passage"]
