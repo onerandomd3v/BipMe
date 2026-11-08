@@ -72,15 +72,21 @@ Draft -> draft Post Profile -> comparable post retrieval
                                    |
                       outcomes of selected historical posts
                                    |
-                    robust creator baseline (P25/P50/P75)
+                    robust baseline + repeatability /
+                       outlier / sample-strength checks
                                    |
-                       evidence-backed Distribution Outlook
+                      evidence-backed observations
+                      + optional testable next action
+                      + Outlook only when justified
                                    |
-                  manual publication / attached X Post
+                     manually published attached X Post
+                     + original assessment / hypothesis
                                    |
-                   time-stamped metric snapshots -> postmortem
+                    real timestamped metric snapshots
                                    |
-                         versioned prediction evaluation
+                    evidence-aware learning postmortem
+                                   |
+                     versioned prediction evaluation
 ```
 
 ### Non-negotiable data separation
@@ -99,6 +105,15 @@ Draft -> draft Post Profile -> comparable post retrieval
 - `None` means unknown; empty text and an empty media tuple mean known absence. Text length counts Unicode code points, word count counts Unicode word tokens after URLs are removed, and sentence count uses punctuation boundaries (`.`, `!`, `?`) after URL removal. These are lexical heuristics, not language understanding.
 - Hashtags are case-folded topic signals, with duplicates retained in the structural list and removed in the topic-signal list. A topic or intent label is included only when explicitly supplied by the creator. `question_marker` and `reply_invitation` describe visible wording, not the creator's true intent or likely performance.
 - Format uses known media metadata, topology and thread role; missing metadata stays unknown. The input and profile have no impression, engagement, outcome or future audience fields. A new extraction algorithm must receive a new supported version, and historical profiles must be regenerated before retrieval mixes versions.
+## V1 creator decision and experiment contract (planned)
+
+- **Decision-first output:** never expose only a "viral potential" score. For an analyzed draft return the eligible comparables and relevance reasons, supported pattern observations, named uncertainty and an actionable *suggestion to test* only when justified. Relative outcome intervals are **secondary** and optional: when evidence is insufficient, abstain rather than fabricate a range.
+- **Pattern repeatability:** compute robust distributions and effective samples across eligible posts; surface the number of supporting examples, consistency or dispersion and outlier sensitivity. A single high-performing post does **not** establish a repeatable content formula. Prefer robust summaries over the highest-impression post.
+- **No causal inference:** topic/style correlations cannot establish why an X post was distributed or what intervention will increase reach. Suggested next actions are **hypotheses**, not directives, probabilities or proven optimizations. Only include a concrete suggestion when it can cite comparable IDs and measured features/outcomes; otherwise show an insufficient-evidence message.
+- **Lightweight experiment:** reuse the draft/Outlook record for one optional, short hypothesis or test question and a supported target metric/window when the creator chooses to test an idea. Do **not** add a separate experiment service, cohort allocation, auto-publishing or complex dashboard. Persist the *original* assessment and hypothesis immutably so observed outcomes cannot rewrite pre-publication reasoning.
+- **After publishing:** link the attached X Post to the **immutable original assessment/hypothesis**, its content fingerprint, and **real** metric observations. Verify whether the published content matches the draft version that was assessed. If materially revised, retain the earlier advice as context but require reassessment of the published version **or exclude the mismatched version from forecast-error/backtest evaluation**; never score a different draft's outcome as the original forecast's accuracy. Return *supported*, *contradicted* or *inconclusive* strictly as an evidence-limited descriptive status, **not** causal proof. Avoid equal-age comparisons unless real snapshots for the matching windows exist; missing historical trajectories remain unavailable.
+- **API/storage coordination:** intelligence owns pure repeatability, evidence and suggestion logic; Platform owns canonical records, optional hypothesis persistence and FastAPI/OpenAPI contracts; Web renders the same evidence/action/outcome loop. Keep schema changes minimal and agree contracts before migrations (COD-345, COD-358, COD-354).
+- **V1 acceptance:** one authorized creator can move from meaningful historical evidence to a draft decision, optional experiment and linked actual outcome. No claim of validated demand, better reach or predictive accuracy without measured evidence. V1 user testing may occur after shipping; extensive interviews are not a prerequisite.
 
 ## Baselines and evidence
 

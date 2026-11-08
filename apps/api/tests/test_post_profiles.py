@@ -86,6 +86,36 @@ def test_hashtags_mentions_links_and_structure() -> None:
 
 
 @pytest.mark.parametrize(
+    "url",
+    [
+        "https://en.wikipedia.org/wiki/Function_(mathematics)",
+        "https://en.wikipedia.org/wiki/Function_(mathematics)#@NotAMention",
+    ],
+)
+def test_parenthesized_url_content_is_excluded_from_text_signals(url: str) -> None:
+    profile = extract_post_profile(
+        post_input(text=f"Read this {url} #RealTopic? Reply with your thoughts.")
+    )
+    assert profile.url_count == 1
+    assert profile.word_count == 7
+    assert profile.hashtags == ("realtopic",)
+    assert profile.mentions == ()
+    assert profile.topic_signals == ("realtopic",)
+    assert profile.intent_signals == ("question_marker", "reply_invitation")
+
+
+def test_parenthesized_url_keeps_only_unmatched_wrapper_punctuation() -> None:
+    profile = extract_post_profile(
+        post_input(text="See (https://en.wikipedia.org/wiki/Function_(mathematics)).")
+    )
+    assert profile.url_count == 1
+    assert profile.word_count == 1
+    assert profile.hashtags == ()
+    assert profile.mentions == ()
+    assert profile.sentence_count == 1
+
+
+@pytest.mark.parametrize(
     ("topology", "thread_role", "media_types", "expected_tags"),
     [
         ("reply", "continuation", (), ("text_only", "reply", "thread_continuation")),

@@ -18,7 +18,8 @@ MediaKind = Literal["image", "video", "gif", "audio", "other"]
 DeclaredIntent = Literal["inform", "ask", "promote", "entertain", "other"]
 ContentFormat = Literal["text_only", "media", "empty", "unknown"]
 
-_URL = re.compile(r"https?://[^\s<>()]+", re.IGNORECASE)
+# Accept balanced parenthesized URL path segments (common in Wikipedia links).
+_URL = re.compile(r"https?://[^\s<>]*(?:\([^()\s<>]*\)[^\s<>]*)*", re.IGNORECASE)
 _HASHTAG = re.compile(r"(?<!\w)#(\w+)", re.UNICODE)
 _MENTION = re.compile(r"(?<!\w)@(\w+)", re.UNICODE)
 _WORD = re.compile(r"\b\w+\b", re.UNICODE)
@@ -36,7 +37,10 @@ def _require_aware(value: datetime, name: str) -> None:
 def _redact_url(match: re.Match[str]) -> str:
     """Remove URL content while keeping any sentence-ending punctuation."""
     value = match.group()
-    return " " + value[len(value.rstrip(".,;!?")) :]
+    content = value.rstrip(".,;!?")
+    while content.endswith(")") and content.count(")") > content.count("("):
+        content = content[:-1]
+    return " " + value[len(content) :]
 
 
 @dataclass(frozen=True)
