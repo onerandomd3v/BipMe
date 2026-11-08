@@ -32,8 +32,10 @@ class OutcomeObservation:
     (for example ``mature`` and ``age:1h``). ``None`` records a known missing value/window.
     """
 
+    creator_key: str
     post_id: str
     metric: str
+    metric_definition: str
     value: float | None
     published_at: datetime
     observed_at: datetime
@@ -42,8 +44,19 @@ class OutcomeObservation:
     segment_path: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.post_id.strip() or not self.metric.strip() or not self.window.strip():
-            raise ValueError("post_id, metric, and window must be non-empty")
+        if not all(
+            value.strip()
+            for value in (
+                self.creator_key,
+                self.post_id,
+                self.metric,
+                self.metric_definition,
+                self.window,
+            )
+        ):
+            raise ValueError(
+                "creator_key, post_id, metric, metric_definition, and window are required"
+            )
         _aware(self.published_at, "published_at")
         _aware(self.observed_at, "observed_at")
         if not math.isfinite(self.weight) or self.weight <= 0:
@@ -56,15 +69,20 @@ class OutcomeObservation:
 
 @dataclass(frozen=True)
 class BaselineRequest:
+    creator_key: str
     metric: str
+    metric_definition: str
     window: str
     as_of: datetime
     segment_path: tuple[str, ...] = ()
     target_value: float | None = None
 
     def __post_init__(self) -> None:
-        if not self.metric.strip() or not self.window.strip():
-            raise ValueError("metric and window must be non-empty")
+        if not all(
+            value.strip()
+            for value in (self.creator_key, self.metric, self.metric_definition, self.window)
+        ):
+            raise ValueError("creator_key, metric, metric_definition, and window are required")
         _aware(self.as_of, "as_of")
         if self.target_value is not None and not math.isfinite(self.target_value):
             raise ValueError("target_value must be finite or None")
@@ -235,16 +253,34 @@ def build_creator_baseline(
 
     excluded: Counter[str] = Counter()
     candidates: list[OutcomeObservation] = []
-    matching = [item for item in observations if item.metric == request.metric]
-    keys = Counter((item.post_id, item.metric, item.window) for item in matching)
+    matching = [
+        item
+        for item in observations
+        if item.creator_key == request.creator_key
+        and item.metric == request.metric
+        and item.metric_definition == request.metric_definition
+    ]
+    keys = Counter(
+        (item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)
+        for item in matching
+    )
     for item in observations:
+        if item.creator_key != request.creator_key:
+            excluded["incompatible_creator"] += 1
+            continue
         if item.metric != request.metric:
             excluded["incompatible_metric"] += 1
+            continue
+        if item.metric_definition != request.metric_definition:
+            excluded["incompatible_metric_definition"] += 1
             continue
         if item.window != request.window:
             excluded["incompatible_window"] += 1
             continue
-        if keys[(item.post_id, item.metric, item.window)] > 1:
+        if (
+            keys[(item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)]
+            > 1
+        ):
             excluded["duplicate_post_metric_window"] += 1
             continue
         if item.value is None:

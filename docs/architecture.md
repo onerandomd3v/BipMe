@@ -130,8 +130,9 @@ See [the original detailed scoring design](research/X_DISTRIBUTION_OUTLOOK_V1_DE
 
 `apps/api/src/bipme/intelligence/baselines.py` implements the pure, provider-neutral
 `creator-baseline-v1` calculation over timestamped `OutcomeObservation` values. A caller
-provides the metric, exact comparison window, assessment timestamp, optional target value,
-hierarchical segment path and non-outcome-derived weights. The record keeps `published_at`
+provides the creator identity, metric definition, exact comparison window, assessment
+timestamp, optional target value, hierarchical segment path and non-outcome-derived weights.
+The engine excludes observations from another creator or metric definition. The record keeps `published_at`
 separate from the actual `observed_at`; both must be no later than the assessment time and
 the observation cannot predate publication. A metric/window pair is never mixed: mature
 cumulative totals and snapshots such as `age:1h` are separate distributions. A known missing
@@ -158,7 +159,7 @@ evaluation before being treated as product confidence.
 
 The pure input/output dataclasses are an intelligence contract, not a shared database
 schema. COD-345 should map its canonical outcome records to these values and preserve the
-metric unit/definition, exact observation window, publication time, actual observation time,
+metric unit/definition, creator identity, exact observation window, publication time, actual observation time,
 stable post ID, missing-window knowledge and caller-computed comparable weight/segments.
 COD-352 may provide eligible comparable IDs and relevance-derived weights; COD-354 can
 consume the versioned result and exclusion/evidence reasons without changing this engine.

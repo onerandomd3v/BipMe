@@ -23,17 +23,30 @@ def obs(
     value: float | None,
     *,
     metric: str = "impressions",
+    metric_definition: str | None = None,
+    creator: str = "creator-1",
     window: str = "mature",
     published: datetime = AS_OF - timedelta(days=2),
     observed: datetime = AS_OF - timedelta(days=1),
     weight: float = 1.0,
     segment: tuple[str, ...] = (),
 ) -> OutcomeObservation:
-    return OutcomeObservation(post_id, metric, value, published, observed, window, weight, segment)
+    return OutcomeObservation(
+        creator,
+        post_id,
+        metric,
+        metric_definition or f"{metric}_v1",
+        value,
+        published,
+        observed,
+        window,
+        weight,
+        segment,
+    )
 
 
 def request(**kwargs: object) -> BaselineRequest:
-    return BaselineRequest("impressions", "mature", AS_OF, **kwargs)  # type: ignore[arg-type]
+    return BaselineRequest("creator-1", "impressions", "impressions_v1", "mature", AS_OF, **kwargs)  # type: ignore[arg-type]
 
 
 def test_consistent_history_has_robust_quantiles_and_repeatability() -> None:
@@ -183,6 +196,8 @@ def test_duplicate_incompatible_and_invalid_observations_are_explained() -> None
         obs("duplicate", 2),
         obs("negative", -1),
         obs("other-window", 1, window="age:1h"),
+        obs("other-definition", 1, metric_definition="impressions_v2"),
+        obs("other-creator", 1, creator="creator-2"),
         obs("before-publish", 1, observed=AS_OF - timedelta(days=3)),
     ]
     result = build_creator_baseline(inputs, request(segment_path=("topic",)))
@@ -190,6 +205,8 @@ def test_duplicate_incompatible_and_invalid_observations_are_explained() -> None
     assert result.statistics is None
     assert dict(result.exclusion_counts) == {
         "duplicate_post_metric_window": 2,
+        "incompatible_creator": 1,
+        "incompatible_metric_definition": 1,
         "incompatible_window": 1,
         "negative_metric": 1,
         "observed_before_publication": 1,
@@ -204,7 +221,9 @@ def test_contract_validation_rejects_naive_time_bad_weight_and_non_finite_values
     with pytest.raises(ValueError, match="finite"):
         obs("nan", float("nan"))
     with pytest.raises(ValueError, match="finite"):
-        BaselineRequest("views", "age:1h", AS_OF, target_value=float("inf"))
+        BaselineRequest(
+            "creator-1", "views", "views_v1", "age:1h", AS_OF, target_value=float("inf")
+        )
 
 
 def test_unsupported_calculation_version_is_not_silently_accepted() -> None:
