@@ -10,6 +10,21 @@ BipMe is an **attention-informed creator distribution-intelligence platform** th
 
 The product is **not** an X algorithm cracker, a universal content-quality score, a viral guarantee, an automated publisher, or a generic AI writing assistant.
 
+## Definitive product journey: report first, draft second
+
+**Decision (8 Nov 2026):** BipMe is proactive creator intelligence, **not primarily a paste-your-draft tool**. The **first user value is a personalized Creator Intelligence Report automatically assembled after secure onboarding and data availability, before the creator writes a new post**.
+
+1. **Define goals:** The creator provides their niche, intended audience, desired outcomes (relevant replies, qualified interest, reach) and preferred style. Treat these as declared targets, not verified audience facts.
+2. **Understand the creator:** Import a bounded owner-supplied X post archive if COD-369 finds format, rights and security viable, or use approved official X owner-history access. Identify personal content themes, available engagement/distribution evidence, baselines, outliers and missing metrics.
+3. **Discover the niche independently:** Using **official X search APIs** under verified entitlement, data-use rights and a hard spend cap, search for relevant recent posts and discussions in the declared niche. Sample strong, typical and weak comparables across creators/periods rather than only 'viral' winners; account for search-selection bias, creator size, post age, format, missing impressions and prohibited processing. Archive upload does **not** replace niche discovery.
+4. **Deliver the initial report without a draft:** Clearly separate **Your Content History** from **What's Happening in Your Niche**; show relevant observed posts/conversations, recurring attention associations, evidence quality and freshness, gaps relative to the creator's goals, and 1–3 testable content opportunities with supporting references and limitations. If no permitted niche access, output only an explicitly labeled **personal-only partial report**, not fabricated trends.
+5. **Analyze a draft later:** When the creator submits an idea/draft, use their existing report/declared goals plus appropriately current personal and authorized niche comparables to suggest evidence-linked improvements/experiments. Do not promise reach or claim early engagement caused amplification. Preserve original assessments.
+6. **Learn from actual posting:** After manual publication, attach the version-matched post and, where authorized API monitoring exists, gather real timestamped metrics; compare against pre-recorded hypotheses and update future reports, without retroactive prediction editing.
+
+**V1 full-model acceptance:** Demonstrate the first report using both valid personal and *authorized official X niche-search evidence*, followed by a draft decision and post-publication learning. If niche search cannot be licensed, accessed or financed, a usable personal-only interim build may ship as a limited pilot, but it does not establish completion of the intended two-source product. All value and reach-improvement claims await creator testing.
+
+**Engineering coordination:** COD-344 must extend feasibility to X official search/data-use/cost; COD-347 remains the bounded provider adapter, with discovery implementation separated where possible. COD-371 owns creator goal and report intelligence contracts. COD-359 becomes the report-first web home, COD-360 is draft-second UX, and COD-368 tests the new full user journey. Dedicated search, report-API and report-UI tasks should be created once Linear issue capacity is available; existing completed COD-345/350–354/358 code remains intact.
+
 ## Attention-informed, archive-first direction (approved refinement; validation pending)
 
 BipMe's first question is **what content approaches appear to earn meaningful attention for this creator's goals and what is worth testing next?** We are not reverse-engineering a fixed X distribution gate. Early engagement may be associated with later exposure, but correlation does not show that engagement caused X to distribute a post.
@@ -26,7 +41,7 @@ BipMe's first question is **what content approaches appear to earn meaningful at
 
 ## Creator value and learning loop
 
-The core creator experience is **Understand → Evaluate → Improve → Experiment → Learn**: distinguish recurring historical patterns from isolated viral outliers; assess a draft or content idea against eligible comparables; receive one or two **evidence-linked observations and a testable next action** when justified; publish manually; and review whether the actual outcome supports, contradicts or leaves the original hypothesis inconclusive.
+The core creator experience is **Understand → Discover → Report → Evaluate → Experiment → Learn**: distinguish recurring historical patterns from isolated viral outliers; assess a draft or content idea against eligible comparables; receive one or two **evidence-linked observations and a testable next action** when justified; publish manually; and review whether the actual outcome supports, contradicts or leaves the original hypothesis inconclusive.
 
 Creators should be able to:
 
