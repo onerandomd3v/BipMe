@@ -60,6 +60,20 @@ Official X API (gated, budget-capped) ---+            |
 - Extend features only through versioned content/goal contracts, preserving COD-350's descriptive-only fields and COD-353/354's outcome separation. Test whether attention-oriented features add explanatory value above the current baselines; don't claim to model X's private ranking, viewer exposure cohorts or engagement-caused amplification.
 - COD-344 retains policy/entitlement/spend verification for official X use; COD-346 keeps secure X OAuth for optional connections and coordinates a separate private session; COD-348 stays responsible for budgeted API ingestion/normalization; COD-363 remains optional real-snapshot monitoring. COD-358's existing authenticated API and immutable decisions should not be weakened.
 
+## V1 ship-first architecture decisions — 8 November 2026
+
+**Delivery objective:** Release the smallest **working**, safe, honest, one-account BipMe with report-before-draft value. Do not postpone V1 for provider shootouts, multi-model benchmarks, autonomous agents, speculative infrastructure, polished confidence calibrations, or comprehensive model evaluation. A functioning feature may have limited quality and improve after launch; it must not fabricate evidence, bypass auth/rights, incur unbounded spending or expose private content.
+
+**Generative-AI execution:**
+- **V1 default (selected):** hosted OpenAI API, model ID `gpt-6-luna`, for bounded narrative synthesis over an already validated evidence bundle. The official model catalog identifies it as a cost-sensitive/high-volume text model. Verify model access in BipMe's own API account at integration time; if not entitled, fail safely with templates and document the constraint rather than silently switching providers.
+- **Model-agnostic architecture (approved):** keep `ReportSynthesizer` and `GenerativeModelProvider` boundaries, with `model_id` and provider set through server-only configuration. No model-specific fields in public report contracts. Add a second provider only when needed; **no launch-blocking benchmark or challenger implementation**. Hosted inference is a V1 preference, not a policy permission to send external X content.
+- **Fallback:** deterministic, provenance-linked report assembly always works without a generative service when sufficient authorized evidence exists. A user can see a personal-only partial report when niche API access is unavailable.
+- **No agent framework:** fixed bounded stages, not autonomous tool-using exploration.
+
+**Other approved V1 choices:** independent authenticated private BipMe session (X OAuth optional for allowed X operations); archive-first feasibility; official niche discovery only after approved rights/entitlement/spend; minimum justified retention, post-only extraction and deletions; user-triggered cached refresh with no mandatory periodic niche searches; evidence and citation checks with lightweight pre-launch smoke tests. The precise BipMe session sign-in mechanism, retention periods, search caps and external processing authorization still require narrow implementation-time verification before handling real creator data. These are gates, **not** invitations to defer unrelated synthetic/demo work.
+
+**V1 quality bar:** one fully working, safe end-to-end path with explicit partial states, traceable source IDs, honest limitations and budget limits; shipping can precede systematic usefulness benchmarks, advanced tuning, extensive qualitative research and secondary providers. Keep completed implementation contracts unchanged.
+
 ## Generative report synthesis (approved design; not implemented)
 
 BipMe deliberately uses **three separate layers**: (1) the existing replaceable embedding adapter for semantic relevance and retrieval, (2) deterministic/statistical intelligence for eligible comparisons, baselines, outliers, sample quality, evidence strength, and optional experiments, and (3) an **LLM-powered explanation and synthesis layer** for the first Creator Intelligence Report and later draft guidance.
