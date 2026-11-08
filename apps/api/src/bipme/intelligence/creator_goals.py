@@ -68,7 +68,9 @@ class CreatorGoalsSnapshot:
             or any(item not in _OUTCOMES for item in self.priority_outcomes)
             or len(set(self.priority_outcomes)) != len(self.priority_outcomes)
         ):
-            raise ValueError("priority_outcomes must be a non-empty unique tuple of supported goals")
+            raise ValueError(
+                "priority_outcomes must be a non-empty unique tuple of supported goals"
+            )
         if (
             not isinstance(self.preferred_styles, tuple)
             or any(item not in _STYLES for item in self.preferred_styles)
