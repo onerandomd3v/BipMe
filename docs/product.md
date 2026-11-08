@@ -39,6 +39,22 @@ BipMe's first question is **what content approaches appear to earn meaningful at
 
 **V1 gates:** COD-369 validates archive structure/rights/metrics; COD-370 implements a safe post-only import if viable; COD-371 tests goal-aligned attention descriptors against baselines; COD-372 pilots carefully permissioned niche comparisons only after policy approval. COD-344 remains the X API/processing policy and cost gate. Treat all purported improvement in creator decisions or reach as hypotheses until evaluated on real permitted data.
 
+## V1 delivery principle — ship working, improve iteratively
+
+**Approved 8 November 2026:** BipMe V1 is a **working product release**, not a perfectly calibrated creator intelligence service. Ship the simplest safe report-first journey as soon as its required access/data rights and actual end-to-end workflow are proven. Do not hold launch for comparing multiple generative models, expensive evaluations, optional agent orchestration, fully automated report refresh, elaborate experiments or feature polish. Improve narrative accuracy and creator usefulness from observed feedback **after launch**.
+
+For V1, use **one hosted generative model: `openai/gpt-oss-120b` via GroqCloud**, behind a model-agnostic and provider-agnostic internal adapter. Groq is the inference provider; GPT-OSS is the model. Groq free-tier usage is subject to organization-level request/token limits, so rate-limit handling and deterministic fallback are part of V1. No paid upgrade or external fallback without explicit approval. Its function is to explain precomputed evidence and propose clearly labeled hypotheses, not compute invented statistics. No mandatory model bake-off or challenger integration. Retain the deterministic template report if LLM use is unavailable or disallowed, and show personal-only partial status if approved X niche discovery is unavailable. Do not mislabel that partial mode as the completed two-source intended product. Model availability and rights for X-derived content must still be checked in the actual developer accounts.
+
+**Minimum release quality:** the creator can securely onboard, inspect permitted history and source-backed initial report without supplying a draft, then access draft guidance and the intentionally scoped follow-on learning experience. Security, permission gates, source integrity, evidence attribution and cost ceilings are launch requirements; superior recommendation quality, extensive prelaunch benchmarking and secondary model/provider support are post-V1 improvements.
+
+## Generative AI in BipMe (approved product role; integration pending)
+
+BipMe uses embeddings to find relevant material, statistical intelligence to evaluate evidence, and a **generative language model to synthesize and explain** findings for the report-first experience and later draft decisions. The LLM should turn validated, source-linked observations into understandable personalized narratives and optional testable content directions; it should not substitute for the calculation, fabricate current niche trends, assert why X distributed a post, or promise better reach.
+
+Use deterministic report assembly when a model is unavailable, unaffordable or not authorized to process a given source. The output must visibly distinguish **observed evidence**, **inference**, **suggested experiment** and **unknowns**. Personal and X niche evidence stay separately labeled; evidence-backed recommendations must remain useful without a generative model. This is planned behavior, **not a deployed feature**.
+
+V1 selects GroqCloud serving `openai/gpt-oss-120b`, while the interface remains model-agnostic/provider-agnostic and bounded by evidence provenance, processing permissions and usage budgets. [COD-380](https://linear.app/codeddevs/issue/COD-380) is the existing implementation ticket. No additional generative model or benchmark is required to ship V1.
+
 ## Creator value and learning loop
 
 The core creator experience is **Understand → Discover → Report → Evaluate → Experiment → Learn**: distinguish recurring historical patterns from isolated viral outliers; assess a draft or content idea against eligible comparables; receive one or two **evidence-linked observations and a testable next action** when justified; publish manually; and review whether the actual outcome supports, contradicts or leaves the original hypothesis inconclusive.

@@ -44,6 +44,22 @@ Implement and test safeguards **before** a live import:
 
 Do **not** hardcode old X prices or assume a discounted owned-read tier is generally available. The authenticated developer console and live official documentation are authoritative at integration time.
 
+## Ship-first safety boundary — 8 November 2026
+
+V1 prioritizes **working delivery**, not exhaustive benchmarks or perfect analysis. This does **not** waive authenticated private sessions, account isolation, safe archive handling, source-processing and third-party LLM transfer authorization, provenance checks, prompt-injection isolation, enforced API/LLM spend ceilings, or output-citation validation. Never turn privacy or billing controls into optional polish.
+
+The selected V1 hosted inference is **GroqCloud serving `openai/gpt-oss-120b`** through a provider-neutral server adapter; do not call it on real X-derived post text until both X source rules and the provider's applicable retention/subprocessor terms permit the specific use. On unresolved rights, free-tier rate-limit exhaustion (HTTP 429), invalid model entitlement or provider downtime, serve deterministic evidence-linked templates and report any missing-source status honestly. Never silently enable paid Groq billing. Do not silently upgrade to a costlier model.
+
+Do not run a prelaunch multi-model benchmark. Require only focused smoke/unit tests of auth, source entitlement, spend boundaries, output schema, supported evidence references, prompt-injection resistance, and the deterministic fallback. Decide precise retention windows and private sign-in mechanism before handling real user data.
+
+## Generative-model data processing boundary (planned)
+
+- Treat evidence supplied to any LLM as *untrusted* content: reject prompt injection in posts, delimit data, constrain structured outputs and validate every cited post ID and numeric claim.
+- Confirm both **X-derived content inference rights** and separately **third-party transfer/subprocessor rights** before sending any real creator/niche post text to an external LLM. Model training policies, retention, geographic processing and provider DPA require verification; consent alone may not override platform terms.
+- Prefer minimal derived, approved evidence bundles rather than raw archives, tokens or entire corpora; never put post history, credentials, PII or prompts containing private content in logs/CI fixtures.
+- Define bounded token, latency and monetary budgets; redact errors, disable unsupported training/data retention where contractually possible, and fail safely with a deterministic template when access or quality is insufficient.
+- Keep audit trails with evidence IDs, prompt/model/schema versions and policy decisions so explanations can be reproduced and deleted when source rights change.
+
 ## Data handling
 
 - Use official X APIs only; no unsupported scraping to bypass limits.
