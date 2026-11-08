@@ -19,6 +19,17 @@
 - Encrypt X access and refresh tokens at rest, avoid printing tokens in logs/traces, rotate keys where feasible and handle revocation/disconnect.
 - Store all secrets outside Git; `.env.example` contains placeholders or local-only database examples. Never check in a real `.env`.
 
+## Creator-supplied archive threat model and rights gate (planned, COD-369/370)
+
+The original X API-first authentication model is **not** authorization to accept arbitrary ZIP uploads. A secure private BipMe app session must identify and authorize the creator for archive-only use without forcing X OAuth. Until this is implemented, production routes remain fail-closed; no unauthenticated fallback, header-based creator ID or publicly accessible archive upload may be introduced.
+
+- **Pre-ingestion go/no-go:** Validate X export format and actual post-history fields using a voluntarily supplied recent sample; determine applicable terms for local parsing, derived profiles, local pretrained embedding inference, storage, permitted reuse and deletion. Archive possession or user consent alone does not override platform rules. If rights remain unclear, use synthetic fixtures only.
+- **Upload isolation:** Accept only explicitly selected, allowlisted post-history files; validate extension and actual content, bound archive bytes/decompressed bytes/entry count/nesting/time, reject traversal/absolute paths/symlinks, executable code and HTML entry points. Some legitimate X exports store post-history data in JavaScript assignment wrappers (for example, `data/tweets.js`): accept only explicitly allowlisted post-history paths with a validated known wrapper and strictly parse the contained JSON **as inert data, never evaluate or execute JavaScript**. Disable untrusted extraction paths and fail safely on malformed/duplicate entries.
+- **Data minimization:** Never ingest direct messages, contacts, authentication credentials or unrelated account metadata. Avoid persistent raw ZIP storage; use private isolated temporary processing, bounded retention, cleanup on success/failure and deletion of derived content/embeddings when required. Do not log raw archives or creator post text.
+- **Ownership/provenance:** Enforce verified creator ownership and cross-account boundaries, source-specific consent provenance, idempotent canonical import, original publication and actual observed timestamps, exact metric identities and explicit missingness. Snapshot engagement counters are not early attention trajectories or impression-denominator estimates.
+- **Cross-creator comparison:** No scraping, shared niche corpus, republishing or inference on third-party X posts until permissions and applicable rights are verified. Separate personal and permissioned niche pools, restrict disclosure of other contributors' raw content, provide withdrawal/deletion and avoid irreversible training on data that must be removed.
+- **Monitoring:** Optional official API polling must enforce explicit consent, immutable account authorization, actual observation timestamps, per-operation quotas and total hard spend ceiling; archive import must not silently trigger paid refresh.
+
 ## X API budget safeguards (planned)
 
 Implement and test safeguards **before** a live import:

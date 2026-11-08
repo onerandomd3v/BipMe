@@ -9,7 +9,7 @@ React / TypeScript / Vite browser client
                   |
            HTTP / OpenAPI
                   |
-         FastAPI Python app -----------------> Official X API
+         FastAPI Python app -----------------> Optional official X API
                   |                             OAuth 2.0 + PKCE
      +------------+--------------+
      |                           |
@@ -25,6 +25,40 @@ BipMe intelligence         SQLAlchemy/Alembic
 ```
 
 The API and future worker share one `apps/api/src/bipme` Python codebase. The intelligence engine is an **in-process package**, not a separately deployed microservice. PostgreSQL is the sole state store; Redis or an external vector DB is not needed initially.
+
+## Attention evidence and archive-first source boundary (planned; validation gated)
+
+**V1 direction (8 Nov 2026):** support one private, authenticated creator with self-declared niche, audience and outcome preferences; prioritize feasibility of a creator-supplied post-history archive. Optional official X API connection is for permitted ingestion refresh or budgeted post-publication snapshots. Archive-only activity must have a secure server-side BipMe session independent of X OAuth; until built, COD-358 routes remain fail-closed. See COD-369 (archive format/rights gate), COD-370 (archive importer), COD-371 (goals/attention features) and COD-372 (niche pilot).
+
+**Source-neutral, rights-aware ingestion boundary:**
+
+```text
+Creator-selected archive files (gated) --+
+                                         +--> validated source adapter
+Official X API (gated, budget-capped) ---+            |
+                                                     v
+                                    canonical posts + provenance +
+                                    explicit metric/window availability
+                                                     |
+                                     versioned profiles / embeddings
+                                                     |
+                       +-----------------------------+------------------+
+                       |                                                |
+                 personal evidence                        permissioned niche evidence
+                   (creator-owned)                         (research only; rights gated)
+                       |                                                |
+                       +--------------> separate comparisons <----------+
+                                        |
+                                goal-aligned observations,
+                                optional experiment and limitations
+```
+
+- Archive parser must whitelist necessary post-history entries, guard against ZIP bombs/path traversal and ignore or promptly delete private unrelated material (DMs, contacts, account metadata). Require authenticated creator ownership, bounded uploads, idempotent import, provenance and deletion controls. No real X-derived text embedding/AI processing until applicable terms permit it.
+- Archive records may have post text, publication timestamps and some engagement counters, but field availability must be measured on an actual export. Do not synthesize impressions, engagement-per-impression denominators, first-hour signals or historical attention-to-distribution sequences from a single export snapshot.
+- Keep publication time separate from observation time, exact metric definition and age/cumulative window distinct, and source-of-truth/provenance attached to each imported observation. Do not blend unknown with known zero.
+- Niche intelligence is a **separate, permissioned research pool** rather than cross-creator mixing in COD-352's same-creator retrieval. Sample strong/typical/weak comparables to avoid viral-only selection bias; control for available creator size, niche, format and observation age. Ship no shared training, raw-content display, crawling or cross-account pipeline without explicit rights clearance and an evaluated data-quality case.
+- Extend features only through versioned content/goal contracts, preserving COD-350's descriptive-only fields and COD-353/354's outcome separation. Test whether attention-oriented features add explanatory value above the current baselines; don't claim to model X's private ranking, viewer exposure cohorts or engagement-caused amplification.
+- COD-344 retains policy/entitlement/spend verification for official X use; COD-346 keeps secure X OAuth for optional connections and coordinates a separate private session; COD-348 stays responsible for budgeted API ingestion/normalization; COD-363 remains optional real-snapshot monitoring. COD-358's existing authenticated API and immutable decisions should not be weakened.
 
 ## Technology (approved)
 
@@ -88,6 +122,44 @@ Draft -> draft Post Profile -> comparable post retrieval
                                    |
                      versioned prediction evaluation
 ```
+
+### Report-first orchestration and official niche search (planned; rights gated)
+
+The previous draft-first data path remains as a **second-stage** action. Before any draft, authenticated onboarding and declared niche/goals trigger two **separate** evidence pipelines:
+
+```text
+ Creator goals / intended audience / niche
+                |
+      +---------+----------------------+
+      |                                |
+ Own archive / permitted history   Official X niche search
+ (COD-369/370 or COD-348)          (COD-344 rights/cost gate,
+      |                              COD-347 provider boundary)
+      v                                v
+ personal creator evidence         representative external niche evidence
+      |                             (strong / typical / weak, not viral-only)
+      +----------------+---------------+
+                       |
+           versioned report assembly (planned)
+            separate sources and coverage;
+           goal-aligned observations and ideas
+                       |
+         Creator Intelligence Report API
+                       |
+            Report-first web dashboard
+                       |
+                 Optional draft
+                       v
+         existing COD-358 draft analysis,
+         extended by additive niche contract
+                       |
+                publication + learning
+```
+
+- **Distinct access models:** Own archive import is not X OAuth. Authorized search into other creators' X posts requires the approved official API scopes/entitlements and applicable processing/display/retention permissions. An archive alone cannot yield current niche discovery. No scraping or assumption that public availability permits storage, embeddings, training or redistribution.
+- **Representativeness:** Search is a biased sample; record query/version, result set, sampling/coverage/selection criteria, observed metrics and timestamps. Compare strong/typical/weak examples, not only winners; normalize only with actual denominator metrics and compatible observation windows.
+- **Report contract (planned):** creator goal snapshot, own evidence and niche evidence in independent sections, sample counts, freshness, source coverage and data-quality flags, traceable post references, opportunity hypotheses, limitations and partial/insufficient status. Generate and persist immutable versioned report snapshots **without any draft input**; no fabricated niche cards when provider gates fail.
+- **Integration responsibilities:** COD-371 scopes pure report intelligence; COD-344 checks official niche-search availability/terms; COD-347 supplies budget-guarded provider work after approval; Platform owns report persistence/API; COD-359 presents post-onboarding first value; COD-360 remains the subsequent draft tool. New focused issues for discovery, report service and API are needed when Linear issue capacity allows; these are **not implemented by COD-358**.
 
 ### Non-negotiable data separation
 
