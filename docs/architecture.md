@@ -41,7 +41,7 @@ The API and future worker share one `apps/api/src/bipme` Python codebase. The in
 | Quality | Ruff, mypy, pytest, ESLint, TypeScript, Playwright when E2E flows exist |
 | Local infrastructure | Docker Compose for PostgreSQL |
 
-**Not currently implemented:** X adapter, login/session system, background worker, embeddings, prediction, baseline or metrics collection. An installed library does not imply a working feature.
+**Not currently implemented:** X adapter, login/session system, background worker, persisted embeddings/retrieval, prediction, baseline or metrics collection. Local synthetic CPU embedding inference is available; no X text is processed.
 
 ## Repository
 
@@ -72,15 +72,21 @@ Draft -> draft Post Profile -> comparable post retrieval
                                    |
                       outcomes of selected historical posts
                                    |
-                    robust creator baseline (P25/P50/P75)
+                    robust baseline + repeatability /
+                       outlier / sample-strength checks
                                    |
-                       evidence-backed Distribution Outlook
+                      evidence-backed observations
+                      + optional testable next action
+                      + Outlook only when justified
                                    |
-                  manual publication / attached X Post
+                     manually published attached X Post
+                     + original assessment / hypothesis
                                    |
-                   time-stamped metric snapshots -> postmortem
+                    real timestamped metric snapshots
                                    |
-                         versioned prediction evaluation
+                    evidence-aware learning postmortem
+                                   |
+                     versioned prediction evaluation
 ```
 
 ### Non-negotiable data separation
@@ -90,6 +96,16 @@ Draft -> draft Post Profile -> comparable post retrieval
 - **Comparable sets** must be reproducible and bounded by `features_as_of`.
 - **Future observations** cannot be used in a historical backtest.
 - **Model, feature, retrieval and baseline versions** must be recorded for reproducibility.
+
+## V1 creator decision and experiment contract (planned)
+
+- **Decision-first output:** never expose only a "viral potential" score. For an analyzed draft return the eligible comparables and relevance reasons, supported pattern observations, named uncertainty and an actionable *suggestion to test* only when justified. Relative outcome intervals are **secondary** and optional: when evidence is insufficient, abstain rather than fabricate a range.
+- **Pattern repeatability:** compute robust distributions and effective samples across eligible posts; surface the number of supporting examples, consistency or dispersion and outlier sensitivity. A single high-performing post does **not** establish a repeatable content formula. Prefer robust summaries over the highest-impression post.
+- **No causal inference:** topic/style correlations cannot establish why an X post was distributed or what intervention will increase reach. Suggested next actions are **hypotheses**, not directives, probabilities or proven optimizations. Only include a concrete suggestion when it can cite comparable IDs and measured features/outcomes; otherwise show an insufficient-evidence message.
+- **Lightweight experiment:** reuse the draft/Outlook record for one optional, short hypothesis or test question and a supported target metric/window when the creator chooses to test an idea. Do **not** add a separate experiment service, cohort allocation, auto-publishing or complex dashboard. Persist the *original* assessment and hypothesis immutably so observed outcomes cannot rewrite pre-publication reasoning.
+- **After publishing:** link the attached X Post to the **immutable original assessment/hypothesis**, its content fingerprint, and **real** metric observations. Verify whether the published content matches the draft version that was assessed. If materially revised, retain the earlier advice as context but require reassessment of the published version **or exclude the mismatched version from forecast-error/backtest evaluation**; never score a different draft's outcome as the original forecast's accuracy. Return *supported*, *contradicted* or *inconclusive* strictly as an evidence-limited descriptive status, **not** causal proof. Avoid equal-age comparisons unless real snapshots for the matching windows exist; missing historical trajectories remain unavailable.
+- **API/storage coordination:** intelligence owns pure repeatability, evidence and suggestion logic; Platform owns canonical records, optional hypothesis persistence and FastAPI/OpenAPI contracts; Web renders the same evidence/action/outcome loop. Keep schema changes minimal and agree contracts before migrations (COD-345, COD-358, COD-354).
+- **V1 acceptance:** one authorized creator can move from meaningful historical evidence to a draft decision, optional experiment and linked actual outcome. No claim of validated demand, better reach or predictive accuracy without measured evidence. V1 user testing may occur after shipping; extensive interviews are not a prerequisite.
 
 ## Baselines and evidence
 
@@ -102,7 +118,7 @@ Draft -> draft Post Profile -> comparable post retrieval
 
 See [the original detailed scoring design](research/X_DISTRIBUTION_OUTLOOK_V1_DESIGN.md). Experimental default weights in that document are hypotheses, not validated facts.
 
-## Embedding inference and portability (approved direction, not yet implemented)
+## Embedding inference and portability
 
 - **V1 starting model:** `intfloat/multilingual-e5-small` (384 dimensions), run locally on a **CPU** first. This is the practical implementation default, **not a validated accuracy winner**. Confirm resource use and actual retrieval quality on the intended machine before declaring readiness.
 - **Hosting:** run pretrained inference in the existing Python application/worker environment (local development machine or CPU VPS). No dedicated model-serving microservice, GPU or paid hosted embedding endpoint is required for the first version. Load model weights once per process rather than per post.
@@ -115,6 +131,16 @@ See [the original detailed scoring design](research/X_DISTRIBUTION_OUTLOOK_V1_DE
 ### Social-platform boundary
 
 Keep X-specific authentication, API field mapping, pagination, cost policy and metric availability in `integrations/`. The canonical post/profile/outcome representations and intelligence algorithms should not rely on raw X response objects. This makes future platforms possible **without** promising that different networks expose interchangeable metrics or building additional integrations now.
+
+### COD-351 embedding contract
+
+- `apps/api/src/bipme/intelligence/embeddings.py` now defines a `TextEmbedder` protocol, `EmbeddingIdentity`, and CPU-only E5 adapter with official `query:`/`passage:` prefixes and normalized, validated 384-dimensional vectors. The model is loaded lazily and cached per process.
+- `EmbeddingIdentity.index_key` records model ID, **immutable checkpoint commit SHA**, vector dimensions, preprocessing version, embedding generation version, and normalization. Persistence/index design is owned by COD-345. A change in any of these must trigger re-embedding and reindexing, never cross-model vector comparison.
+- The default pinned model revision is [`fd1525a9fd15316a2d503bf26ab031a61d056e98`](https://huggingface.co/intfloat/multilingual-e5-small/commit/fd1525a9fd15316a2d503bf26ab031a61d056e98), independently verified on Hugging Face (MIT license). `BIPME_EMBEDDING_MODEL` selects the initial E5 model; unsupported models fail explicitly until their adapter exists. Override the checkpoint only with an explicitly verified immutable revision via `BIPME_EMBEDDING_REVISION` (40-character SHA). No checkpoint weights or X data are committed. Routine unit tests use synthetic text and a fake encoder; they do **not** download weights.
+- `sentence-transformers` and the CPU-only PyTorch wheel are locked runtime dependencies; uv uses PyTorch's CPU wheel index on Windows and Linux. Local inference on an Intel Core i7-8565U with 16 GiB RAM loaded the pinned checkpoint offline from cache and returned normalized 384-dimensional vectors. With the final CPU wheel, process load (including lazy Python imports) took 144.3 seconds; encoding four synthetic passages took 0.466 seconds and three synthetic queries took 0.063 seconds. After loading, process working set was 1033 MiB, private memory 1631 MiB and peak working set 1077 MiB. All three synthetic queries ranked the intended passage first. The initial online run with the earlier PyPI wheel took 265 seconds including weight download; those timings are not directly comparable. These are smoke measurements on one Windows CPU machine, not a throughput, VPS, multilingual-quality, or accuracy benchmark.
+- For a different model, implement its `TextEmbedder` adapter and explicitly configure its model ID, immutable revision, dimensions, preprocessing rules, normalization and embedding version. Do not reuse an E5 identity or vector index. Backfill all eligible historical texts through the new adapter into a new versioned vector space, build its index, validate retrieval, then switch reads to that version; retire the old index only after the backfill and consumers are verified. COD-345 owns the persistence schema and migration, so no existing row or index is claimed to be updated by this adapter alone.
+- To repeat the real synthetic smoke check locally after installing locked API dependencies, run `BIPME_RUN_LIVE_EMBEDDING_SMOKE=1 uv run pytest -q tests/test_embeddings.py` from `apps/api` (set the environment variable with PowerShell syntax on Windows). Routine CI leaves that variable unset and does not download weights.
+- Processing real X post text remains disallowed until COD-344 resolves applicable inference data-use rights; archive-based data imports are a separate future ingestion decision, not an authorization bypass.
 
 ## X integration boundary (planned)
 

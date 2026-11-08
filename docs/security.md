@@ -45,7 +45,7 @@ Do **not** hardcode old X prices or assume a discounted owned-read tier is gener
 
 ## COD-344 — X access and feasibility gate (research checked 7 Nov 2026)
 
-**Status: Partially verified from public X documentation; actual developer-console entitlements, billing settings and account-specific data have NOT been verified. No live X API calls were made.** Do not consider COD-344 passed or start real data ingestion based on this section alone.
+**Status: Official endpoint documentation reviewed; owner-provided console screenshots confirm OAuth Web App settings and a USD 5 billing-cycle cap, but actual API entitlements, numeric user ID, approved data-processing use cases, and live response fields remain unverified. No live X API calls were made.** Do not consider COD-344 passed or start real ingestion based on this section alone.
 
 ### Official API capabilities, subject to developer-app access
 
@@ -76,6 +76,13 @@ Sources: [X timeline reference](https://docs.x.com/x-api/posts/timelines/introdu
 - Follow X's content display requirements (freshness and attribution); show the connected X identity as required by the policy. Provide a privacy notice, consent and account disconnect/data-deletion workflow before offering real service access.
 - **Creator-baseline analysis is also a data-use gate**: before running aggregation, creator-profile analytics, or any local embedding inference on real X posts, confirm the actual approved app use case and applicable X terms allow that specific processing. Authentication and possession of an account archive alone do not establish these rights. If approval is required, seek it before processing.
 - **Retention period is not finalized**. Decide the minimum justified duration and deletion cadence, subject to X policy, before storing real creator data. Avoid treating an arbitrary number of days as an approved rule.
+
+### Confirmed console configuration (owner-provided evidence, 7 Nov 2026)
+
+- X developer app: BipME by CodedDevs; connected test-account **handle** `@onerandomd3v` (the immutable numeric X user ID is still unverified).
+- The owner reported saving OAuth 2.0 **Web App, Automated App or Bot**, read permissions, email request off, and local callback `http://127.0.0.1:8000/api/auth/x/callback`. These are console configuration observations, **not** a successful OAuth handshake or API authorization proof.
+- Console screenshot confirmed **USD 5.00 billing-cycle cap** and **USD 0.00 available credits/spend**; auto-recharge unavailable without a payment method. Application-level spending limits and ledger remain unimplemented under COD-347, so no billable reads are approved.
+- The owner requested developer-credit support through X's community; no grant or credits have been verified. Do not infer special privileges or discounts.
 
 ### Console-only checks needed from the developer-app owner
 
