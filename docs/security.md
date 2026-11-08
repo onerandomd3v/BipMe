@@ -45,6 +45,13 @@ Do **not** hardcode old X prices or assume a discounted owned-read tier is gener
 - Retain data only for the justified experiment; decide retention and deletion periods before storing real creator data.
 - Disconnecting the account stops polling and clears tokens. Provide a clear way to delete stored data in accordance with applicable policy.
 
+## COD-358 creator-analysis API boundary
+
+- The baseline, draft-assessment and assessment-read routes use a `creator/me` boundary and accept no creator ID from the client. Every persistence query scopes by the server-verified creator UUID, including assessment lookup and historical post/outcome retrieval.
+- COD-346's OAuth/session dependency is not yet implemented. Until it supplies a verified, active creator identity, the production dependency returns `503 authentication_not_configured`; it does not accept a cookie, header, query parameter or environment-selected creator as a temporary bypass. API tests inject synthetic identities through FastAPI dependency overrides only.
+- Analysis persists a versioned response snapshot and fingerprint but not the draft's raw text. The fingerprint is deterministic and binds canonicalized text plus descriptive/metric-selection inputs. The optional accepted hypothesis is creator-supplied at assessment creation; the database enforces snapshot immutability.
+- Embedding or database failures map to safe structured errors. Request bodies, stored content, access tokens and internal exception text are not returned in errors. Metric outcomes are read only after retrieval and never influence candidate selection/ranking.
+
 ## COD-344 — X access and feasibility gate (research checked 7 Nov 2026)
 
 **Status: Official endpoint documentation reviewed; owner-provided console screenshots confirm OAuth Web App settings and a USD 5 billing-cycle cap, but actual API entitlements, numeric user ID, approved data-processing use cases, and live response fields remain unverified. No live X API calls were made.** Do not consider COD-344 passed or start real ingestion based on this section alone.

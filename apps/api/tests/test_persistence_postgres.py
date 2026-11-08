@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -12,10 +12,19 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, inspect, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
+from bipme.api.app import create_app
+from bipme.api.dependencies import (
+    AuthenticatedCreator,
+    get_authenticated_creator,
+    get_current_time,
+    get_db_session,
+    get_embedder,
+)
 from bipme.intelligence.embeddings import EmbeddingIdentity
 from bipme.intelligence.post_profiles import (
     CreatorContextSnapshot,
@@ -39,6 +48,7 @@ from bipme.persistence.models import (
     PostProfileRecord,
     XAccountConnection,
 )
+from bipme.persistence.vector_candidates import PostgresVectorCandidateSource
 
 API_DIR = Path(__file__).parents[1]
 NOW = datetime(2026, 11, 8, 14, tzinfo=UTC)
@@ -609,3 +619,347 @@ def test_postgresql_candidate_source_returns_only_as_of_creator_and_exact_space_
     assert candidate.available is True
     assert candidate.embedding_identity == IDENTITY
     assert candidate.embedding_observed_at == good_embedding.generated_at
+
+
+def test_vector_candidate_source_reports_counts_truncation_and_storage_exclusions(
+    session: Session,
+) -> None:
+    creator = _creator(session)
+    eligible_ids: list[UUID] = []
+    for index in range(3):
+        post = _post(
+            session,
+            creator.id,
+            published_at=NOW - timedelta(days=index + 2),
+        )
+        _profile(session, post, features_as_of=post.published_at + timedelta(minutes=5))
+        _embedding(session, post, generated_at=post.published_at + timedelta(minutes=6))
+        eligible_ids.append(post.id)
+
+    missing_embedding = _post(session, creator.id, published_at=NOW - timedelta(days=8))
+    _profile(
+        session, missing_embedding, features_as_of=NOW - timedelta(days=8) + timedelta(minutes=5)
+    )
+    missing_profile = _post(session, creator.id, published_at=NOW - timedelta(days=9))
+    _embedding(
+        session, missing_profile, generated_at=NOW - timedelta(days=9) + timedelta(minutes=5)
+    )
+    unavailable = _post(session, creator.id, published_at=NOW - timedelta(days=10))
+    unavailable.availability = "unavailable"
+    _profile(session, unavailable, features_as_of=NOW - timedelta(days=10) + timedelta(minutes=5))
+    _embedding(session, unavailable, generated_at=NOW - timedelta(days=10) + timedelta(minutes=6))
+    future = _post(session, creator.id, published_at=NOW + timedelta(minutes=1))
+    _profile(session, future, features_as_of=NOW + timedelta(minutes=2))
+    _embedding(session, future, generated_at=NOW + timedelta(minutes=3))
+
+    source = PostgresVectorCandidateSource(session)
+    batch = source.search(
+        VectorCandidateQuery(
+            creator_key=str(creator.id),
+            as_of=NOW,
+            embedding_identity=IDENTITY,
+            query_embedding=(1.0, *([0.0] * 383)),
+            limit=2,
+        )
+    )
+
+    assert len(batch.candidates) == 2
+    assert [candidate.post_id for candidate in batch.candidates] == sorted(
+        str(item) for item in eligible_ids
+    )[:2]
+    assert batch.total_candidate_count == 6
+    assert batch.vector_candidate_count == 3
+    assert batch.truncated is True
+    exclusion_reasons = {item.post_id: item.reasons for item in batch.prefiltered_exclusions}
+    assert "missing_embedding" in exclusion_reasons[str(missing_embedding.id)]
+    assert "missing_post_profile" in exclusion_reasons[str(missing_profile.id)]
+    assert "post_unavailable" in exclusion_reasons[str(unavailable.id)]
+    assert str(future.id) not in exclusion_reasons
+
+
+class _SyntheticEmbedder:
+    identity = IDENTITY
+
+    def encode(self, texts: Sequence[str], *, role: str) -> list[list[float]]:
+        assert texts
+        assert role == "query"
+        return [[1.0, *([0.0] * 383)] for _ in texts]
+
+
+def _authorized_client(session: Session, creator_id: UUID) -> TestClient:
+    app = create_app()
+    app.dependency_overrides[get_authenticated_creator] = lambda: AuthenticatedCreator(creator_id)
+    app.dependency_overrides[get_db_session] = lambda: session
+    app.dependency_overrides[get_embedder] = lambda: _SyntheticEmbedder()
+    app.dependency_overrides[get_current_time] = lambda: NOW
+    return TestClient(app)
+
+
+def _seed_analysis_history(session: Session, creator_id: UUID) -> list[CanonicalPost]:
+    posts: list[CanonicalPost] = []
+    for index in range(9):
+        published_at = NOW - timedelta(days=10 + index)
+        post = _post(session, creator_id, published_at=published_at)
+        _profile(session, post, features_as_of=published_at + timedelta(minutes=2))
+        _embedding(session, post, generated_at=published_at + timedelta(minutes=3))
+        session.add(
+            OutcomeObservationRecord(
+                id=uuid4(),
+                post_id=post.id,
+                creator_id=creator_id,
+                published_at=published_at,
+                metric_name="impressions",
+                metric_definition="public_impressions_v1",
+                metric_unit="impressions",
+                metric_value=Decimal(index * 100),
+                state="observed",
+                window_kind="age_aligned",
+                window_key="age:24h",
+                observed_at=published_at + timedelta(hours=24),
+                idempotency_key=f"analysis-history-{uuid4()}",
+                provenance={"source": "synthetic"},
+            )
+        )
+        posts.append(post)
+    session.flush()
+    return posts
+
+
+def test_authorized_analysis_is_idempotent_immutable_and_excludes_future_outcomes(
+    session: Session,
+) -> None:
+    creator = _creator(session)
+    posts = _seed_analysis_history(session, creator.id)
+    future_record = OutcomeObservationRecord(
+        id=uuid4(),
+        post_id=posts[0].id,
+        creator_id=creator.id,
+        published_at=posts[0].published_at,
+        metric_name="impressions",
+        metric_definition="public_impressions_v1",
+        metric_unit="impressions",
+        metric_value=Decimal("999999"),
+        state="observed",
+        window_kind="age_aligned",
+        window_key="age:24h",
+        observed_at=NOW + timedelta(hours=1),
+        idempotency_key="future-analysis-outcome",
+        provenance={"source": "synthetic_future"},
+    )
+    session.add(future_record)
+    session.flush()
+
+    client = _authorized_client(session, creator.id)
+    body = {
+        "text": "A synthetic creator draft asking a question?",
+        "topology": "original",
+        "media_types": [],
+        "metric_preferences": [
+            {
+                "metric": "impressions",
+                "definition": "public_impressions_v1",
+                "unit": "impressions",
+                "window_kind": "age_aligned",
+                "window_key": "age:24h",
+            }
+        ],
+        "accepted_hypothesis": {
+            "question": "Does a question-led opening increase impressions?",
+            "metric": "impressions",
+            "metric_definition": "public_impressions_v1",
+            "unit": "impressions",
+            "window_kind": "age_aligned",
+            "window_key": "age:24h",
+            "expected_direction": "higher",
+        },
+    }
+    first = client.post(
+        "/api/v1/creators/me/draft-assessments",
+        headers={"Idempotency-Key": "analysis-request-001"},
+        json=body,
+    )
+    equivalent_retry = client.post(
+        "/api/v1/creators/me/draft-assessments",
+        headers={"Idempotency-Key": "analysis-request-001"},
+        json={**body, "text": "A synthetic creator draft asking a question?\r\n"},
+    )
+
+    assert first.status_code == 201
+    assert equivalent_retry.status_code == 201
+    assert first.json() == equivalent_retry.json()
+    payload = first.json()
+    assert payload["decision_state"] == "supported"
+    assert payload["accepted_hypothesis"] == body["accepted_hypothesis"]
+    assert len(payload["comparable_evidence"]) == 9
+    assert payload["versions"]["baseline"] == "creator-baseline-v1"
+    metric = payload["metrics"][0]
+    assert metric["statistics"]["maximum"] == 800.0
+    assert metric["statistics"]["maximum"] < 999999
+    assert metric["exclusion_counts"] == [["observed_after_as_of", 1]]
+    assert metric["outlook"] is not None
+
+    saved = session.get(DraftAssessment, UUID(payload["assessment_id"]))
+    assert saved is not None
+    assert saved.content_fingerprint == payload["input_fingerprint"]
+    assert saved.accepted_hypothesis == body["accepted_hypothesis"]
+    frozen_snapshot = saved.decision_snapshot
+
+    changed_hypothesis = client.post(
+        "/api/v1/creators/me/draft-assessments",
+        headers={"Idempotency-Key": "analysis-request-001"},
+        json={
+            **body,
+            "accepted_hypothesis": {
+                **body["accepted_hypothesis"],
+                "question": "A different accepted hypothesis?",
+            },
+        },
+    )
+    assert changed_hypothesis.status_code == 409
+
+    changed = client.post(
+        "/api/v1/creators/me/draft-assessments",
+        headers={"Idempotency-Key": "analysis-request-001"},
+        json={**body, "text": "Different draft"},
+    )
+    assert changed.status_code == 409
+    assert session.get(DraftAssessment, saved.id).decision_snapshot == frozen_snapshot
+
+
+def test_creator_baseline_endpoint_returns_exact_window_zero_values_and_scoped_history(
+    session: Session,
+) -> None:
+    creator, other_creator = _creator(session), _creator(session)
+    own_posts = _seed_analysis_history(session, creator.id)
+    foreign_post = _post(session, other_creator.id, published_at=NOW - timedelta(days=40))
+    session.add(
+        OutcomeObservationRecord(
+            id=uuid4(),
+            post_id=foreign_post.id,
+            creator_id=other_creator.id,
+            published_at=foreign_post.published_at,
+            metric_name="impressions",
+            metric_definition="public_impressions_v1",
+            metric_unit="impressions",
+            metric_value=Decimal("900000"),
+            state="observed",
+            window_kind="age_aligned",
+            window_key="age:24h",
+            observed_at=foreign_post.published_at + timedelta(hours=24),
+            idempotency_key="foreign-observation",
+            provenance={},
+        )
+    )
+    # Include a legitimate measured zero and an explicitly missing observation.
+    zero = own_posts[0]
+    row = session.scalar(
+        select(OutcomeObservationRecord).where(OutcomeObservationRecord.post_id == zero.id)
+    )
+    assert row is not None
+    row.metric_value = Decimal("0")
+    missing_post = own_posts[1]
+    session.add(
+        OutcomeObservationRecord(
+            id=uuid4(),
+            post_id=missing_post.id,
+            creator_id=creator.id,
+            published_at=missing_post.published_at,
+            metric_name="replies",
+            metric_definition="public_reply_count_v1",
+            metric_unit="replies",
+            metric_value=None,
+            state="missing",
+            window_kind="age_aligned",
+            window_key="age:24h",
+            observed_at=NOW - timedelta(minutes=1),
+            idempotency_key="missing-reply-count",
+            provenance={"reason": "not_returned"},
+        )
+    )
+    # An incompatible window observed after the cutoff must not affect a backtest.
+    future_post = own_posts[2]
+    session.add(
+        OutcomeObservationRecord(
+            id=uuid4(),
+            post_id=future_post.id,
+            creator_id=creator.id,
+            published_at=future_post.published_at,
+            metric_name="impressions",
+            metric_definition="public_impressions_v1",
+            metric_unit="impressions",
+            metric_value=Decimal("1234"),
+            state="observed",
+            window_kind="age_aligned",
+            window_key="age:6h",
+            observed_at=NOW + timedelta(seconds=1),
+            idempotency_key="future-incompatible-window",
+            provenance={},
+        )
+    )
+    session.flush()
+
+    client = _authorized_client(session, creator.id)
+    params = {
+        "metric": "impressions",
+        "definition": "public_impressions_v1",
+        "unit": "impressions",
+        "window_kind": "age_aligned",
+        "window_key": "age:24h",
+        "as_of": NOW.isoformat(),
+    }
+    response = client.get("/api/v1/creators/me/baseline", params=params)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["metric"] == {
+        "metric": "impressions",
+        "definition": "public_impressions_v1",
+        "unit": "impressions",
+        "window_kind": "age_aligned",
+        "window_key": "age:24h",
+    }
+    assert payload["eligible_post_count"] == 9
+    assert payload["statistics"]["minimum"] == 0.0
+    assert payload["statistics"]["maximum"] == 800.0
+    assert str(foreign_post.id) not in payload["supporting_post_ids"]
+
+    no_history = client.get(
+        "/api/v1/creators/me/baseline",
+        params={**params, "metric": "quotes", "definition": "public_quote_count_v1"},
+    )
+    assert no_history.status_code == 200
+    assert no_history.json()["evidence_strength"] == "Insufficient"
+    assert no_history.json()["statistics"] is None
+
+    unsupported_window = client.get(
+        "/api/v1/creators/me/baseline",
+        params={**params, "window_key": "age:6h"},
+    )
+    assert unsupported_window.status_code == 422
+    assert unsupported_window.json()["error"]["code"] == "unsupported_observation_window"
+
+    unsupported_definition = client.get(
+        "/api/v1/creators/me/baseline",
+        params={**params, "definition": "unrecorded_definition_v9"},
+    )
+    assert unsupported_definition.status_code == 422
+    assert unsupported_definition.json()["error"]["code"] == "unsupported_metric_definition"
+
+
+def test_assessment_reads_are_creator_scoped_and_no_history_abstains(session: Session) -> None:
+    creator_a, creator_b = _creator(session), _creator(session)
+    client_a = _authorized_client(session, creator_a.id)
+    response = client_a.post(
+        "/api/v1/creators/me/draft-assessments",
+        headers={"Idempotency-Key": "no-history-assessment"},
+        json={"text": "A synthetic draft with no history."},
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["decision_state"] == "insufficient_evidence"
+    assert payload["metrics"] == []
+    assert payload["suggested_hypothesis"] is None
+
+    client_b = _authorized_client(session, creator_b.id)
+    foreign = client_b.get(f"/api/v1/creators/me/draft-assessments/{payload['assessment_id']}")
+    assert foreign.status_code == 404
