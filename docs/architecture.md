@@ -63,8 +63,8 @@ X history read -> X adapter -> canonical post + creator state
                                    |
                                    v
                              descriptive Post Profile
-                           (content, topology, topic,
-                            intent, format, embedding)
+                           (structure, topology, topic,
+                            intent, format) + separate embedding
                                    |
 Draft -> draft Post Profile -> comparable post retrieval
                                    |
@@ -90,6 +90,15 @@ Draft -> draft Post Profile -> comparable post retrieval
 - **Comparable sets** must be reproducible and bounded by `features_as_of`.
 - **Future observations** cannot be used in a historical backtest.
 - **Model, feature, retrieval and baseline versions** must be recorded for reproducibility.
+
+### COD-350 Post Profile contract
+
+`apps/api/src/bipme/intelligence/post_profiles.py` extracts `post-profile-v1` from provider-neutral, timestamped input. Its frozen output is the typed descriptive contract for future COD-352 retrieval; embedding vectors remain in the separate COD-351 interface and observed outcomes remain separate records. COD-345 owns the eventual shared persistence representation and migrations.
+
+- `features_as_of` bounds both the content/format observation and creator-context snapshot. Future observations, naive timestamps, and unsupported feature versions are rejected. The profile stores input and creator-context observation times so consumers can assess provenance and staleness.
+- `None` means unknown; empty text and an empty media tuple mean known absence. Text length counts Unicode code points, word count counts Unicode word tokens after URLs are removed, and sentence count uses punctuation boundaries (`.`, `!`, `?`) after URL removal. These are lexical heuristics, not language understanding.
+- Hashtags are case-folded topic signals, with duplicates retained in the structural list and removed in the topic-signal list. A topic or intent label is included only when explicitly supplied by the creator. `question_marker` and `reply_invitation` describe visible wording, not the creator's true intent or likely performance.
+- Format uses known media metadata, topology and thread role; missing metadata stays unknown. The input and profile have no impression, engagement, outcome or future audience fields. A new extraction algorithm must receive a new supported version, and historical profiles must be regenerated before retrieval mixes versions.
 
 ## Baselines and evidence
 
