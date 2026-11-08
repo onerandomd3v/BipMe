@@ -278,6 +278,13 @@ def test_future_publication_observations_and_profile_versions_are_excluded() -> 
         candidate("future-embedding", embedding_observed_at=AS_OF + timedelta(seconds=1)),
         candidate("future-profile", candidate_profile=future_profile),
         candidate(
+            "naive-profile-time",
+            candidate_profile=replace(
+                profile(as_of=AS_OF - timedelta(days=1)),
+                features_as_of=AS_OF.replace(tzinfo=None),
+            ),
+        ),
+        candidate(
             "future-context",
             candidate_profile=replace(
                 profile(as_of=AS_OF - timedelta(days=1)),
@@ -296,6 +303,9 @@ def test_future_publication_observations_and_profile_versions_are_excluded() -> 
     assert "not_published_before_assessment_cutoff" in exclusions["future-publication"].reasons
     assert "embedding_observed_after_assessment_cutoff" in exclusions["future-embedding"].reasons
     assert "profile_features_after_assessment_cutoff" in exclusions["future-profile"].reasons
+    assert (
+        "profile_features_timestamp_not_timezone_aware" in exclusions["naive-profile-time"].reasons
+    )
     assert (
         "creator_context_observed_after_assessment_cutoff" in exclusions["future-context"].reasons
     )
@@ -446,6 +456,8 @@ def test_repeated_runs_return_identical_sets_and_exclusions() -> None:
 def test_draft_cannot_use_future_or_mismatched_profile_or_invalid_query_embedding() -> None:
     with pytest.raises(ValueError, match="after assessment cutoff"):
         assessment(draft_profile=profile(as_of=AS_OF + timedelta(seconds=1)))
+    with pytest.raises(ValueError, match="features_as_of must be timezone-aware"):
+        assessment(draft_profile=replace(profile(), features_as_of=AS_OF.replace(tzinfo=None)))
     with pytest.raises(ValueError, match="differs from assessment creator"):
         assessment(draft_profile=profile(creator="different"))
     with pytest.raises(ValueError, match="invalid draft embedding"):
@@ -459,3 +471,5 @@ def test_malformed_configurations_are_rejected() -> None:
         RankingWeights(semantic=-1)
     with pytest.raises(ValueError, match="result_limit must be at least"):
         RetrievalConfig(result_limit=1, minimum_comparables=2)
+    with pytest.raises(ValueError, match="candidate_limit must be at least"):
+        RetrievalConfig(candidate_limit=1, minimum_comparables=2)

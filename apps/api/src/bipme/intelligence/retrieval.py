@@ -106,6 +106,14 @@ class DraftAssessment:
             raise ValueError("assessment timestamps must be timezone-aware")
         if self.embedding_observed_at > self.as_of:
             raise ValueError("draft embedding was generated after assessment cutoff")
+        if not _aware(self.profile.features_as_of, "profile features_as_of"):
+            raise ValueError("draft profile features_as_of must be timezone-aware")
+        if not _aware(self.profile.input_observed_at, "profile input_observed_at"):
+            raise ValueError("draft profile input_observed_at must be timezone-aware")
+        if self.profile.creator_context_observed_at is not None and not _aware(
+            self.profile.creator_context_observed_at, "creator_context_observed_at"
+        ):
+            raise ValueError("draft creator context timestamp must be timezone-aware")
         if self.profile.features_as_of > self.as_of:
             raise ValueError("draft profile features are after assessment cutoff")
         if self.profile.input_observed_at > self.as_of:
@@ -157,6 +165,8 @@ class RetrievalConfig:
             raise ValueError("candidate, result and minimum comparable limits must be positive")
         if self.result_limit < self.minimum_comparables:
             raise ValueError("result_limit must be at least minimum_comparables")
+        if self.candidate_limit < self.minimum_comparables:
+            raise ValueError("candidate_limit must be at least minimum_comparables")
         if not math.isfinite(self.minimum_relevance) or not 0 <= self.minimum_relevance <= 1:
             raise ValueError("minimum_relevance must be in [0, 1]")
         if not self.algorithm_version.strip() or not self.config_version.strip():
@@ -447,14 +457,19 @@ def _eligibility_reasons(
             reasons.append("profile_creator_mismatch")
         if profile.version != assessment.profile.version:
             reasons.append("profile_version_mismatch")
-        if profile.features_as_of > assessment.as_of:
+        if not _aware(profile.features_as_of, "profile features_as_of"):
+            reasons.append("profile_features_timestamp_not_timezone_aware")
+        elif profile.features_as_of > assessment.as_of:
             reasons.append("profile_features_after_assessment_cutoff")
-        if profile.input_observed_at > assessment.as_of:
+        if not _aware(profile.input_observed_at, "profile input_observed_at"):
+            reasons.append("profile_input_timestamp_not_timezone_aware")
+        elif profile.input_observed_at > assessment.as_of:
             reasons.append("profile_input_observed_after_assessment_cutoff")
-        if profile.creator_context_observed_at is not None and (
-            profile.creator_context_observed_at > assessment.as_of
-        ):
-            reasons.append("creator_context_observed_after_assessment_cutoff")
+        if profile.creator_context_observed_at is not None:
+            if not _aware(profile.creator_context_observed_at, "creator_context_observed_at"):
+                reasons.append("creator_context_timestamp_not_timezone_aware")
+            elif profile.creator_context_observed_at > assessment.as_of:
+                reasons.append("creator_context_observed_after_assessment_cutoff")
         if (
             profile.topology is not None
             and assessment.profile.topology is not None
