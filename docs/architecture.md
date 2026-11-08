@@ -126,6 +126,43 @@ Draft -> draft Post Profile -> comparable post retrieval
 
 See [the original detailed scoring design](research/X_DISTRIBUTION_OUTLOOK_V1_DESIGN.md). Experimental default weights in that document are hypotheses, not validated facts.
 
+### COD-353 creator baseline contract
+
+`apps/api/src/bipme/intelligence/baselines.py` implements the pure, provider-neutral
+`creator-baseline-v1` calculation over timestamped `OutcomeObservation` values. A caller
+provides the metric, exact comparison window, assessment timestamp, optional target value,
+hierarchical segment path and non-outcome-derived weights. The record keeps `published_at`
+separate from the actual `observed_at`; both must be no later than the assessment time and
+the observation cannot predate publication. A metric/window pair is never mixed: mature
+cumulative totals and snapshots such as `age:1h` are separate distributions. A known missing
+measurement must be passed explicitly with a `None` value; the engine does not fabricate
+missing snapshots from cumulative history.
+
+Weighted empirical inverse-CDF P10/P25/P50/P75/P90, IQR, normalized dispersion, 3×IQR
+outlier counts, central-consistency share, weight concentration and Kish effective sample
+size are exposed. Percentile rank uses a weighted midrank. The outlier-adjusted median and
+its shift in IQR units show sensitivity to extreme observations. Hierarchical segments use
+the most specific prefix with effective N≥3; otherwise the baseline backs off to the
+broader prefix and reports the level and supporting post IDs. When a specific group has
+effective N≥3, each weighted quantile shrinks toward the immediately broader distribution
+with λ=N_eff/(N_eff+8). These calculations are deterministic and intentionally use only
+eligible historical inputs.
+
+Evidence labels are initial engineering heuristics, not calibrated probabilities: High
+requires effective N≥20, ≥70% of values within 3×IQR fences and no observation above 20% of
+total weight; Moderate requires effective N≥8, ≥60% within fences and no observation above
+35% of weight; Low is effective N≥3 when stronger criteria fail; below 3, the engine returns
+Insufficient and abstains from an interpretation. Outlier flags and consistency describe
+repeatability only; they do not establish causation. The thresholds need walk-forward
+evaluation before being treated as product confidence.
+
+The pure input/output dataclasses are an intelligence contract, not a shared database
+schema. COD-345 should map its canonical outcome records to these values and preserve the
+metric unit/definition, exact observation window, publication time, actual observation time,
+stable post ID, missing-window knowledge and caller-computed comparable weight/segments.
+COD-352 may provide eligible comparable IDs and relevance-derived weights; COD-354 can
+consume the versioned result and exclusion/evidence reasons without changing this engine.
+
 ## Embedding inference and portability
 
 - **V1 starting model:** `intfloat/multilingual-e5-small` (384 dimensions), run locally on a **CPU** first. This is the practical implementation default, **not a validated accuracy winner**. Confirm resource use and actual retrieval quality on the intended machine before declaring readiness.
