@@ -38,6 +38,8 @@ Do **not** hardcode old X prices or assume a discounted owned-read tier is gener
 - Use official X APIs only; no unsupported scraping to bypass limits.
 - Normalize external payloads into minimal canonical data structures; do not retain full raw responses by default.
 - Keep historical content, creator metrics and tokens separated according to their sensitivity.
+- The COD-345 connection table exposes only opaque encrypted-token byte columns and a key-version marker. ORM and database checks require a `BIPME-ENC` v1 envelope marker, so ordinary plaintext values are rejected; OAuth/integration code must still encrypt tokens before persistence, never log them, and clear encrypted token bytes on revocation. The marker is a format guard, not encryption. Encryption, key management and OAuth are not implemented by the schema migration itself.
+- Canonical posts do not store copied X response payloads or raw post text. Post Profiles are descriptive derived fields; embeddings are versioned derivatives and must be removed or regenerated when their source post is deleted or changed. API usage metadata must be allowlisted/sanitized and must not contain tokens, authorization headers or unnecessary content.
 - Use a locally run pretrained embedding model as the initial approach; verify model license and developer data-processing rights before adding third-party inference.
 - Do not train or fine-tune an ML model on X-derived data without confirming this is permitted by applicable X terms.
 - Retain data only for the justified experiment; decide retention and deletion periods before storing real creator data.
