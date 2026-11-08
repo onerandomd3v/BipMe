@@ -332,19 +332,21 @@ def _jaccard(left: set[str] | None, right: set[str] | None) -> float | None:
 
 
 def _topic_similarity(draft: PostProfile, candidate: PostProfile) -> float | None:
-    return _jaccard(_token_set(draft), _token_set(candidate))
+    left = _token_set(draft)
+    right = _token_set(candidate)
+    if not left or not right:
+        return None
+    return _jaccard(left, right)
 
 
 def _intent_similarity(draft: PostProfile, candidate: PostProfile) -> float | None:
     components: list[float] = []
     if draft.declared_intent is not None and candidate.declared_intent is not None:
         components.append(float(draft.declared_intent == candidate.declared_intent))
-    signal_similarity = _jaccard(
-        set(draft.intent_signals) if draft.intent_signals is not None else None,
-        set(candidate.intent_signals) if candidate.intent_signals is not None else None,
-    )
-    if signal_similarity is not None:
-        components.append(signal_similarity)
+    if draft.intent_signals and candidate.intent_signals:
+        signal_similarity = _jaccard(set(draft.intent_signals), set(candidate.intent_signals))
+        if signal_similarity is not None:
+            components.append(signal_similarity)
     return math.fsum(components) / len(components) if components else None
 
 
@@ -388,7 +390,7 @@ def _components(assessment: DraftAssessment, candidate: ComparableCandidate) -> 
     )
 
 
-def _relevance(components: RelevanceComponents, weights: RankingWeights) -> float:
+def _relevance(components: RelevanceComponents, weights: RankingWeights) -> float | None:
     pairs = (
         (components.semantic, weights.semantic),
         (components.topic, weights.topic),
@@ -399,7 +401,7 @@ def _relevance(components: RelevanceComponents, weights: RankingWeights) -> floa
     active = [(score, weight) for score, weight in pairs if score is not None and weight > 0]
     total_weight = math.fsum(weight for _, weight in active)
     if total_weight == 0:
-        raise ValueError("ranking config has no weight for available relevance components")
+        return None
     return math.fsum(score * weight for score, weight in active) / total_weight
 
 
@@ -542,6 +544,9 @@ def rank_comparable_candidates(
             continue
         component_values = _components(assessment, candidate)
         relevance = _relevance(component_values, config.weights)
+        if relevance is None:
+            reasons_by_id.setdefault(candidate.post_id, set()).add("no_active_relevance_components")
+            continue
         if relevance < config.minimum_relevance:
             reasons_by_id.setdefault(candidate.post_id, set()).add("below_minimum_relevance")
             continue

@@ -432,9 +432,18 @@ def test_sparse_history_and_novel_topic_return_explicit_abstention_states() -> N
     )
     assert sparse.state == "insufficient_evidence"
     assert sparse.coverage_limitations
+    plain = profile(text="Ordinary prose without intent markers.", topic=None, intent=None)
     novel = rank_comparable_candidates(
-        assessment(),
-        (candidate("unrelated", candidate_vector=(-1.0, 0.0, 0.0)),),
+        assessment(draft_profile=plain),
+        (
+            candidate(
+                "unrelated",
+                candidate_profile=profile(
+                    text="Different ordinary prose.", topic=None, intent=None
+                ),
+                candidate_vector=(-1.0, 0.0, 0.0),
+            ),
+        ),
         RetrievalConfig(minimum_comparables=1, minimum_relevance=0.8),
     )
     assert novel.state == "no_match"
@@ -473,3 +482,40 @@ def test_malformed_configurations_are_rejected() -> None:
         RetrievalConfig(result_limit=1, minimum_comparables=2)
     with pytest.raises(ValueError, match="candidate_limit must be at least"):
         RetrievalConfig(candidate_limit=1, minimum_comparables=2)
+
+
+def test_empty_topic_and_intent_features_are_unavailable_not_perfect_matches() -> None:
+    plain = profile(text="Ordinary prose.", topic=None, intent=None)
+    result = rank_comparable_candidates(
+        assessment(draft_profile=plain),
+        (
+            candidate(
+                "opposite",
+                candidate_profile=profile(text="Other ordinary prose.", topic=None, intent=None),
+                candidate_vector=(-1.0, 0.0, 0.0),
+            ),
+        ),
+        RetrievalConfig(minimum_comparables=1, minimum_relevance=0.55),
+    )
+    assert not result.matches
+    assert "below_minimum_relevance" in by_id(result)["opposite"].reasons
+
+
+def test_candidate_without_active_weighted_components_is_excluded_without_aborting_batch() -> None:
+    draft = profile(topic="python")
+    unknown = candidate(
+        "unknown-components",
+        candidate_profile=profile(text=None, topic=None, intent=None, media_types=None),
+    )
+    scoreable = candidate("scoreable", candidate_profile=profile(topic="python"))
+    result = rank_comparable_candidates(
+        assessment(draft_profile=draft),
+        (unknown, scoreable),
+        RetrievalConfig(
+            minimum_comparables=1,
+            minimum_relevance=0.0,
+            weights=RankingWeights(semantic=0, topic=1, intent=0, format=0, structure=0),
+        ),
+    )
+    assert [item.post_id for item in result.matches] == ["scoreable"]
+    assert "no_active_relevance_components" in by_id(result)["unknown-components"].reasons
