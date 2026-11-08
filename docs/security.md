@@ -44,6 +44,14 @@ Implement and test safeguards **before** a live import:
 
 Do **not** hardcode old X prices or assume a discounted owned-read tier is generally available. The authenticated developer console and live official documentation are authoritative at integration time.
 
+## Generative-model data processing boundary (planned)
+
+- Treat evidence supplied to any LLM as *untrusted* content: reject prompt injection in posts, delimit data, constrain structured outputs and validate every cited post ID and numeric claim.
+- Confirm both **X-derived content inference rights** and separately **third-party transfer/subprocessor rights** before sending any real creator/niche post text to an external LLM. Model training policies, retention, geographic processing and provider DPA require verification; consent alone may not override platform terms.
+- Prefer minimal derived, approved evidence bundles rather than raw archives, tokens or entire corpora; never put post history, credentials, PII or prompts containing private content in logs/CI fixtures.
+- Define bounded token, latency and monetary budgets; redact errors, disable unsupported training/data retention where contractually possible, and fail safely with a deterministic template when access or quality is insufficient.
+- Keep audit trails with evidence IDs, prompt/model/schema versions and policy decisions so explanations can be reproduced and deleted when source rights change.
+
 ## Data handling
 
 - Use official X APIs only; no unsupported scraping to bypass limits.
