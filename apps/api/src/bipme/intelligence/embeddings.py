@@ -98,6 +98,8 @@ class E5TextEmbedder:
     def encode(self, texts: Sequence[str], *, role: EmbeddingRole) -> list[list[float]]:
         if role not in ("query", "passage"):
             raise ValueError("role must be 'query' or 'passage'")
+        if isinstance(texts, str):
+            raise ValueError("texts must be a sequence of strings, not a single string")
         if not texts:
             return []
         if any(not isinstance(text, str) or not text.strip() for text in texts):

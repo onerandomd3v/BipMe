@@ -68,6 +68,12 @@ def test_blank_inputs_are_rejected() -> None:
         encoder.encode([" "], role="query")
 
 
+def test_bare_string_is_rejected_before_model_load() -> None:
+    encoder = E5TextEmbedder(identity(), model_loader=lambda *_: pytest.fail("unexpected load"))
+    with pytest.raises(ValueError, match="single string"):
+        encoder.encode("example", role="query")
+
+
 def test_revision_required_and_index_changes_with_preprocessing() -> None:
     with pytest.raises(ValueError, match="immutable"):
         EmbeddingIdentity("intfloat/multilingual-e5-small", "main", 384, "e5-v1")
