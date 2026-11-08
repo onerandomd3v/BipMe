@@ -751,7 +751,7 @@ def test_authorized_analysis_is_idempotent_immutable_and_excludes_future_outcome
 
     client = _authorized_client(session, creator.id)
     body = {
-        "text": "A synthetic creator draft asking a question?",
+        "text": "A synthetic creator draft\nasking a question?",
         "topology": "original",
         "media_types": [],
         "metric_preferences": [
@@ -781,7 +781,7 @@ def test_authorized_analysis_is_idempotent_immutable_and_excludes_future_outcome
     equivalent_retry = client.post(
         "/api/v1/creators/me/draft-assessments",
         headers={"Idempotency-Key": "analysis-request-001"},
-        json={**body, "text": "A synthetic creator draft asking a question?\r\n"},
+        json={**body, "text": "A synthetic creator draft\r\nasking a question?"},
     )
 
     assert first.status_code == 201

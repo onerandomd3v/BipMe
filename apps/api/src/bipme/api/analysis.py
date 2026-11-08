@@ -6,6 +6,7 @@ import hashlib
 import json
 import unicodedata
 from collections import Counter
+from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
@@ -151,7 +152,7 @@ def _baseline_response(
         repeatability_ratio=stats.consistency_ratio if stats else None,
         outlier_count=stats.outlier_count if stats else None,
         upper_outlier_count=stats.upper_outlier_count if stats else None,
-        statistics=BaselineStatisticsResponse.model_validate(stats) if stats else None,
+        statistics=BaselineStatisticsResponse(**asdict(stats)) if stats else None,
         exclusions=dict(sorted(exclusions.items())),
         limitations=baseline.reasons,
     )
