@@ -53,7 +53,7 @@ BipMe uses embeddings to find relevant material, statistical intelligence to eva
 
 Use deterministic report assembly when a model is unavailable, unaffordable or not authorized to process a given source. The output must visibly distinguish **observed evidence**, **inference**, **suggested experiment** and **unknowns**. Personal and X niche evidence stay separately labeled; evidence-backed recommendations must remain useful without a generative model. This is planned behavior, **not a deployed feature**.
 
-The model/provider is undecided. Its interface should be provider-agnostic and bounded by evidence provenance, processing permissions and usage budgets. A dedicated LLM report-synthesis implementation ticket is queued once Linear issue capacity permits.
+V1 selects GroqCloud serving `openai/gpt-oss-120b`, while the interface remains model-agnostic/provider-agnostic and bounded by evidence provenance, processing permissions and usage budgets. [COD-380](https://linear.app/codeddevs/issue/COD-380) is the existing implementation ticket. No additional generative model or benchmark is required to ship V1.
 
 ## Creator value and learning loop
 
