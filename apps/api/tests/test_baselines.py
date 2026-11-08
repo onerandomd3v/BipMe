@@ -156,6 +156,11 @@ def test_weighted_quantiles_rank_and_effective_sample_are_deterministic() -> Non
     assert weighted_quantile([10, 20, 30], [8, 1, 1], 0.75) == 10
     assert effective_sample_size([1, 1, 1, 1]) == 4
     assert effective_sample_size([9, 1]) == pytest.approx(100 / 82)
+    boundary_values = [10.0] * 10 + [1000.0] * 10
+    quantiles = (0.1, 0.25, 0.5, 0.75, 0.9)
+    unit_quantiles = [weighted_quantile(boundary_values, [1.0] * 20, q) for q in quantiles]
+    scaled_quantiles = [weighted_quantile(boundary_values, [0.1] * 20, q) for q in quantiles]
+    assert scaled_quantiles == unit_quantiles
     result = build_creator_baseline(
         [obs("a", 1), obs("b", 2), obs("c", 3)], request(target_value=2)
     )

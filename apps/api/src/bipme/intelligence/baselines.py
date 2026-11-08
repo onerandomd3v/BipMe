@@ -136,11 +136,12 @@ def weighted_quantile(values: list[float], weights: list[float], q: float) -> fl
     if any(not math.isfinite(w) or w <= 0 for w in weights):
         raise ValueError("weights must be finite and positive")
     pairs = sorted(zip(values, weights, strict=True), key=lambda pair: pair[0])
-    threshold = q * sum(weight for _, weight in pairs)
-    cumulative = 0.0
+    threshold = q * math.fsum(weight for _, weight in pairs)
+    cumulative_weights: list[float] = []
     for value, weight in pairs:
-        cumulative += weight
-        if cumulative >= threshold:
+        cumulative_weights.append(weight)
+        cumulative = math.fsum(cumulative_weights)
+        if _at_least(cumulative, threshold):
             return value
     return pairs[-1][0]
 
