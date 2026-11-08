@@ -136,12 +136,28 @@ def weighted_quantile(values: list[float], weights: list[float], q: float) -> fl
     if any(not math.isfinite(w) or w <= 0 for w in weights):
         raise ValueError("weights must be finite and positive")
     pairs = sorted(zip(values, weights, strict=True), key=lambda pair: pair[0])
-    threshold = q * math.fsum(weight for _, weight in pairs)
-    cumulative_weights: list[float] = []
-    for value, weight in pairs:
-        cumulative_weights.append(weight)
-        cumulative = math.fsum(cumulative_weights)
-        if _at_least(cumulative, threshold):
+    if q == 0:
+        return pairs[0][0]
+    if q == 1:
+        return pairs[-1][0]
+
+    # Normalize by the largest weight so uniform rescaling, including tiny positive
+    # weights, does not collapse the absolute tolerance or cumulative mass.
+    weight_scale = max(weight for _, weight in pairs)
+    scaled_weights = [weight / weight_scale for _, weight in pairs]
+    total = math.fsum(scaled_weights)
+    threshold = q * total
+    cumulative = 0.0
+    compensation = 0.0
+    boundary_tolerance = 2 * math.ulp(total)
+    for (value, _), weight in zip(pairs, scaled_weights, strict=True):
+        adjusted_weight = weight - compensation
+        next_cumulative = cumulative + adjusted_weight
+        compensation = (next_cumulative - cumulative) - adjusted_weight
+        cumulative = next_cumulative
+        if cumulative >= threshold or math.isclose(
+            cumulative, threshold, rel_tol=1e-14, abs_tol=boundary_tolerance
+        ):
             return value
     return pairs[-1][0]
 

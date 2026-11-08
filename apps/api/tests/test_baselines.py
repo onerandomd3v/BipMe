@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from bipme.intelligence import baselines
 from bipme.intelligence.baselines import (
     BASELINE_VERSION,
     BaselineRequest,
@@ -161,11 +162,33 @@ def test_weighted_quantiles_rank_and_effective_sample_are_deterministic() -> Non
     unit_quantiles = [weighted_quantile(boundary_values, [1.0] * 20, q) for q in quantiles]
     scaled_quantiles = [weighted_quantile(boundary_values, [0.1] * 20, q) for q in quantiles]
     assert scaled_quantiles == unit_quantiles
+    tiny_weights = [1e-14] * 4
+    assert [weighted_quantile([10, 20, 30, 40], tiny_weights, q) for q in quantiles] == [
+        weighted_quantile([10, 20, 30, 40], [1.0] * 4, q) for q in quantiles
+    ]
+    assert weighted_quantile([10, 20, 30, 40], tiny_weights, 1) == 40
     result = build_creator_baseline(
         [obs("a", 1), obs("b", 2), obs("c", 3)], request(target_value=2)
     )
     assert result.statistics is not None
     assert result.statistics.target_percentile_rank == 50
+
+
+def test_large_quantile_uses_one_stable_total_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+    original_fsum = baselines.math.fsum
+
+    def counted_fsum(values: object) -> float:
+        nonlocal calls
+        calls += 1
+        return original_fsum(values)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(baselines.math, "fsum", counted_fsum)
+    size = 20_000
+    values = [float(index) for index in range(size)]
+    weights = [0.1] * size
+    assert weighted_quantile(values, weights, 0.5) == float(size // 2 - 1)
+    assert calls == 1
 
 
 def test_high_moderate_low_and_insufficient_thresholds_are_fixed() -> None:
