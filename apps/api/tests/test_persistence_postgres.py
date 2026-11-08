@@ -212,8 +212,10 @@ def _embedding(
 def test_migration_survives_clean_upgrade_downgrade_and_repeat_upgrade(
     migrated_postgres: tuple[Engine, str],
 ) -> None:
-    engine, _ = migrated_postgres
+    engine, schema = migrated_postgres
     with engine.connect() as connection:
+        connection.execute(text(f'SET search_path TO "{schema}", public'))
+        connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
             "0002_canonical_persistence"
         )

@@ -32,7 +32,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from bipme.persistence.base import Base, EncryptedTokenEnvelope, UTCDateTime
 
 JsonObject = dict[str, Any]
-JSON_DOCUMENT = JSON().with_variant(JSONB, "postgresql")
+JSON_DOCUMENT = JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
 
 
 class TimestampMixin:
