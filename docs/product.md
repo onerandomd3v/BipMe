@@ -4,11 +4,25 @@
 
 ## Product definition
 
-BipMe is a **creator distribution-intelligence platform** that helps creators make better-informed content decisions using insights from their historical performance, so they can understand what works, discover opportunities worth testing, and improve their approach to reaching their audience.
+BipMe is an **attention-informed creator distribution-intelligence platform** that helps creators make better-informed content decisions using their own historical evidence and, where authorized and useful, clearly separated niche comparisons. It helps creators identify repeatable approaches associated with goal-relevant audience attention, understand limitations, choose experiments and learn from observed distribution outcomes.
 
-**Distribution is the goal; better content decisions are the method.** BipMe uses eligible historical posts and observed metrics as evidence, not as a guarantee of future reach. Comparable-post analysis and Distribution Outlook support creator decisions rather than promise to predict the next viral post.
+**Distribution is the goal; better content decisions are the method.** The product considers whether content earns the *kind of attention the creator wants*, rather than optimizing raw likes or a fabricated virality score. BipMe uses eligible historical posts and observed metrics as evidence, not as a guarantee of future reach. Comparable-post analysis and Distribution Outlook support creator decisions rather than promise to predict the next viral post.
 
 The product is **not** an X algorithm cracker, a universal content-quality score, a viral guarantee, an automated publisher, or a generic AI writing assistant.
+
+## Attention-informed, archive-first direction (approved refinement; validation pending)
+
+BipMe's first question is **what content approaches appear to earn meaningful attention for this creator's goals and what is worth testing next?** We are not reverse-engineering a fixed X distribution gate. Early engagement may be associated with later exposure, but correlation does not show that engagement caused X to distribute a post.
+
+**Creator goals:** Allow the creator to declare a niche, intended audience, priorities such as conversation, qualified interest or reach, and preferred style. These are self-declared preferences, not verified audience demographics.
+
+**Two evidence pools:** (1) Personal posts and outcomes from the creator's own authorized history; (2) permissioned niche comparisons only after data-use rights and measurement quality are verified. Keep provenance, creator identity, metric definition, observation time, missingness and source-specific limitations. Do not silently combine personal and cross-creator distributions. Sample successful, typical and weak content rather than collecting only viral winners; otherwise survivorship bias prevents credible comparisons.
+
+**Archive-first onboarding:** Prioritize feasibility of a recent creator-exported X archive as an alternative to paid API history reads. The account owner should supply only necessary post-history files. Verify actual export fields, archive format, parsing safety, platform processing terms, completeness and metric coverage before implementation. Archive snapshots cannot establish original impression trajectories, first-hour engagement or follower/non-follower reach without actual matching observations. Creator-owned archive ingestion is not permission for arbitrary AI training or cross-creator redistribution. Archive-only creators should eventually access BipMe through a secure private app session **without mandatory X OAuth**; an archive upload must never bypass authentication.
+
+**Optional X connection:** X OAuth and API reads remain available for explicitly authorized refresh and time-stamped post-publication monitoring when approved, with enforceable per-operation and total cost caps. Monitoring is not required for archive-only descriptive analysis, and source-specific missing data must lead to explicit abstention rather than fabricated forecasts.
+
+**V1 gates:** COD-369 validates archive structure/rights/metrics; COD-370 implements a safe post-only import if viable; COD-371 tests goal-aligned attention descriptors against baselines; COD-372 pilots carefully permissioned niche comparisons only after policy approval. COD-344 remains the X API/processing policy and cost gate. Treat all purported improvement in creator decisions or reach as hypotheses until evaluated on real permitted data.
 
 ## Creator value and learning loop
 
@@ -26,17 +40,17 @@ These are intended **product benefits**, not proven improvements in reach or evi
 
 ## Initial scope
 
-- One authorized X account, initially the maintainer's own account.
-- Read-focused X integration, with minimal authorized permissions.
+- One private, verified creator identity to start, initially the maintainer; X OAuth is optional for archive-only users and required for authorized X API access.
+- Creator-provided post archive where verified/allowed, plus optional read-focused X integration with minimal scopes and spend caps.
 - Real historical post data and creator-owned metrics **only when available and permitted**.
 - A private experimental workflow; no public signup, payment system, multi-tenancy or scalability targets yet.
 
 ## Core creator journey (planned)
 
-1. **Sign in and connect X.** Use OAuth 2.0 Authorization Code Flow with PKCE. Permit the configured X account ID only, verified on the server.
-2. **Build a baseline.** Import a cost-bounded portion of the creator's history and capture creator state; normalize to canonical posts and descriptive profiles.
+1. **Secure private access and define goals.** Verify a BipMe creator session, record the creator's niche, intended audience and desired outcomes. An X OAuth 2.0 PKCE connection is optional for archive analysis, and required only for authorized X API functions.
+2. **Build a baseline.** After archive format/rights validation, import a bounded post-only export or use a cost-bounded authorized X history read. Normalize canonical posts, data provenance, metric coverage and descriptive profiles.
 3. **Analyze a draft.** Extract semantic, structural, topical, format and intent features without looking at the draft's future outcome.
-4. **Find comparable posts.** Filter and rank prior posts from the same creator; preserve evidence and exclusions.
+4. **Find comparable posts.** Filter and rank earlier personal posts first, preserving evidence and exclusions. If a permissioned niche dataset later passes the viability gate, present those comparisons separately with provenance and sample-bias caveats.
 5. **Make a decision, not just a forecast.** Show matched evidence, recurring pattern vs possible outlier, evidence strength and **one or two specific observations with an optional testable action**. Provide a creator-relative Distribution Outlook **only when sufficiently supported**; otherwise explain why no reliable range is available.
 6. **Record a lightweight experiment.** The creator may choose one question or hypothesis to test for this draft (for example, whether a storytelling format produces stronger conversation engagement). This is an optional field on the existing draft/outlook record, **not** a separate experiment-management system or A/B test.
 7. **Publish manually on X.** Let the creator attach the published post URL/ID, preserving the original versioned assessment/hypothesis and linking the assessed draft version (content fingerprint) to what was published. If the published content differs materially, retain the original advice for learning but **do not score its range as a valid forecast** without a new assessment of the published version; no automatic posting permission.
@@ -77,11 +91,11 @@ Each phase is a deliverable, not a promise that its features are already running
 
 For one authorized account, a creator should be able to: inspect at least one eligible historical pattern and see its supporting posts/sample limitations; evaluate a draft; understand a concrete evidence-backed next action or a clear **insufficient evidence** state; optionally record a lightweight experiment; link the manual publication; and compare its actual result with the pre-publication assessment. No assertion of improved reach or willingness to pay is made. Compare this experience with the creator's normal native-analytics workflow after V1 ships; formal pre-launch interviews are not a launch blocker.
 
-Historical data may later come from a creator-exported X archive **if** import format, provenance, permissions and metric coverage can be verified; archive import is an optional ingestion alternative, **not** an assumed V1 dependency or a policy bypass.
+Creator-exported X archive import is now a **priority feasibility gate**, not a pre-validated integration or a policy bypass. Do not turn it into a mandatory V1 capability if real format, rights, security or metric constraints fail COD-369. Optional authorized API ingestion remains a fallback.
 
 ## Deferred
 
-Multi-platform support, follower graphs, auto-posting or scheduling, proprietary trained models, multi-user launch, monetization, complex deployments, a standalone experiment dashboard, generative rewriting, competitor crawling and a promised viral-score predictor.
+Unapproved cross-creator content pooling, mass public-post crawling/scraping, proprietary model training, follower graphs, automatic post rewriting/scheduling/publishing, platform expansion, multi-user launch, monetization, complex deployment, standalone experiment dashboards, and promised virality scores. Permissioned niche evidence (COD-372) is initially a research pilot, not a guaranteed V1 production feature.
 
 ## Source details
 
