@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections import Counter
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import Literal
@@ -52,6 +53,7 @@ class OutlookConfig:
     minimum_experiment_group_effective_sample: float = 3.0
 
     def __post_init__(self) -> None:
+        """Validate the decision thresholds that are included in the config version."""
         if not math.isfinite(self.minimum_metric_coverage) or not (
             0 < self.minimum_metric_coverage <= 1
         ):
@@ -64,10 +66,12 @@ class OutlookConfig:
 
     @property
     def algorithm_version(self) -> str:
+        """Return the version identifying this decision algorithm."""
         return OUTLOOK_ALGORITHM_VERSION
 
     @property
     def config_version(self) -> str:
+        """Return a stable identifier containing every configurable threshold."""
         return (
             f"{OUTLOOK_CONFIG_VERSION}:coverage={self.minimum_metric_coverage!r}"
             f":experiment_group_n_eff={self.minimum_experiment_group_effective_sample!r}"
@@ -91,6 +95,7 @@ class OutlookRequest:
     config: OutlookConfig = OutlookConfig()
 
     def __post_init__(self) -> None:
+        """Reject mismatched identities, fingerprints and future profile evidence."""
         if not _FINGERPRINT.fullmatch(self.content_fingerprint):
             raise ValueError("content_fingerprint must be a validated SHA-256 fingerprint")
         if self.comparable_set.assessment_id != self.assessment.assessment_id:
@@ -147,6 +152,8 @@ class OutlookRequest:
 
 @dataclass(frozen=True)
 class ComparableEvidence:
+    """One ranked comparable and its original retrieval evidence."""
+
     post_id: str
     relevance: float
     components: RelevanceComponents
@@ -168,6 +175,8 @@ class OutlookRange:
 
 @dataclass(frozen=True)
 class MetricEvidence:
+    """Exact-window outcome coverage, baseline statistics and optional range."""
+
     metric: str
     metric_definition: str
     window: str
@@ -184,6 +193,8 @@ class MetricEvidence:
 
 @dataclass(frozen=True)
 class DecisionObservation:
+    """A deterministic historical observation with traceable support and limits."""
+
     kind: ObservationKind
     explanation: str
     supporting_post_ids: tuple[str, ...]
@@ -197,6 +208,8 @@ class DecisionObservation:
 
 @dataclass(frozen=True)
 class TestableSuggestion:
+    """One optional, evidence-linked experiment hypothesis for the assessed draft."""
+
     kind: SuggestionKind
     label: str
     variable: str
@@ -212,6 +225,8 @@ class TestableSuggestion:
 
 @dataclass(frozen=True)
 class DistributionOutlook:
+    """Immutable, JSON-serializable evidence and decision result for one assessment."""
+
     assessment_id: str
     content_fingerprint: str
     decision_algorithm_version: str
@@ -242,6 +257,7 @@ class DistributionOutlook:
         """Serialize the immutable result as stable JSON without raw provider payloads."""
 
         def encode(value: object) -> object:
+            """Serialize timezone-aware timestamps using their ISO representation."""
             if isinstance(value, datetime):
                 return value.isoformat()
             raise TypeError(f"unsupported JSON value: {type(value).__name__}")
@@ -251,18 +267,22 @@ class DistributionOutlook:
 
 @dataclass(frozen=True)
 class _MetricGroup:
+    """Internal result of baseline calculation for one metric definition and window."""
+
     metric: str
     definition: str
     window: str
     records: tuple[OutcomeObservation, ...]
     baseline: CreatorBaseline
     coverage: float
+    eligible_records: tuple[OutcomeObservation, ...]
     zero_weight_count: int
     limitations: tuple[str, ...]
     outlook: OutlookRange | None
 
 
 def _profile_value(profile: PostProfile, variable: str) -> str | None:
+    """Return a known supported descriptive feature, or None when unavailable."""
     if variable == "declared_topic":
         return profile.declared_topic
     if variable == "declared_intent":
@@ -277,6 +297,7 @@ def _profile_value(profile: PostProfile, variable: str) -> str | None:
 
 
 def _is_supported(baseline: CreatorBaseline, coverage: float, request: OutlookRequest) -> bool:
+    """Apply the version, evidence, coverage and retrieval gates for numeric ranges."""
     return (
         request.comparable_set.algorithm_version == RETRIEVAL_ALGORITHM_VERSION
         and request.comparable_set.config_version == RANKING_CONFIG_VERSION
@@ -291,6 +312,7 @@ def _is_supported(baseline: CreatorBaseline, coverage: float, request: OutlookRe
 
 
 def _metric_groups(request: OutlookRequest) -> tuple[_MetricGroup, ...]:
+    """Calculate independent exact-metric/window baselines using relevance-only weights."""
     relevance = {item.post_id: item.relevance for item in request.comparable_set.matches}
     comparable_ids = set(relevance)
     grouped: dict[tuple[str, str, str], list[OutcomeObservation]] = {}
@@ -322,6 +344,14 @@ def _metric_groups(request: OutlookRequest) -> tuple[_MetricGroup, ...]:
                 window=window,
                 as_of=request.assessment.as_of,
             ),
+        )
+        eligible_records = _eligible_baseline_records(
+            records,
+            baseline,
+            creator_key=request.assessment.creator_key,
+            metric=metric,
+            definition=definition,
+            window=window,
         )
         coverage = (
             min(1.0, baseline.eligible_post_count / len(comparable_ids)) if comparable_ids else 0.0
@@ -381,6 +411,7 @@ def _metric_groups(request: OutlookRequest) -> tuple[_MetricGroup, ...]:
                 records,
                 baseline,
                 coverage,
+                eligible_records,
                 zero_weight_count,
                 tuple(dict.fromkeys(limitations)),
                 outlook,
@@ -389,15 +420,51 @@ def _metric_groups(request: OutlookRequest) -> tuple[_MetricGroup, ...]:
     return tuple(results)
 
 
+def _eligible_baseline_records(
+    records: tuple[OutcomeObservation, ...],
+    baseline: CreatorBaseline,
+    *,
+    creator_key: str,
+    metric: str,
+    definition: str,
+    window: str,
+) -> tuple[OutcomeObservation, ...]:
+    """Reapply the baseline's exact eligibility rules to retain its actual input records."""
+    supported_ids = set(baseline.supporting_post_ids)
+    timestamp_eligible = [
+        item
+        for item in records
+        if item.creator_key == creator_key
+        and item.metric == metric
+        and item.metric_definition == definition
+        and item.window == window
+        and item.published_at <= baseline.as_of
+        and item.published_at <= item.observed_at <= baseline.as_of
+    ]
+    duplicate_counts = Counter(
+        (item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)
+        for item in timestamp_eligible
+    )
+    return tuple(
+        item
+        for item in timestamp_eligible
+        if item.post_id in supported_ids
+        and duplicate_counts[
+            (item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)
+        ]
+        == 1
+        and item.value is not None
+        and item.value >= 0
+    )
+
+
 def _raw_outlier_ids(group: _MetricGroup) -> tuple[str, ...]:
+    """Identify outlier IDs using only the records admitted to the baseline."""
     baseline = group.baseline
     stats = baseline.statistics
     if stats is None or not baseline.supporting_post_ids:
         return ()
-    eligible = set(baseline.supporting_post_ids)
-    # Baseline support IDs already reflect creator, metric, window, cutoff, missing-value
-    # and duplicate filtering. Use only those exact eligible records for the same fences.
-    items = [item for item in group.records if item.post_id in eligible and item.value is not None]
+    items = group.eligible_records
     if not items:
         return ()
     p25 = weighted_quantile(
@@ -422,6 +489,7 @@ def _raw_outlier_ids(group: _MetricGroup) -> tuple[str, ...]:
 
 
 def _observations(groups: tuple[_MetricGroup, ...]) -> tuple[DecisionObservation, ...]:
+    """Build up to two repeatability, outlier or evidence-limitation observations."""
     candidates = [
         group
         for group in groups
@@ -531,6 +599,7 @@ def _observations(groups: tuple[_MetricGroup, ...]) -> tuple[DecisionObservation
 def _suggestion(
     request: OutlookRequest, groups: tuple[_MetricGroup, ...]
 ) -> TestableSuggestion | None:
+    """Suggest at most one draft-feature experiment when its supported group led."""
     if (
         request.comparable_set.algorithm_version != RETRIEVAL_ALGORITHM_VERSION
         or request.comparable_set.config_version != RANKING_CONFIG_VERSION
@@ -555,9 +624,7 @@ def _suggestion(
             continue
         supported_ids = set(baseline.supporting_post_ids)
         observed = {
-            item.post_id: item
-            for item in group.records
-            if item.post_id in supported_ids and item.value is not None
+            item.post_id: item for item in group.eligible_records if item.post_id in supported_ids
         }
         for variable in variables:
             proposed_value = _profile_value(draft_profile, variable)
@@ -584,12 +651,13 @@ def _suggestion(
                 continue
             match_weights = [relevance[item.post_id] for item in matching_records]
             comparison_weights = [relevance[item.post_id] for item in comparison_records]
-            if (
-                sum(match_weights) ** 2 / sum(weight * weight for weight in match_weights)
-                < request.config.minimum_experiment_group_effective_sample
-                or sum(comparison_weights) ** 2
-                / sum(weight * weight for weight in comparison_weights)
-                < request.config.minimum_experiment_group_effective_sample
+            if not _at_least(
+                sum(match_weights) ** 2 / sum(weight * weight for weight in match_weights),
+                request.config.minimum_experiment_group_effective_sample,
+            ) or not _at_least(
+                sum(comparison_weights) ** 2
+                / sum(weight * weight for weight in comparison_weights),
+                request.config.minimum_experiment_group_effective_sample,
             ):
                 continue
             match_median = weighted_quantile(
@@ -602,7 +670,9 @@ def _suggestion(
                 comparison_weights,
                 0.5,
             )
-            if math.isclose(match_median, comparison_median, rel_tol=1e-12, abs_tol=1e-12):
+            if match_median <= comparison_median or math.isclose(
+                match_median, comparison_median, rel_tol=1e-12, abs_tol=1e-12
+            ):
                 continue
             return TestableSuggestion(
                 kind="experiment_hypothesis",
@@ -623,6 +693,11 @@ def _suggestion(
                 window=group.window,
             )
     return None
+
+
+def _at_least(value: float, threshold: float) -> bool:
+    """Make effective-sample threshold equality stable under normal float rounding."""
+    return value >= threshold or math.isclose(value, threshold, rel_tol=1e-12, abs_tol=1e-12)
 
 
 def build_distribution_outlook(request: OutlookRequest) -> DistributionOutlook:

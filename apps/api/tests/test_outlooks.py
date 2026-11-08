@@ -175,7 +175,8 @@ def test_repeatability_observation_explains_supported_history_without_causal_cla
 
 def test_repeated_topic_association_can_offer_one_measurable_optional_experiment() -> None:
     topics = tuple("python" if index < 5 else "finance" for index in range(10))
-    result = build_distribution_outlook(request(topics=topics))
+    values = (60.0, 70.0, 80.0, 90.0, 100.0, 10.0, 20.0, 30.0, 40.0, 50.0)
+    result = build_distribution_outlook(request(values, topics=topics))
 
     assert result.suggestion is not None
     assert result.suggestion.kind == "experiment_hypothesis"
@@ -203,6 +204,35 @@ def test_suggestion_is_withheld_when_either_association_group_is_sparse() -> Non
     assert result.suggestion is None
 
 
+def test_suggestion_is_withheld_when_assessed_feature_group_has_lower_median() -> None:
+    topics = tuple("python" if index < 5 else "finance" for index in range(10))
+    result = build_distribution_outlook(request(topics=topics))
+
+    assert result.metrics[0].outlook is not None
+    assert result.suggestion is None
+
+
+def test_effective_sample_threshold_tolerates_uniform_weight_rounding() -> None:
+    topics = tuple("python" if index < 3 else "finance" for index in range(10))
+    values = (80.0, 90.0, 100.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0)
+    base = request(values, topics=topics)
+    uniformly_weighted = tuple(
+        replace(match, relevance=0.7) for match in base.comparable_set.matches
+    )
+    result = build_distribution_outlook(
+        OutlookRequest(
+            assessment=base.assessment,
+            content_fingerprint=base.content_fingerprint,
+            comparable_set=replace(base.comparable_set, matches=uniformly_weighted),
+            outcomes=base.outcomes,
+            comparable_profiles=base.comparable_profiles,
+        )
+    )
+
+    assert result.suggestion is not None
+    assert result.suggestion.supporting_post_ids == ("post-00", "post-01", "post-02")
+
+
 def test_single_viral_outlier_is_identified_and_does_not_move_robust_range() -> None:
     values = (10.0,) * 9 + (1_000_000.0,)
     result = build_distribution_outlook(request(values))
@@ -215,6 +245,30 @@ def test_single_viral_outlier_is_identified_and_does_not_move_robust_range() -> 
     assert outlier.evidence_statistics is not None
     assert outlier.evidence_statistics.outlier_count == 1
     assert any("outlier" in item.casefold() for item in outlier.limitations)
+
+
+def test_future_duplicate_does_not_rewrite_suggestion_or_outlier_evidence() -> None:
+    topics = tuple("python" if index < 5 else "finance" for index in range(10))
+    values = (60.0, 70.0, 80.0, 90.0, 100.0, 10.0, 20.0, 30.0, 40.0, 50.0)
+    base = request(values, topics=topics)
+    future = observation(
+        "post-00",
+        1_000_000.0,
+        observed_at=AS_OF + timedelta(minutes=1),
+    )
+    extended = OutlookRequest(
+        assessment=base.assessment,
+        content_fingerprint=base.content_fingerprint,
+        comparable_set=base.comparable_set,
+        outcomes=base.outcomes + (future,),
+        comparable_profiles=base.comparable_profiles,
+    )
+
+    expected = build_distribution_outlook(base)
+    actual = build_distribution_outlook(extended)
+    assert expected.suggestion is not None
+    assert actual.suggestion == expected.suggestion
+    assert not any(item.kind == "outlier" for item in actual.observations)
 
 
 def test_low_sample_is_described_but_has_no_numeric_outlook_or_suggestion() -> None:
