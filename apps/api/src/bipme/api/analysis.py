@@ -132,6 +132,31 @@ def _validate_series_support(
     )
 
 
+def _latest_observation_records(
+    records: list[OutcomeObservationRecord], as_of: datetime
+) -> list[OutcomeObservationRecord]:
+    """Select one latest available snapshot per exact post and metric series."""
+    latest: dict[tuple[str, str, str, str, str, str], OutcomeObservationRecord] = {}
+    for record in records:
+        if record.observed_at > as_of:
+            continue
+        key = (
+            str(record.post_id),
+            record.metric_name,
+            record.metric_definition,
+            record.metric_unit,
+            record.window_kind,
+            record.window_key,
+        )
+        prior = latest.get(key)
+        if prior is None or (record.observed_at, str(record.id)) > (
+            prior.observed_at,
+            str(prior.id),
+        ):
+            latest[key] = record
+    return [latest[key] for key in sorted(latest)]
+
+
 def _baseline_response(
     baseline: CreatorBaseline,
     metric: MetricIdentity,
@@ -195,7 +220,9 @@ def get_creator_baseline(
         window_key=window_key,
     )
     try:
-        records = _validate_series_support(session, creator.creator_id, identity, cutoff)
+        records = _latest_observation_records(
+            _validate_series_support(session, creator.creator_id, identity, cutoff), cutoff
+        )
         observations = outcome_observations_from_records(
             records,
             weights_by_post_id={str(record.post_id): 1.0 for record in records},
@@ -458,7 +485,9 @@ def analyze_draft(
             if match_ids
             else []
         )
-        records = [record for record in records if _metric_matches(record, request)]
+        records = _latest_observation_records(
+            [record for record in records if _metric_matches(record, request)], assessed_at
+        )
         outcomes = outcome_observations_from_records(records, weights_by_post_id=weights)
         comparable_profiles = tuple(
             (post_id, profiles_by_id[post_id])

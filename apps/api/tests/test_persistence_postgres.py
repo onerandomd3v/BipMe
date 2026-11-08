@@ -747,6 +747,26 @@ def test_authorized_analysis_is_idempotent_immutable_and_excludes_future_outcome
         provenance={"source": "synthetic_future"},
     )
     session.add(future_record)
+    # An updated cumulative snapshot must replace the earlier value, not become a
+    # duplicate eligible observation for the same post and exact series.
+    session.add(
+        OutcomeObservationRecord(
+            id=uuid4(),
+            post_id=posts[0].id,
+            creator_id=creator.id,
+            published_at=posts[0].published_at,
+            metric_name="impressions",
+            metric_definition="public_impressions_v1",
+            metric_unit="impressions",
+            metric_value=Decimal("50"),
+            state="observed",
+            window_kind="age_aligned",
+            window_key="age:24h",
+            observed_at=NOW - timedelta(minutes=1),
+            idempotency_key="updated-first-post-snapshot",
+            provenance={"source": "synthetic_refresh"},
+        )
+    )
     session.flush()
 
     client = _authorized_client(session, creator.id)
@@ -795,6 +815,8 @@ def test_authorized_analysis_is_idempotent_immutable_and_excludes_future_outcome
     metric = payload["metrics"][0]
     assert metric["statistics"]["maximum"] == 800.0
     assert metric["statistics"]["maximum"] < 999999
+    assert metric["eligible_post_count"] == 9
+    assert metric["statistics"]["minimum"] == 50.0
     assert metric["exclusion_counts"] == [["observed_after_as_of", 1]]
     assert metric["outlook"] is not None
 
@@ -857,6 +879,24 @@ def test_creator_baseline_endpoint_returns_exact_window_zero_values_and_scoped_h
     )
     assert row is not None
     row.metric_value = Decimal("0")
+    session.add(
+        OutcomeObservationRecord(
+            id=uuid4(),
+            post_id=zero.id,
+            creator_id=creator.id,
+            published_at=zero.published_at,
+            metric_name="impressions",
+            metric_definition="public_impressions_v1",
+            metric_unit="impressions",
+            metric_value=Decimal("25"),
+            state="observed",
+            window_kind="age_aligned",
+            window_key="age:24h",
+            observed_at=NOW - timedelta(minutes=2),
+            idempotency_key="updated-zero-snapshot",
+            provenance={"source": "synthetic_refresh"},
+        )
+    )
     missing_post = own_posts[1]
     session.add(
         OutcomeObservationRecord(
@@ -919,7 +959,8 @@ def test_creator_baseline_endpoint_returns_exact_window_zero_values_and_scoped_h
         "window_key": "age:24h",
     }
     assert payload["eligible_post_count"] == 9
-    assert payload["statistics"]["minimum"] == 0.0
+    assert payload["statistics"]["minimum"] == 25.0
+    assert payload["eligible_post_count"] == 9
     assert payload["statistics"]["maximum"] == 800.0
     assert str(foreign_post.id) not in payload["supporting_post_ids"]
 
