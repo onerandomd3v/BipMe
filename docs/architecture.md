@@ -60,6 +60,20 @@ Official X API (gated, budget-capped) ---+            |
 - Extend features only through versioned content/goal contracts, preserving COD-350's descriptive-only fields and COD-353/354's outcome separation. Test whether attention-oriented features add explanatory value above the current baselines; don't claim to model X's private ranking, viewer exposure cohorts or engagement-caused amplification.
 - COD-344 retains policy/entitlement/spend verification for official X use; COD-346 keeps secure X OAuth for optional connections and coordinates a separate private session; COD-348 stays responsible for budgeted API ingestion/normalization; COD-363 remains optional real-snapshot monitoring. COD-358's existing authenticated API and immutable decisions should not be weakened.
 
+## Generative report synthesis (approved design; not implemented)
+
+BipMe deliberately uses **three separate layers**: (1) the existing replaceable embedding adapter for semantic relevance and retrieval, (2) deterministic/statistical intelligence for eligible comparisons, baselines, outliers, sample quality, evidence strength, and optional experiments, and (3) an **LLM-powered explanation and synthesis layer** for the first Creator Intelligence Report and later draft guidance.
+
+An LLM is **not** the source of truth for performance metrics, rankings, X internals, creator eligibility or causal claims. The existing COD-350–354 and COD-358 evidence contracts remain authoritative. Use an in-process `ReportSynthesizer` interface and a configurable provider adapter, plus a deterministic template fallback; do not introduce an agent framework or a second deployed inference microservice solely for this feature.
+
+**Input contract:** Typed, bounded evidence bundle assembled by the backend with creator-declared goals, computed observations, IDs of eligible source posts, exact metrics/denominators/observation windows, coverage and provenance, evidence strength and explicit unknowns. Minimize raw post text and third-party content. Never send X-derived text to a model (including an external provider) until that *specific processing and sharing use* is authorized under X rules and privacy requirements.
+
+**Output contract:** JSON-schema validated report sections and human-readable summaries, supported source-post references drawn only from the supplied evidence IDs, hypothesis-labeled next actions, and stated limitations. Forbid fabricated figures, sources, trend updates, private ranking signals, guaranteed reach or unverified causality. Validate output references and numerical claims against the evidence bundle before persistence/display; reject unsupported claims and fall back to deterministic explanation. Treat source posts as untrusted data, not model instructions.
+
+**Operational controls:** Explicit provider-agnostic adapter; fixed supported model/version per experiment; token/time/monetary budgets and observability; safe logging without raw content or secrets; concurrency/retry limits; tests with mocked models for unsupported citations, metrics, prompt injection, malformed JSON, provider outage and missing/insufficient evidence. Record prompt/schema/model/evidence versions on immutable generated reports and keep a human-auditable provenance trail.
+
+**Sequencing and issue ownership:** Plan a new **[Intelligence] Evidence-grounded LLM report synthesis and provider adapters** issue (sixth pending issue once Linear capacity allows), led by Intelligence. It depends on a typed, approved Creator Intelligence Report evidence contract, while report assembly can ship first using deterministic templates. Selection of an initial LLM vendor/model and inference location is **not** decided. Reevaluate rights and cost before connecting any provider.
+
 ## Technology (approved)
 
 | Area | Selection |
