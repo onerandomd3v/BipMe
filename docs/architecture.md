@@ -41,7 +41,7 @@ The API and future worker share one `apps/api/src/bipme` Python codebase. The in
 | Quality | Ruff, mypy, pytest, ESLint, TypeScript, Playwright when E2E flows exist |
 | Local infrastructure | Docker Compose for PostgreSQL |
 
-**Not currently implemented:** X adapter, login/session system, background worker, embeddings, prediction, baseline or metrics collection. An installed library does not imply a working feature.
+**Not currently implemented:** X adapter, login/session system, background worker, persisted embeddings/retrieval, prediction, baseline or metrics collection. Local synthetic CPU embedding inference is available; no X text is processed.
 
 ## Repository
 
@@ -102,7 +102,7 @@ Draft -> draft Post Profile -> comparable post retrieval
 
 See [the original detailed scoring design](research/X_DISTRIBUTION_OUTLOOK_V1_DESIGN.md). Experimental default weights in that document are hypotheses, not validated facts.
 
-## Embedding inference and portability (approved direction, not yet implemented)
+## Embedding inference and portability
 
 - **V1 starting model:** `intfloat/multilingual-e5-small` (384 dimensions), run locally on a **CPU** first. This is the practical implementation default, **not a validated accuracy winner**. Confirm resource use and actual retrieval quality on the intended machine before declaring readiness.
 - **Hosting:** run pretrained inference in the existing Python application/worker environment (local development machine or CPU VPS). No dedicated model-serving microservice, GPU or paid hosted embedding endpoint is required for the first version. Load model weights once per process rather than per post.
@@ -116,12 +116,14 @@ See [the original detailed scoring design](research/X_DISTRIBUTION_OUTLOOK_V1_DE
 
 Keep X-specific authentication, API field mapping, pagination, cost policy and metric availability in `integrations/`. The canonical post/profile/outcome representations and intelligence algorithms should not rely on raw X response objects. This makes future platforms possible **without** promising that different networks expose interchangeable metrics or building additional integrations now.
 
-### COD-351 embedding contract (initial implementation, not yet fully deployable)
+### COD-351 embedding contract
 
 - `apps/api/src/bipme/intelligence/embeddings.py` now defines a `TextEmbedder` protocol, `EmbeddingIdentity`, and CPU-only E5 adapter with official `query:`/`passage:` prefixes and normalized, validated 384-dimensional vectors. The model is loaded lazily and cached per process.
-- `EmbeddingIdentity.index_key` records model ID, **immutable checkpoint commit SHA**, vector dimensions, preprocessing version, and normalization; persistence/index design is owned by COD-345. A change in any of these must trigger re-embedding and reindexing, never cross-model vector comparison.
-- The default pinned model revision is [`fd1525a9fd15316a2d503bf26ab031a61d056e98`](https://huggingface.co/intfloat/multilingual-e5-small/commit/fd1525a9fd15316a2d503bf26ab031a61d056e98), independently verified on Hugging Face (MIT license). Override only with an explicitly verified immutable revision via `BIPME_EMBEDDING_REVISION` (40-character SHA). No checkpoint weights or X data are committed. Unit tests use synthetic text and a fake encoder; they do **not** download weights.
-- **Still required to close COD-351:** add `sentence-transformers` through uv with a genuinely regenerated `uv.lock`, and run a measured real CPU-only smoke test (latency/memory and retrieval sanity) on the intended hardware. The checkpoint SHA and its MIT model license have been verified; actual model loading has not. Do not claim real embeddings are deployed based on fake encoder tests.
+- `EmbeddingIdentity.index_key` records model ID, **immutable checkpoint commit SHA**, vector dimensions, preprocessing version, embedding generation version, and normalization. Persistence/index design is owned by COD-345. A change in any of these must trigger re-embedding and reindexing, never cross-model vector comparison.
+- The default pinned model revision is [`fd1525a9fd15316a2d503bf26ab031a61d056e98`](https://huggingface.co/intfloat/multilingual-e5-small/commit/fd1525a9fd15316a2d503bf26ab031a61d056e98), independently verified on Hugging Face (MIT license). `BIPME_EMBEDDING_MODEL` selects the initial E5 model; unsupported models fail explicitly until their adapter exists. Override the checkpoint only with an explicitly verified immutable revision via `BIPME_EMBEDDING_REVISION` (40-character SHA). No checkpoint weights or X data are committed. Routine unit tests use synthetic text and a fake encoder; they do **not** download weights.
+- `sentence-transformers` and the CPU-only PyTorch wheel are locked runtime dependencies; uv uses PyTorch's CPU wheel index on Windows and Linux. Local inference on an Intel Core i7-8565U with 16 GiB RAM loaded the pinned checkpoint offline from cache and returned normalized 384-dimensional vectors. With the final CPU wheel, process load (including lazy Python imports) took 144.3 seconds; encoding four synthetic passages took 0.466 seconds and three synthetic queries took 0.063 seconds. After loading, process working set was 1033 MiB, private memory 1631 MiB and peak working set 1077 MiB. All three synthetic queries ranked the intended passage first. The initial online run with the earlier PyPI wheel took 265 seconds including weight download; those timings are not directly comparable. These are smoke measurements on one Windows CPU machine, not a throughput, VPS, multilingual-quality, or accuracy benchmark.
+- For a different model, implement its `TextEmbedder` adapter and explicitly configure its model ID, immutable revision, dimensions, preprocessing rules, normalization and embedding version. Do not reuse an E5 identity or vector index. Backfill all eligible historical texts through the new adapter into a new versioned vector space, build its index, validate retrieval, then switch reads to that version; retire the old index only after the backfill and consumers are verified. COD-345 owns the persistence schema and migration, so no existing row or index is claimed to be updated by this adapter alone.
+- To repeat the real synthetic smoke check locally after installing locked API dependencies, run `BIPME_RUN_LIVE_EMBEDDING_SMOKE=1 uv run pytest -q tests/test_embeddings.py` from `apps/api` (set the environment variable with PowerShell syntax on Windows). Routine CI leaves that variable unset and does not download weights.
 - Processing real X post text remains disallowed until COD-344 resolves applicable inference data-use rights; archive-based data imports are a separate future ingestion decision, not an authorization bypass.
 
 ## X integration boundary (planned)

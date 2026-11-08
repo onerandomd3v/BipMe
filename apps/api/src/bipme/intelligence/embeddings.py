@@ -25,19 +25,23 @@ class EmbeddingIdentity:
     dimensions: int
     preprocessing_version: str
     normalized: bool = True
+    embedding_version: str = "1"
 
     def __post_init__(self) -> None:
         if not self.model_id or not _SHA.fullmatch(self.revision):
             raise ValueError("Model ID and immutable 40-character checkpoint revision are required")
-        if self.dimensions <= 0 or not self.preprocessing_version:
-            raise ValueError("Positive dimensions and preprocessing version are required")
+        if self.dimensions <= 0 or not self.preprocessing_version or not self.embedding_version:
+            raise ValueError(
+                "Positive dimensions, preprocessing and embedding versions are required"
+            )
 
     @property
     def index_key(self) -> str:
         """A stable identifier for rows using the same model and preprocessing."""
         return (
             f"{self.model_id}@{self.revision}:"
-            f"{self.dimensions}:{self.preprocessing_version}:normalized={self.normalized}"
+            f"{self.dimensions}:{self.preprocessing_version}:"
+            f"embedding={self.embedding_version}:normalized={self.normalized}"
         )
 
 
@@ -52,13 +56,13 @@ class TextEmbedder(Protocol):
 
 @lru_cache(maxsize=2)
 def _load_model(model_id: str, revision: str) -> Any:
-    """Load once per process. SentenceTransformers is an optional runtime dependency."""
+    """Load once per process from the pinned checkpoint."""
     try:
         sentence_transformers = import_module("sentence_transformers")
     except ImportError as exc:
         raise RuntimeError(
             "Local embedding inference requires sentence-transformers. "
-            "Install it via uv and regenerate uv.lock before deployment."
+            "Install the locked API dependencies with uv sync."
         ) from exc
     return sentence_transformers.SentenceTransformer(
         model_id, revision=revision, device="cpu", trust_remote_code=False
@@ -117,7 +121,7 @@ class E5TextEmbedder:
             if not all(math.isfinite(x) for x in values):
                 raise ValueError("Non-finite embedding value")
             norm = math.sqrt(sum(x * x for x in values))
-            if not math.isclose(norm, 1.0, rel_tol=0.02, abs_tol=0.02):
+            if not math.isclose(norm, 1.0, rel_tol=1e-3, abs_tol=1e-3):
                 raise ValueError("Unnormalized or zero vector returned by model")
             result.append(values)
         if len(result) != len(texts):
@@ -126,11 +130,12 @@ class E5TextEmbedder:
 
 
 def e5_from_environment() -> E5TextEmbedder:
-    """Choose a pinned local checkpoint without embedding secrets or X data."""
+    """Choose the configured local model and pinned checkpoint without X data."""
+    model_id = os.getenv("BIPME_EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
     revision = os.getenv("BIPME_EMBEDDING_REVISION", E5_CHECKPOINT_REVISION)
     return E5TextEmbedder(
         EmbeddingIdentity(
-            model_id="intfloat/multilingual-e5-small",
+            model_id=model_id,
             revision=revision,
             dimensions=384,
             preprocessing_version="e5-prefix-strip-v1",
