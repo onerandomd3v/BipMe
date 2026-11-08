@@ -45,7 +45,17 @@ uv run alembic upgrade head
 uv run uvicorn bipme.api.app:app --reload
 ```
 
-Check `http://127.0.0.1:8000/api/health`. The initial migration creates the pgvector extension; feature tables are not yet defined.
+Check `http://127.0.0.1:8000/api/health`. Migration `0001_enable_vector` creates the pgvector extension; `0002_canonical_persistence` creates the V1 canonical creator/post, profile, embedding, outcome, connection, usage and immutable assessment records.
+
+The PostgreSQL-backed API CI job starts `pgvector/pgvector:pg17` and sets `BIPME_TEST_DATABASE_URL`; migration integration tests create an isolated schema, apply the full chain, downgrade to `0001_enable_vector`, verify the extension remains, then upgrade again. To run those tests locally, start the Compose database and run:
+
+```bash
+export BIPME_TEST_DATABASE_URL='postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme'
+cd apps/api
+uv run pytest -q tests/test_persistence_postgres.py
+```
+
+The test URL must point at a disposable development database; tests create and drop an isolated schema inside it.
 
 ## Start the web app
 
@@ -85,7 +95,7 @@ pnpm format:check
 
 `pnpm format:check` is available locally but is **not currently a CI step**. Add browser E2E tests when actual user flows are introduced. `api-checks`, `web-checks` and `workspace-checks` are the three existing GitHub Actions jobs.
 
-The GitHub Actions workflow runs on PRs targeting `main`; it uses locked Python installation and frozen pnpm installation. No CI job should call live X endpoints.
+The GitHub Actions workflow runs on PRs targeting `main`; it uses locked Python installation and frozen pnpm installation. The API job's PostgreSQL service is pgvector-enabled so persistence tests exercise real PostgreSQL constraints, vector queries and Alembic upgrades/downgrades. No CI job should call live X endpoints.
 
 ## Repository workflow
 
