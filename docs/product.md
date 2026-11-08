@@ -4,7 +4,9 @@
 
 ## Product definition
 
-BipMe is a **creator decision-intelligence tool**, starting with X. It helps creators decide which content ideas are worth their effort, identify approaches that may be worth repeating, test one next action, and learn from real outcomes. It uses the creator's own eligible historical posts and metrics as **evidence**, not as a promise of future reach. Comparable-post analysis and Distribution Outlook support decisions rather than define the product's value.
+BipMe is a **creator distribution-intelligence platform** that helps creators make better-informed content decisions using insights from their historical performance, so they can understand what works, discover opportunities worth testing, and improve their approach to reaching their audience.
+
+**Distribution is the goal; better content decisions are the method.** BipMe uses eligible historical posts and observed metrics as evidence, not as a guarantee of future reach. Comparable-post analysis and Distribution Outlook support creator decisions rather than promise to predict the next viral post.
 
 The product is **not** an X algorithm cracker, a universal content-quality score, a viral guarantee, an automated publisher, or a generic AI writing assistant.
 
