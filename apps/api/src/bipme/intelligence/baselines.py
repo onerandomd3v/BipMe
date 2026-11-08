@@ -151,8 +151,8 @@ def effective_sample_size(weights: list[float]) -> float:
         return 0.0
     if any(not math.isfinite(w) or w <= 0 for w in weights):
         raise ValueError("weights must be finite and positive")
-    total = sum(weights)
-    return total * total / sum(weight * weight for weight in weights)
+    total = math.fsum(weights)
+    return total * total / math.fsum(weight * weight for weight in weights)
 
 
 def _stats(observations: list[OutcomeObservation], target: float | None) -> BaselineStatistics:
@@ -191,7 +191,7 @@ def _stats(observations: list[OutcomeObservation], target: float | None) -> Base
         upper_outlier_count=sum(value > upper_fence for value in values),
         outlier_adjusted_p50=adjusted_p50,
         median_shift_in_iqr=abs(p50 - adjusted_p50) / max(iqr, 1.0),
-        maximum_weight_share=max(weights) / sum(weights),
+        maximum_weight_share=max(weights) / math.fsum(weights),
         target_percentile_rank=(
             100
             * (
@@ -201,7 +201,7 @@ def _stats(observations: list[OutcomeObservation], target: float | None) -> Base
                     weight for value, weight in zip(values, weights, strict=True) if value == target
                 )
             )
-            / sum(weights)
+            / math.fsum(weights)
             if target is not None
             else None
         ),
@@ -211,20 +211,28 @@ def _stats(observations: list[OutcomeObservation], target: float | None) -> Base
 def _classify(
     n_eff: float, stats: BaselineStatistics | None
 ) -> tuple[EvidenceStrength, tuple[str, ...]]:
-    if n_eff < 3 or stats is None:
+    if not _at_least(n_eff, 3) or stats is None:
         return "Insufficient", (
             "Fewer than 3 effective eligible posts; no interpretation is justified.",
         )
     reasons: list[str] = []
-    if n_eff >= 20 and stats.consistency_ratio >= 0.70 and stats.maximum_weight_share <= 0.20:
+    if (
+        _at_least(n_eff, 20)
+        and stats.consistency_ratio >= 0.70
+        and stats.maximum_weight_share <= 0.20
+    ):
         return "High", (
             "At least 20 effective posts, at least 70% within robust fences, and no dominant weight.",
         )
-    if n_eff >= 8 and stats.consistency_ratio >= 0.60 and stats.maximum_weight_share <= 0.35:
+    if (
+        _at_least(n_eff, 8)
+        and stats.consistency_ratio >= 0.60
+        and stats.maximum_weight_share <= 0.35
+    ):
         return "Moderate", (
             "At least 8 effective posts with acceptable robust consistency and weight concentration.",
         )
-    if n_eff >= 3:
+    if _at_least(n_eff, 3):
         reasons.append(
             "At least 3 effective posts support only a low-strength descriptive baseline."
         )
@@ -233,6 +241,11 @@ def _classify(
     if stats.maximum_weight_share > 0.35:
         reasons.append("One observation carries more than 35% of the normalized weight.")
     return "Low", tuple(reasons)
+
+
+def _at_least(value: float, threshold: float) -> bool:
+    """Make mathematical threshold equality stable under ordinary float rounding."""
+    return value >= threshold or math.isclose(value, threshold, rel_tol=1e-12, abs_tol=1e-12)
 
 
 def build_creator_baseline(
@@ -263,6 +276,9 @@ def build_creator_baseline(
     keys = Counter(
         (item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)
         for item in matching
+        if item.published_at <= request.as_of
+        and item.observed_at <= request.as_of
+        and item.observed_at >= item.published_at
     )
     for item in observations:
         if item.creator_key != request.creator_key:
@@ -277,6 +293,15 @@ def build_creator_baseline(
         if item.window != request.window:
             excluded["incompatible_window"] += 1
             continue
+        if item.published_at > request.as_of:
+            excluded["published_after_as_of"] += 1
+            continue
+        if item.observed_at < item.published_at:
+            excluded["observed_before_publication"] += 1
+            continue
+        if item.observed_at > request.as_of:
+            excluded["observed_after_as_of"] += 1
+            continue
         if (
             keys[(item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)]
             > 1
@@ -288,15 +313,6 @@ def build_creator_baseline(
             continue
         if item.value < 0:
             excluded["negative_metric"] += 1
-            continue
-        if item.published_at > request.as_of:
-            excluded["published_after_as_of"] += 1
-            continue
-        if item.observed_at < item.published_at:
-            excluded["observed_before_publication"] += 1
-            continue
-        if item.observed_at > request.as_of:
-            excluded["observed_after_as_of"] += 1
             continue
         candidates.append(item)
 
@@ -311,7 +327,9 @@ def build_creator_baseline(
         (
             pair
             for pair in levels
-            if effective_sample_size([item.weight for item in pair[1]]) >= MINIMUM_EFFECTIVE_SAMPLE
+            if _at_least(
+                effective_sample_size([item.weight for item in pair[1]]), MINIMUM_EFFECTIVE_SAMPLE
+            )
         ),
         levels[-1] if levels else (None, []),
     )
@@ -341,16 +359,22 @@ def build_creator_baseline(
     if broader is not None:
         broad_stats = _stats(broader, request.target_value)
         shrinkage_weight = n_eff / (n_eff + shrinkage_tau)
+        p10 = shrinkage_weight * stats.p10 + (1 - shrinkage_weight) * broad_stats.p10
+        p25 = shrinkage_weight * stats.p25 + (1 - shrinkage_weight) * broad_stats.p25
+        p50 = shrinkage_weight * stats.p50 + (1 - shrinkage_weight) * broad_stats.p50
+        p75 = shrinkage_weight * stats.p75 + (1 - shrinkage_weight) * broad_stats.p75
+        p90 = shrinkage_weight * stats.p90 + (1 - shrinkage_weight) * broad_stats.p90
+        shrunk_iqr = p75 - p25
         stats = BaselineStatistics(
-            p10=shrinkage_weight * stats.p10 + (1 - shrinkage_weight) * broad_stats.p10,
-            p25=shrinkage_weight * stats.p25 + (1 - shrinkage_weight) * broad_stats.p25,
-            p50=shrinkage_weight * stats.p50 + (1 - shrinkage_weight) * broad_stats.p50,
-            p75=shrinkage_weight * stats.p75 + (1 - shrinkage_weight) * broad_stats.p75,
-            p90=shrinkage_weight * stats.p90 + (1 - shrinkage_weight) * broad_stats.p90,
+            p10=p10,
+            p25=p25,
+            p50=p50,
+            p75=p75,
+            p90=p90,
             minimum=min(item.value for item in selected_items if item.value is not None),
             maximum=max(item.value for item in selected_items if item.value is not None),
-            iqr=stats.p75 - stats.p25,
-            dispersion_ratio=stats.dispersion_ratio,
+            iqr=shrunk_iqr,
+            dispersion_ratio=shrunk_iqr / max(abs(p50), 1.0),
             consistency_ratio=stats.consistency_ratio,
             outlier_count=stats.outlier_count,
             upper_outlier_count=stats.upper_outlier_count,

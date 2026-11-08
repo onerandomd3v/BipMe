@@ -128,6 +128,17 @@ def test_future_publication_and_future_observations_are_excluded_as_of() -> None
     }
 
 
+def test_future_duplicate_does_not_change_an_earlier_baseline() -> None:
+    historical = [obs(str(i), float(10 + i)) for i in range(3)]
+    future_duplicate = obs("0", 99, observed=AS_OF + timedelta(seconds=1))
+    before = build_creator_baseline(historical, request())
+    after = build_creator_baseline(historical + [future_duplicate], request())
+    assert before.evidence_strength == "Low"
+    assert after.evidence_strength == before.evidence_strength
+    assert after.supporting_post_ids == before.supporting_post_ids
+    assert dict(after.exclusion_counts) == {"observed_after_as_of": 1}
+
+
 def test_observation_timestamp_is_not_confused_with_publication_timestamp() -> None:
     published = AS_OF - timedelta(days=100)
     observed = AS_OF - timedelta(minutes=5)
@@ -167,6 +178,15 @@ def test_high_moderate_low_and_insufficient_thresholds_are_fixed() -> None:
     assert insufficient.evidence_strength == "Insufficient"
 
 
+def test_fractional_equal_weights_do_not_drift_below_evidence_boundaries() -> None:
+    low = build_creator_baseline([obs(str(i), 10, weight=0.3) for i in range(3)], request())
+    high = build_creator_baseline([obs(str(i), 10, weight=0.1) for i in range(20)], request())
+    assert low.effective_sample_size == pytest.approx(3)
+    assert low.evidence_strength == "Low"
+    assert high.effective_sample_size == pytest.approx(20)
+    assert high.evidence_strength == "High"
+
+
 def test_hierarchical_backoff_and_shrinkage_are_explained() -> None:
     observations = [obs(f"specific-{i}", 100, segment=("topic", "format")) for i in range(3)] + [
         obs(f"broad-{i}", 10, segment=("topic", "other")) for i in range(20)
@@ -176,6 +196,10 @@ def test_hierarchical_backoff_and_shrinkage_are_explained() -> None:
     assert result.shrinkage_weight == pytest.approx(3 / 11)
     assert result.statistics is not None
     assert result.statistics.p50 == pytest.approx((3 / 11) * 100 + (8 / 11) * 10)
+    assert result.statistics.iqr == pytest.approx(result.statistics.p75 - result.statistics.p25)
+    assert result.statistics.dispersion_ratio == pytest.approx(
+        result.statistics.iqr / abs(result.statistics.p50)
+    )
     assert result.supporting_post_ids == ("specific-0", "specific-1", "specific-2")
 
 
