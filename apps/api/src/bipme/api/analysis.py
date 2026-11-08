@@ -92,34 +92,27 @@ def _validate_series_support(
                 select(OutcomeObservationRecord).where(
                     OutcomeObservationRecord.creator_id == creator_id,
                     OutcomeObservationRecord.metric_name == metric.metric,
-                    OutcomeObservationRecord.observed_at <= as_of,
                 )
             ).all()
         )
-    else:
-        records = [record for record in records if record.observed_at <= as_of]
-    if not records:
-        return []
-    exact = [
-        record
-        for record in records
-        if record.metric_definition == metric.definition
-        and record.metric_unit == metric.unit
-        and record.window_kind == metric.window_kind
-        and record.window_key == metric.window_key
-    ]
-    if exact:
-        return exact
+    visible = [record for record in records if record.observed_at <= as_of]
+    exact_visible = [record for record in visible if _same_metric_series(record, metric)]
+    exact_all = [record for record in records if _same_metric_series(record, metric)]
+    if exact_visible:
+        # Retain future rows from this series so COD-353 can report their exclusion.
+        return exact_all
+    if not visible:
+        return exact_all
     if any(
         record.metric_definition == metric.definition and record.metric_unit == metric.unit
-        for record in records
+        for record in visible
     ):
         raise ApiError(
             422,
             "unsupported_observation_window",
             "The requested observation window does not match this creator's recorded metric series.",
         )
-    if any(record.metric_definition == metric.definition for record in records):
+    if any(record.metric_definition == metric.definition for record in visible):
         raise ApiError(
             422,
             "unsupported_metric_unit",
@@ -132,13 +125,24 @@ def _validate_series_support(
     )
 
 
+def _same_metric_series(record: OutcomeObservationRecord, metric: MetricIdentity) -> bool:
+    return (
+        record.metric_definition == metric.definition
+        and record.metric_unit == metric.unit
+        and record.window_kind == metric.window_kind
+        and record.window_key == metric.window_key
+    )
+
+
 def _latest_observation_records(
     records: list[OutcomeObservationRecord], as_of: datetime
 ) -> list[OutcomeObservationRecord]:
     """Select one latest available snapshot per exact post and metric series."""
     latest: dict[tuple[str, str, str, str, str, str], OutcomeObservationRecord] = {}
+    future: list[OutcomeObservationRecord] = []
     for record in records:
         if record.observed_at > as_of:
+            future.append(record)
             continue
         key = (
             str(record.post_id),
@@ -154,7 +158,19 @@ def _latest_observation_records(
             str(prior.id),
         ):
             latest[key] = record
-    return [latest[key] for key in sorted(latest)]
+    return [latest[key] for key in sorted(latest)] + sorted(
+        future,
+        key=lambda record: (
+            str(record.post_id),
+            record.metric_name,
+            record.metric_definition,
+            record.metric_unit,
+            record.window_kind,
+            record.window_key,
+            record.observed_at,
+            str(record.id),
+        ),
+    )
 
 
 def _baseline_response(
