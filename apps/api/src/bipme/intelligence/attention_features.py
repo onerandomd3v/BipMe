@@ -53,7 +53,9 @@ def describe_attention_features(profile: PostProfile, *, as_of: datetime) -> Att
     if profile.content_format == "unknown":
         unknowns.append("content_format")
     else:
-        signals.append(AttentionSignal("content_format", "observed_structure", profile.content_format))
+        signals.append(
+            AttentionSignal("content_format", "observed_structure", profile.content_format)
+        )
     if profile.topology is None:
         unknowns.append("topology")
     else:
@@ -76,9 +78,13 @@ def describe_attention_features(profile: PostProfile, *, as_of: datetime) -> Att
             signals.append(AttentionSignal(name, "lexical_heuristic", "present"))
 
     if profile.declared_intent is not None:
-        signals.append(AttentionSignal("declared_intent", "creator_declared", profile.declared_intent))
+        signals.append(
+            AttentionSignal("declared_intent", "creator_declared", profile.declared_intent)
+        )
     if profile.declared_topic is not None:
-        signals.append(AttentionSignal("declared_topic", "creator_declared", profile.declared_topic))
+        signals.append(
+            AttentionSignal("declared_topic", "creator_declared", profile.declared_topic)
+        )
 
     return AttentionDescriptor(
         version=ATTENTION_FEATURES_VERSION,
