@@ -39,6 +39,14 @@ BipMe's first question is **what content approaches appear to earn meaningful at
 
 **V1 gates:** COD-369 validates archive structure/rights/metrics; COD-370 implements a safe post-only import if viable; COD-371 tests goal-aligned attention descriptors against baselines; COD-372 pilots carefully permissioned niche comparisons only after policy approval. COD-344 remains the X API/processing policy and cost gate. Treat all purported improvement in creator decisions or reach as hypotheses until evaluated on real permitted data.
 
+## Generative AI in BipMe (approved product role; integration pending)
+
+BipMe uses embeddings to find relevant material, statistical intelligence to evaluate evidence, and a **generative language model to synthesize and explain** findings for the report-first experience and later draft decisions. The LLM should turn validated, source-linked observations into understandable personalized narratives and optional testable content directions; it should not substitute for the calculation, fabricate current niche trends, assert why X distributed a post, or promise better reach.
+
+Use deterministic report assembly when a model is unavailable, unaffordable or not authorized to process a given source. The output must visibly distinguish **observed evidence**, **inference**, **suggested experiment** and **unknowns**. Personal and X niche evidence stay separately labeled; evidence-backed recommendations must remain useful without a generative model. This is planned behavior, **not a deployed feature**.
+
+The model/provider is undecided. Its interface should be provider-agnostic and bounded by evidence provenance, processing permissions and usage budgets. A dedicated LLM report-synthesis implementation ticket is queued once Linear issue capacity permits.
+
 ## Creator value and learning loop
 
 The core creator experience is **Understand → Discover → Report → Evaluate → Experiment → Learn**: distinguish recurring historical patterns from isolated viral outliers; assess a draft or content idea against eligible comparables; receive one or two **evidence-linked observations and a testable next action** when justified; publish manually; and review whether the actual outcome supports, contradicts or leaves the original hypothesis inconclusive.
