@@ -44,6 +44,14 @@ Implement and test safeguards **before** a live import:
 
 Do **not** hardcode old X prices or assume a discounted owned-read tier is generally available. The authenticated developer console and live official documentation are authoritative at integration time.
 
+## Ship-first safety boundary — 8 November 2026
+
+V1 prioritizes **working delivery**, not exhaustive benchmarks or perfect analysis. This does **not** waive authenticated private sessions, account isolation, safe archive handling, source-processing and third-party LLM transfer authorization, provenance checks, prompt-injection isolation, enforced API/LLM spend ceilings, or output-citation validation. Never turn privacy or billing controls into optional polish.
+
+The initial hosted text-generation candidate is **OpenAI `gpt-6-luna`** accessed through a provider-neutral server adapter; do not call it on real X-derived post text until both X source rules and the provider's applicable retention/subprocessor terms permit the specific use. On unresolved rights, no API credits, invalid model entitlement or provider downtime, serve deterministic evidence-linked templates and report any missing-source status honestly. Do not silently upgrade to a costlier model.
+
+Do not run a prelaunch multi-model benchmark. Require only focused smoke/unit tests of auth, source entitlement, spend boundaries, output schema, supported evidence references, prompt-injection resistance, and the deterministic fallback. Decide precise retention windows and private sign-in mechanism before handling real user data.
+
 ## Generative-model data processing boundary (planned)
 
 - Treat evidence supplied to any LLM as *untrusted* content: reject prompt injection in posts, delimit data, constrain structured outputs and validate every cited post ID and numeric claim.
