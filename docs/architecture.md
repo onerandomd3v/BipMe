@@ -123,6 +123,44 @@ Draft -> draft Post Profile -> comparable post retrieval
                      versioned prediction evaluation
 ```
 
+### Report-first orchestration and official niche search (planned; rights gated)
+
+The previous draft-first data path remains as a **second-stage** action. Before any draft, authenticated onboarding and declared niche/goals trigger two **separate** evidence pipelines:
+
+```text
+ Creator goals / intended audience / niche
+                |
+      +---------+----------------------+
+      |                                |
+ Own archive / permitted history   Official X niche search
+ (COD-369/370 or COD-348)          (COD-344 rights/cost gate,
+      |                              COD-347 provider boundary)
+      v                                v
+ personal creator evidence         representative external niche evidence
+      |                             (strong / typical / weak, not viral-only)
+      +----------------+---------------+
+                       |
+           versioned report assembly (planned)
+            separate sources and coverage;
+           goal-aligned observations and ideas
+                       |
+         Creator Intelligence Report API
+                       |
+            Report-first web dashboard
+                       |
+                 Optional draft
+                       v
+         existing COD-358 draft analysis,
+         extended by additive niche contract
+                       |
+                publication + learning
+```
+
+- **Distinct access models:** Own archive import is not X OAuth. Authorized search into other creators' X posts requires the approved official API scopes/entitlements and applicable processing/display/retention permissions. An archive alone cannot yield current niche discovery. No scraping or assumption that public availability permits storage, embeddings, training or redistribution.
+- **Representativeness:** Search is a biased sample; record query/version, result set, sampling/coverage/selection criteria, observed metrics and timestamps. Compare strong/typical/weak examples, not only winners; normalize only with actual denominator metrics and compatible observation windows.
+- **Report contract (planned):** creator goal snapshot, own evidence and niche evidence in independent sections, sample counts, freshness, source coverage and data-quality flags, traceable post references, opportunity hypotheses, limitations and partial/insufficient status. Generate and persist immutable versioned report snapshots **without any draft input**; no fabricated niche cards when provider gates fail.
+- **Integration responsibilities:** COD-371 scopes pure report intelligence; COD-344 checks official niche-search availability/terms; COD-347 supplies budget-guarded provider work after approval; Platform owns report persistence/API; COD-359 presents post-onboarding first value; COD-360 remains the subsequent draft tool. New focused issues for discovery, report service and API are needed when Linear issue capacity allows; these are **not implemented by COD-358**.
+
 ### Non-negotiable data separation
 
 - **Post description/features** cannot include the outcome being predicted.
