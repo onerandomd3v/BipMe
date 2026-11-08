@@ -1,6 +1,6 @@
 # BipMe — Development guide
 
-**Status:** Commands and checks reflect the current scaffold. X authentication, data ingestion, background jobs and intelligence features are still planned.
+**Status:** X authentication, live data ingestion and background jobs remain planned. Deterministic intelligence services, canonical persistence, and private baseline/draft-analysis API contracts are implemented; the analysis routes still fail closed until COD-346 sessions exist.
 
 ## Prerequisites
 
@@ -45,7 +45,7 @@ uv run alembic upgrade head
 uv run uvicorn bipme.api.app:app --reload
 ```
 
-Check `http://127.0.0.1:8000/api/health`. Migration `0001_enable_vector` creates the pgvector extension; `0002_canonical_persistence` creates the V1 canonical creator/post, profile, embedding, outcome, connection, usage and immutable assessment records.
+Check `http://127.0.0.1:8000/api/health`. Migration `0001_enable_vector` creates the pgvector extension; `0002_canonical_persistence` creates the V1 canonical creator/post, profile, embedding, outcome, connection, usage and immutable assessment records. COD-358 exposes `GET /api/v1/creators/me/baseline`, `POST /api/v1/creators/me/draft-assessments`, and `GET /api/v1/creators/me/draft-assessments/{assessment_id}`. They remain fail-closed with `authentication_not_configured` until COD-346's server-verified session dependency is implemented.
 
 The PostgreSQL-backed API CI job starts `pgvector/pgvector:pg17` and sets `BIPME_TEST_DATABASE_URL`; migration integration tests create an isolated schema, apply the full chain, downgrade to `0001_enable_vector`, verify the extension remains, then upgrade again. To run those tests locally, start the Compose database and run:
 
@@ -94,6 +94,17 @@ pnpm format:check
 ```
 
 `pnpm format:check` is available locally but is **not currently a CI step**. Add browser E2E tests when actual user flows are introduced. `api-checks`, `web-checks` and `workspace-checks` are the three existing GitHub Actions jobs.
+
+## OpenAPI and Web handoff
+
+FastAPI owns the API contract. Regenerate the committed OpenAPI artifact from the app when routes or schemas change:
+
+```bash
+cd apps/api
+uv run python -c 'import json; from bipme.api.app import app; print(json.dumps(app.openapi(), indent=2, sort_keys=True))' > openapi.json
+```
+
+`tests/test_analysis_api.py` checks that the artifact matches the generated schema. COD-356 and COD-360 should generate their client types from `apps/api/openapi.json`; do not hand-copy response interfaces. Draft text is fingerprinted but is not stored. Reusing an `Idempotency-Key` with the same creator and canonical input replays the original immutable assessment; a different input returns 409.
 
 The GitHub Actions workflow runs on PRs targeting `main`; it uses locked Python installation and frozen pnpm installation. The API job's PostgreSQL service is pgvector-enabled so persistence tests exercise real PostgreSQL constraints, vector queries and Alembic upgrades/downgrades. No CI job should call live X endpoints.
 

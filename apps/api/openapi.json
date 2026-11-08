@@ -1,0 +1,1607 @@
+{
+  "components": {
+    "schemas": {
+      "AcceptedHypothesis": {
+        "additionalProperties": false,
+        "description": "One optional creator-selected question saved at assessment creation.",
+        "properties": {
+          "expected_direction": {
+            "default": "no_direction",
+            "enum": [
+              "higher",
+              "lower",
+              "no_direction"
+            ],
+            "title": "Expected Direction",
+            "type": "string"
+          },
+          "metric": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Metric",
+            "type": "string"
+          },
+          "metric_definition": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Metric Definition",
+            "type": "string"
+          },
+          "question": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "unit": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Unit",
+            "type": "string"
+          },
+          "window_key": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Window Key",
+            "type": "string"
+          },
+          "window_kind": {
+            "enum": [
+              "mature_cumulative",
+              "age_aligned"
+            ],
+            "title": "Window Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "metric",
+          "metric_definition",
+          "unit",
+          "window_kind",
+          "window_key"
+        ],
+        "title": "AcceptedHypothesis",
+        "type": "object"
+      },
+      "AlgorithmVersions": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "decision_config": {
+            "title": "Decision Config",
+            "type": "string"
+          },
+          "embedding_identity": {
+            "title": "Embedding Identity",
+            "type": "string"
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "string"
+          },
+          "ranking_config": {
+            "title": "Ranking Config",
+            "type": "string"
+          },
+          "retrieval": {
+            "title": "Retrieval",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "decision_config",
+          "retrieval",
+          "ranking_config",
+          "baseline",
+          "profile",
+          "embedding_identity"
+        ],
+        "title": "AlgorithmVersions",
+        "type": "object"
+      },
+      "BaselineStatisticsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "consistency_ratio": {
+            "title": "Consistency Ratio",
+            "type": "number"
+          },
+          "dispersion_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispersion Ratio"
+          },
+          "iqr": {
+            "title": "Iqr",
+            "type": "number"
+          },
+          "maximum": {
+            "title": "Maximum",
+            "type": "number"
+          },
+          "maximum_weight_share": {
+            "title": "Maximum Weight Share",
+            "type": "number"
+          },
+          "median_shift_in_iqr": {
+            "title": "Median Shift In Iqr",
+            "type": "number"
+          },
+          "minimum": {
+            "title": "Minimum",
+            "type": "number"
+          },
+          "outlier_adjusted_p50": {
+            "title": "Outlier Adjusted P50",
+            "type": "number"
+          },
+          "outlier_count": {
+            "title": "Outlier Count",
+            "type": "integer"
+          },
+          "p10": {
+            "title": "P10",
+            "type": "number"
+          },
+          "p25": {
+            "title": "P25",
+            "type": "number"
+          },
+          "p50": {
+            "title": "P50",
+            "type": "number"
+          },
+          "p75": {
+            "title": "P75",
+            "type": "number"
+          },
+          "p90": {
+            "title": "P90",
+            "type": "number"
+          },
+          "target_percentile_rank": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Percentile Rank"
+          },
+          "upper_outlier_count": {
+            "title": "Upper Outlier Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "p10",
+          "p25",
+          "p50",
+          "p75",
+          "p90",
+          "minimum",
+          "maximum",
+          "iqr",
+          "dispersion_ratio",
+          "consistency_ratio",
+          "outlier_count",
+          "upper_outlier_count",
+          "outlier_adjusted_p50",
+          "median_shift_in_iqr",
+          "maximum_weight_share",
+          "target_percentile_rank"
+        ],
+        "title": "BaselineStatisticsResponse",
+        "type": "object"
+      },
+      "CandidateExclusionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "post_id": {
+            "format": "uuid",
+            "title": "Post Id",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "post_id",
+          "reasons"
+        ],
+        "title": "CandidateExclusionResponse",
+        "type": "object"
+      },
+      "ComparableEvidenceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "components": {
+            "$ref": "#/components/schemas/RelevanceComponentsResponse"
+          },
+          "inclusion_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Inclusion Reasons",
+            "type": "array"
+          },
+          "post_id": {
+            "format": "uuid",
+            "title": "Post Id",
+            "type": "string"
+          },
+          "relevance": {
+            "title": "Relevance",
+            "type": "number"
+          },
+          "retrieval_position": {
+            "title": "Retrieval Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "post_id",
+          "relevance",
+          "components",
+          "retrieval_position",
+          "inclusion_reasons"
+        ],
+        "title": "ComparableEvidenceResponse",
+        "type": "object"
+      },
+      "CreatorBaselineResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "calculation_version": {
+            "title": "Calculation Version",
+            "type": "string"
+          },
+          "effective_sample_size": {
+            "title": "Effective Sample Size",
+            "type": "number"
+          },
+          "eligible_post_count": {
+            "title": "Eligible Post Count",
+            "type": "integer"
+          },
+          "evidence_strength": {
+            "enum": [
+              "High",
+              "Moderate",
+              "Low",
+              "Insufficient"
+            ],
+            "title": "Evidence Strength",
+            "type": "string"
+          },
+          "exclusions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Exclusions",
+            "type": "object"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/MetricIdentity"
+          },
+          "outlier_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outlier Count"
+          },
+          "repeatability_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeatability Ratio"
+          },
+          "statistics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaselineStatisticsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supporting_post_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Supporting Post Ids",
+            "type": "array"
+          },
+          "upper_outlier_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper Outlier Count"
+          }
+        },
+        "required": [
+          "calculation_version",
+          "metric",
+          "as_of",
+          "eligible_post_count",
+          "effective_sample_size",
+          "supporting_post_ids",
+          "evidence_strength",
+          "repeatability_ratio",
+          "outlier_count",
+          "upper_outlier_count",
+          "statistics",
+          "exclusions",
+          "limitations"
+        ],
+        "title": "CreatorBaselineResponse",
+        "type": "object"
+      },
+      "DecisionObservationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_statistics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaselineStatisticsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_strength": {
+            "enum": [
+              "High",
+              "Moderate",
+              "Low",
+              "Insufficient"
+            ],
+            "title": "Evidence Strength",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "repeatability",
+              "outlier",
+              "coverage_limitation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric"
+          },
+          "metric_definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Definition"
+          },
+          "supporting_post_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Supporting Post Ids",
+            "type": "array"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window"
+          }
+        },
+        "required": [
+          "kind",
+          "explanation",
+          "supporting_post_ids",
+          "metric",
+          "metric_definition",
+          "window",
+          "evidence_strength",
+          "evidence_statistics",
+          "limitations"
+        ],
+        "title": "DecisionObservationResponse",
+        "type": "object"
+      },
+      "DraftAnalysisRequest": {
+        "additionalProperties": false,
+        "description": "Draft and descriptive metadata; no client-supplied creator or timestamp.",
+        "properties": {
+          "accepted_hypothesis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcceptedHypothesis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "declared_intent": {
+            "anyOf": [
+              {
+                "enum": [
+                  "inform",
+                  "ask",
+                  "promote",
+                  "entertain",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Intent"
+          },
+          "declared_topic": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Topic"
+          },
+          "media_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "image",
+                    "video",
+                    "gif",
+                    "audio",
+                    "other"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Types"
+          },
+          "metric_preferences": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MetricPreference"
+            },
+            "maxItems": 8,
+            "title": "Metric Preferences",
+            "type": "array"
+          },
+          "text": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "thread_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "single",
+                  "root",
+                  "continuation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Role"
+          },
+          "topology": {
+            "default": "original",
+            "enum": [
+              "original",
+              "reply",
+              "quote"
+            ],
+            "title": "Topology",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "DraftAnalysisRequest",
+        "type": "object"
+      },
+      "DraftAnalysisResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_hypothesis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcceptedHypothesis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assessed_at": {
+            "format": "date-time",
+            "title": "Assessed At",
+            "type": "string"
+          },
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "comparable_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ComparableEvidenceResponse"
+            },
+            "title": "Comparable Evidence",
+            "type": "array"
+          },
+          "decision_state": {
+            "enum": [
+              "supported",
+              "insufficient_evidence"
+            ],
+            "title": "Decision State",
+            "type": "string"
+          },
+          "exclusions": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Exclusions",
+            "type": "array"
+          },
+          "input_fingerprint": {
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricEvidenceResponse"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionObservationResponse"
+            },
+            "maxItems": 2,
+            "title": "Observations",
+            "type": "array"
+          },
+          "retrieval_candidate_count": {
+            "title": "Retrieval Candidate Count",
+            "type": "integer"
+          },
+          "retrieval_coverage_limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Retrieval Coverage Limitations",
+            "type": "array"
+          },
+          "retrieval_eligible_count": {
+            "title": "Retrieval Eligible Count",
+            "type": "integer"
+          },
+          "retrieval_excluded_count": {
+            "title": "Retrieval Excluded Count",
+            "type": "integer"
+          },
+          "retrieval_exclusions": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateExclusionResponse"
+            },
+            "title": "Retrieval Exclusions",
+            "type": "array"
+          },
+          "retrieval_state": {
+            "enum": [
+              "matched",
+              "insufficient_evidence",
+              "no_match"
+            ],
+            "title": "Retrieval State",
+            "type": "string"
+          },
+          "retrieval_truncated": {
+            "title": "Retrieval Truncated",
+            "type": "boolean"
+          },
+          "retrieval_vector_candidate_count": {
+            "title": "Retrieval Vector Candidate Count",
+            "type": "integer"
+          },
+          "suggested_hypothesis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestedHypothesisResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "versions": {
+            "$ref": "#/components/schemas/AlgorithmVersions"
+          }
+        },
+        "required": [
+          "assessment_id",
+          "input_fingerprint",
+          "assessed_at",
+          "versions",
+          "decision_state",
+          "retrieval_state",
+          "retrieval_candidate_count",
+          "retrieval_vector_candidate_count",
+          "retrieval_eligible_count",
+          "retrieval_excluded_count",
+          "retrieval_truncated",
+          "retrieval_exclusions",
+          "retrieval_coverage_limitations",
+          "comparable_evidence",
+          "metrics",
+          "observations",
+          "suggested_hypothesis",
+          "accepted_hypothesis",
+          "assumptions",
+          "limitations",
+          "exclusions"
+        ],
+        "title": "DraftAnalysisResponse",
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorDetail",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HistoricalRangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "comparable_post_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Comparable Post Ids",
+            "type": "array"
+          },
+          "effective_sample_size": {
+            "title": "Effective Sample Size",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "lower_p25": {
+            "title": "Lower P25",
+            "type": "number"
+          },
+          "median_p50": {
+            "title": "Median P50",
+            "type": "number"
+          },
+          "upper_p75": {
+            "title": "Upper P75",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "lower_p25",
+          "median_p50",
+          "upper_p75",
+          "comparable_post_ids",
+          "effective_sample_size"
+        ],
+        "title": "HistoricalRangeResponse",
+        "type": "object"
+      },
+      "MetricEvidenceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "coverage": {
+            "title": "Coverage",
+            "type": "number"
+          },
+          "effective_sample_size": {
+            "title": "Effective Sample Size",
+            "type": "number"
+          },
+          "eligible_post_count": {
+            "title": "Eligible Post Count",
+            "type": "integer"
+          },
+          "evidence_strength": {
+            "enum": [
+              "High",
+              "Moderate",
+              "Low",
+              "Insufficient"
+            ],
+            "title": "Evidence Strength",
+            "type": "string"
+          },
+          "exclusion_counts": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Exclusion Counts",
+            "type": "array"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "metric_definition": {
+            "title": "Metric Definition",
+            "type": "string"
+          },
+          "outlook": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistoricalRangeResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "statistics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaselineStatisticsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supporting_post_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Supporting Post Ids",
+            "type": "array"
+          },
+          "window": {
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "metric_definition",
+          "window",
+          "evidence_strength",
+          "coverage",
+          "eligible_post_count",
+          "effective_sample_size",
+          "supporting_post_ids",
+          "statistics",
+          "exclusion_counts",
+          "limitations",
+          "outlook"
+        ],
+        "title": "MetricEvidenceResponse",
+        "type": "object"
+      },
+      "MetricIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "definition": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Definition",
+            "type": "string"
+          },
+          "metric": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Metric",
+            "type": "string"
+          },
+          "unit": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Unit",
+            "type": "string"
+          },
+          "window_key": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Window Key",
+            "type": "string"
+          },
+          "window_kind": {
+            "enum": [
+              "mature_cumulative",
+              "age_aligned"
+            ],
+            "title": "Window Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "definition",
+          "unit",
+          "window_kind",
+          "window_key"
+        ],
+        "title": "MetricIdentity",
+        "type": "object"
+      },
+      "MetricPreference": {
+        "additionalProperties": false,
+        "description": "Exact outcome series requested for a draft analysis.",
+        "properties": {
+          "definition": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Definition",
+            "type": "string"
+          },
+          "metric": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Metric",
+            "type": "string"
+          },
+          "unit": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Unit",
+            "type": "string"
+          },
+          "window_key": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Window Key",
+            "type": "string"
+          },
+          "window_kind": {
+            "enum": [
+              "mature_cumulative",
+              "age_aligned"
+            ],
+            "title": "Window Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "definition",
+          "unit",
+          "window_kind",
+          "window_key"
+        ],
+        "title": "MetricPreference",
+        "type": "object"
+      },
+      "RelevanceComponentsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "semantic": {
+            "title": "Semantic",
+            "type": "number"
+          },
+          "structure": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structure"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "semantic",
+          "topic",
+          "intent",
+          "format",
+          "structure"
+        ],
+        "title": "RelevanceComponentsResponse",
+        "type": "object"
+      },
+      "SuggestedHypothesisResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison_post_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Comparison Post Ids",
+            "type": "array"
+          },
+          "is_optional": {
+            "title": "Is Optional",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "experiment_hypothesis",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "metric_definition": {
+            "title": "Metric Definition",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "supporting_post_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Supporting Post Ids",
+            "type": "array"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "variable": {
+            "title": "Variable",
+            "type": "string"
+          },
+          "window": {
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "variable",
+          "value",
+          "rationale",
+          "supporting_post_ids",
+          "comparison_post_ids",
+          "metric",
+          "metric_definition",
+          "window",
+          "is_optional"
+        ],
+        "title": "SuggestedHypothesisResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "BipMe API",
+    "version": "0.2.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/health": {
+      "get": {
+        "description": "Liveness only; not a database readiness check.",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/creators/me/baseline": {
+      "get": {
+        "description": "Returns an exact metric-definition-unit-window baseline at an authorized cutoff. Requires COD-346's active server-verified creator session.",
+        "operationId": "get_creator_baseline_api_v1_creators_me_baseline_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Metric",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "definition",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Definition",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unit",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Unit",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "mature_cumulative",
+                "age_aligned"
+              ],
+              "title": "Window Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_key",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Window Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorBaselineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get the authenticated creator's historical baseline",
+        "tags": [
+          "creator analysis"
+        ]
+      }
+    },
+    "/api/v1/creators/me/draft-assessments": {
+      "post": {
+        "description": "Runs profile extraction, local embedding, same-creator comparable retrieval, historical outcome analysis and immutable Outlook persistence. Requires an Idempotency-Key and COD-346's active server-verified creator session.",
+        "operationId": "create_draft_assessment_api_v1_creators_me_draft_assessments_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftAnalysisRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftAnalysisResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Assess a draft against the creator's history",
+        "tags": [
+          "creator analysis"
+        ]
+      }
+    },
+    "/api/v1/creators/me/draft-assessments/{assessment_id}": {
+      "get": {
+        "description": "Returns only a saved assessment owned by the server-verified creator; foreign and absent IDs are indistinguishable.",
+        "operationId": "get_draft_assessment_api_v1_creators_me_draft_assessments__assessment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftAnalysisResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Read one of the authenticated creator's immutable assessments",
+        "tags": [
+          "creator analysis"
+        ]
+      }
+    }
+  }
+}
