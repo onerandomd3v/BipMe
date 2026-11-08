@@ -135,6 +135,8 @@ def test_supported_metric_returns_ordered_traceable_evidence_and_historical_rang
     assert [item.post_id for item in result.comparable_evidence] == [
         f"post-{index:02}" for index in range(10)
     ]
+    assert result.comparable_evidence[0].components.semantic == 0.9
+    assert result.comparable_evidence[0].retrieval_position == 1
     metric = result.metrics[0]
     assert (metric.metric, metric.metric_definition, metric.window) == (
         "impressions",
@@ -339,7 +341,8 @@ def test_zero_relevance_outcome_is_excluded_and_reported() -> None:
 
     assert result.metrics[0].outlook is not None
     assert "post-00" not in result.metrics[0].supporting_post_ids
-    assert dict(result.metrics[0].exclusion_counts)["zero_relevance_comparable"] == 1
+    assert dict(result.metrics[0].exclusion_counts)["zero_relevance_outcomes"] == 1
+    assert dict(result.exclusions)["zero_relevance_comparables"] == 1
 
 
 def test_outcomes_for_non_comparables_cannot_change_comparable_order_or_relevance() -> None:

@@ -32,6 +32,7 @@ from bipme.intelligence.retrieval import (
     CandidateExclusion,
     ComparableSet,
     DraftAssessment,
+    RelevanceComponents,
 )
 
 OUTLOOK_ALGORITHM_VERSION = "distribution-outlook-v1"
@@ -68,8 +69,8 @@ class OutlookConfig:
     @property
     def config_version(self) -> str:
         return (
-            f"{OUTLOOK_CONFIG_VERSION}:coverage={self.minimum_metric_coverage:.17g}"
-            f":experiment_group_n_eff={self.minimum_experiment_group_effective_sample:.17g}"
+            f"{OUTLOOK_CONFIG_VERSION}:coverage={self.minimum_metric_coverage!r}"
+            f":experiment_group_n_eff={self.minimum_experiment_group_effective_sample!r}"
         )
 
 
@@ -148,6 +149,7 @@ class OutlookRequest:
 class ComparableEvidence:
     post_id: str
     relevance: float
+    components: RelevanceComponents
     retrieval_position: int
     inclusion_reasons: tuple[str, ...]
 
@@ -627,7 +629,13 @@ def build_distribution_outlook(request: OutlookRequest) -> DistributionOutlook:
     """Assemble a deterministic draft decision without changing upstream retrieval evidence."""
     matches = request.comparable_set.matches
     comparable_evidence = tuple(
-        ComparableEvidence(item.post_id, item.relevance, index, item.inclusion_reasons)
+        ComparableEvidence(
+            item.post_id,
+            item.relevance,
+            item.components,
+            index,
+            item.inclusion_reasons,
+        )
         for index, item in enumerate(matches, start=1)
     )
     groups = _metric_groups(request)
@@ -652,7 +660,7 @@ def build_distribution_outlook(request: OutlookRequest) -> DistributionOutlook:
                     {
                         **dict(group.baseline.exclusion_counts),
                         **(
-                            {"zero_relevance_comparable": group.zero_weight_count}
+                            {"zero_relevance_outcomes": group.zero_weight_count}
                             if group.zero_weight_count
                             else {}
                         ),
@@ -690,7 +698,7 @@ def build_distribution_outlook(request: OutlookRequest) -> DistributionOutlook:
         for name, count in sorted(
             {
                 **({"outcomes_for_non_comparable_post": outside} if outside else {}),
-                **({"zero_relevance_comparable": zero_relevance} if zero_relevance else {}),
+                **({"zero_relevance_comparables": zero_relevance} if zero_relevance else {}),
             }.items()
         )
     )
