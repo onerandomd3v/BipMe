@@ -86,7 +86,7 @@ An LLM is **not** the source of truth for performance metrics, rankings, X inter
 
 **Operational controls:** Explicit provider-agnostic adapter; fixed supported model/version per experiment; token/time/monetary budgets and observability; safe logging without raw content or secrets; concurrency/retry limits; tests with mocked models for unsupported citations, metrics, prompt injection, malformed JSON, provider outage and missing/insufficient evidence. Record prompt/schema/model/evidence versions on immutable generated reports and keep a human-auditable provenance trail.
 
-**Sequencing and issue ownership:** Plan a new **[Intelligence] Evidence-grounded LLM report synthesis and provider adapters** issue (sixth pending issue once Linear capacity allows), led by Intelligence. It depends on a typed, approved Creator Intelligence Report evidence contract, while report assembly can ship first using deterministic templates. Selection of an initial LLM vendor/model and inference location is **not** decided. Reevaluate rights and cost before connecting any provider.
+**Sequencing and issue ownership:** [COD-380](https://linear.app/codeddevs/issue/COD-380) owns the Intelligence implementation of the GroqCloud `openai/gpt-oss-120b` V1 synthesis adapter, depending on [COD-377](https://linear.app/codeddevs/issue/COD-377)'s typed report evidence contract. Report assembly may ship first using deterministic templates. V1 model and hosted location are selected; rights, actual account availability, quotas and cost controls remain implementation gates.
 
 ## Technology (approved)
 
