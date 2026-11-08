@@ -41,7 +41,7 @@ The API and future worker share one `apps/api/src/bipme` Python codebase. The in
 | Quality | Ruff, mypy, pytest, ESLint, TypeScript, Playwright when E2E flows exist |
 | Local infrastructure | Docker Compose for PostgreSQL |
 
-**Not currently implemented:** X adapter, login/session system, background worker, persisted embeddings/retrieval, prediction or metrics collection. COD-353 baseline calculations and COD-352 pure retrieval/reranking are implemented; no retrieval persistence or database read adapter exists. Local synthetic CPU embedding inference is available; no X text is processed.
+**Not currently implemented:** X adapter, login/session system, background worker, persisted embeddings/retrieval, calibrated prediction or metrics collection. COD-352 pure retrieval/reranking, COD-353 baseline calculations and COD-354 deterministic outlook assembly are implemented; no retrieval persistence or database read adapter exists. Local synthetic CPU embedding inference is available; no X text is processed.
 
 ## Repository
 
@@ -213,6 +213,10 @@ Keep X-specific authentication, API field mapping, pagination, cost policy and m
 - `GET /api/health` → `{"status":"ok"}` (liveness only, not a database-readiness check).
 - Alembic initial migration enables the `vector` extension.
 - The frontend checks `/api/health` through the Vite development proxy.
+- `intelligence/outlooks.py` implements a pure `build_distribution_outlook(OutlookRequest)` service over the existing draft, comparable-set and baseline contracts. The caller supplies a validated `sha256:` content fingerprint and may supply selected comparable profiles for pattern testing; the service does not derive a hash or receive raw post text.
+- The frozen `DistributionOutlook` preserves retrieval and baseline versions, embedding identity, cutoff, ranked comparable IDs/relevance/inclusion reasons, retrieval counts/exclusion reasons/coverage limits, exact metric/definition/window evidence, evidence strength, limitations, up to two historical observations and at most one optional measurable experiment. Positive retrieval relevance is the only outcome weight. Weighted P25–P75 values are historical reference ranges, emitted only for High/Moderate evidence at or above the versioned 60% metric-coverage gate with complete, untruncated retrieval. The result has stable JSON serialization and contains no provider payload.
+- Suggestions are considered only for a descriptive feature present on the assessed draft, with at least three effective measured comparables in both the matching and comparison groups. They report weighted historical medians and an optional same-window test question; they do not claim that the feature caused the outcomes.
+- The service has no HTTP or persistence integration. COD-345 supplies canonical timestamped outcomes and versioned profiles; COD-358 owns the nullable structured API response and generated OpenAPI/client contract; COD-361 preserves the immutable original fingerprint and optional hypothesis when linking publication outcomes. Post-publication outcomes must not revise the original response.
 
 All other endpoints are **proposals**, not committed API contracts. When introduced, FastAPI's OpenAPI output becomes the source of truth for generating frontend API types.
 
