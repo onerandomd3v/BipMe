@@ -23,10 +23,12 @@ RetrievalState = Literal["matched", "insufficient_evidence", "no_match"]
 
 
 def _aware(value: datetime, name: str) -> bool:
+    """Return whether a timestamp has an explicit UTC offset."""
     return value.tzinfo is not None and value.utcoffset() is not None
 
 
 def _vector_error(values: tuple[float, ...], identity: EmbeddingIdentity) -> str | None:
+    """Describe dimensionality, finiteness or normalization problems in one vector."""
     if len(values) != identity.dimensions:
         return "embedding_dimensions_mismatch"
     if not all(math.isfinite(value) for value in values):
@@ -40,6 +42,7 @@ def _vector_error(values: tuple[float, ...], identity: EmbeddingIdentity) -> str
 
 
 def _cosine(left: tuple[float, ...], right: tuple[float, ...]) -> float:
+    """Compute a bounded cosine similarity for two validated vectors."""
     dot = math.fsum(a * b for a, b in zip(left, right, strict=True))
     left_norm = math.sqrt(math.fsum(value * value for value in left))
     right_norm = math.sqrt(math.fsum(value * value for value in right))
@@ -55,6 +58,7 @@ class MetricRequirement:
     window: str
 
     def __post_init__(self) -> None:
+        """Require a complete exact metric and comparison-window identity."""
         if not all(value.strip() for value in (self.metric, self.definition, self.window)):
             raise ValueError("metric, definition and window are required")
 
@@ -98,6 +102,7 @@ class DraftAssessment:
     embedding_observed_at: datetime
 
     def __post_init__(self) -> None:
+        """Reject draft inputs observed beyond the immutable assessment cutoff."""
         if not self.assessment_id.strip() or not self.creator_key.strip():
             raise ValueError("assessment_id and creator_key are required")
         if not _aware(self.as_of, "as_of") or not _aware(
@@ -140,6 +145,7 @@ class RankingWeights:
     structure: float = 0.0
 
     def __post_init__(self) -> None:
+        """Require finite non-negative weights with at least one active signal."""
         values = (self.semantic, self.topic, self.intent, self.format, self.structure)
         if any(not math.isfinite(value) or value < 0 for value in values):
             raise ValueError("ranking weights must be finite and non-negative")
@@ -161,6 +167,7 @@ class RetrievalConfig:
     metric_requirements: tuple[MetricRequirement, ...] = ()
 
     def __post_init__(self) -> None:
+        """Validate bounded limits, abstention threshold and versioned requirements."""
         if self.candidate_limit < 1 or self.result_limit < 1 or self.minimum_comparables < 1:
             raise ValueError("candidate, result and minimum comparable limits must be positive")
         if self.result_limit < self.minimum_comparables:
@@ -205,7 +212,9 @@ class VectorCandidateBatch:
 class VectorCandidateSource(Protocol):
     """Narrow contract implemented by an in-memory test or future pgvector adapter."""
 
-    def search(self, query: VectorCandidateQuery) -> VectorCandidateBatch: ...
+    def search(self, query: VectorCandidateQuery) -> VectorCandidateBatch:
+        """Return a stable, bounded semantic candidate page and its coverage metadata."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -215,6 +224,7 @@ class InMemoryVectorCandidateSource:
     candidates: tuple[ComparableCandidate, ...]
 
     def search(self, query: VectorCandidateQuery) -> VectorCandidateBatch:
+        """Filter invalid vector rows, then return exact-cosine top-K candidates."""
         counts = Counter(item.post_id for item in self.candidates)
         duplicates = {post_id for post_id, count in counts.items() if count > 1}
         exclusions: list[CandidateExclusion] = []
@@ -316,6 +326,7 @@ class ComparableSet:
 
 
 def _token_set(profile: PostProfile) -> set[str] | None:
+    """Return normalized creator-declared topic tokens and hashtags when known."""
     if profile.topic_signals is None and profile.declared_topic is None:
         return None
     tokens = {value.casefold() for value in (profile.topic_signals or ()) if value.strip()}
@@ -325,6 +336,7 @@ def _token_set(profile: PostProfile) -> set[str] | None:
 
 
 def _jaccard(left: set[str] | None, right: set[str] | None) -> float | None:
+    """Compute set overlap, preserving a known empty-versus-empty match."""
     if left is None or right is None:
         return None
     union = left | right
@@ -332,6 +344,7 @@ def _jaccard(left: set[str] | None, right: set[str] | None) -> float | None:
 
 
 def _topic_similarity(draft: PostProfile, candidate: PostProfile) -> float | None:
+    """Compare known topic tokens without interpreting absent tags as a topic."""
     left = _token_set(draft)
     right = _token_set(candidate)
     if not left or not right:
@@ -340,6 +353,7 @@ def _topic_similarity(draft: PostProfile, candidate: PostProfile) -> float | Non
 
 
 def _intent_similarity(draft: PostProfile, candidate: PostProfile) -> float | None:
+    """Compare declared intent and non-empty lexical intent signals when available."""
     components: list[float] = []
     if draft.declared_intent is not None and candidate.declared_intent is not None:
         components.append(float(draft.declared_intent == candidate.declared_intent))
@@ -351,6 +365,7 @@ def _intent_similarity(draft: PostProfile, candidate: PostProfile) -> float | No
 
 
 def _format_similarity(draft: PostProfile, candidate: PostProfile) -> float | None:
+    """Compare known content formats and media types without filling unknowns."""
     components: list[float] = []
     if draft.content_format != "unknown" and candidate.content_format != "unknown":
         components.append(float(draft.content_format == candidate.content_format))
@@ -362,6 +377,7 @@ def _format_similarity(draft: PostProfile, candidate: PostProfile) -> float | No
 
 
 def _length_similarity(left: int | None, right: int | None) -> float | None:
+    """Return a bounded min-to-max length ratio when both counts are known."""
     if left is None or right is None:
         return None
     high = max(left, right)
@@ -369,6 +385,7 @@ def _length_similarity(left: int | None, right: int | None) -> float | None:
 
 
 def _structure_similarity(draft: PostProfile, candidate: PostProfile) -> float | None:
+    """Average available character, word and sentence-count similarity."""
     values = (
         _length_similarity(draft.character_count, candidate.character_count),
         _length_similarity(draft.word_count, candidate.word_count),
@@ -379,6 +396,7 @@ def _structure_similarity(draft: PostProfile, candidate: PostProfile) -> float |
 
 
 def _components(assessment: DraftAssessment, candidate: ComparableCandidate) -> RelevanceComponents:
+    """Calculate semantic and descriptive components for one eligible candidate."""
     assert candidate.profile is not None and candidate.embedding is not None
     cosine = _cosine(assessment.embedding, candidate.embedding)
     return RelevanceComponents(
@@ -391,6 +409,7 @@ def _components(assessment: DraftAssessment, candidate: ComparableCandidate) -> 
 
 
 def _relevance(components: RelevanceComponents, weights: RankingWeights) -> float | None:
+    """Return the active-weight mean, or None when this row has no scorable signal."""
     pairs = (
         (components.semantic, weights.semantic),
         (components.topic, weights.topic),
@@ -408,6 +427,7 @@ def _relevance(components: RelevanceComponents, weights: RankingWeights) -> floa
 def _metric_reasons(
     candidate: ComparableCandidate, requirements: tuple[MetricRequirement, ...], as_of: datetime
 ) -> list[str]:
+    """Check exact metric definition/window eligibility using metadata only."""
     reasons: list[str] = []
     for requirement in requirements:
         matching = [item for item in candidate.metric_evidence if item.metric == requirement.metric]
@@ -440,6 +460,7 @@ def _eligibility_reasons(
     candidate: ComparableCandidate,
     config: RetrievalConfig,
 ) -> list[str]:
+    """Return every creator, time, profile, topology, format and metric rejection reason."""
     reasons: list[str] = []
     if not candidate.post_id.strip():
         reasons.append("missing_post_id")
