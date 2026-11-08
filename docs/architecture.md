@@ -41,7 +41,7 @@ The API and future worker share one `apps/api/src/bipme` Python codebase. The in
 | Quality | Ruff, mypy, pytest, ESLint, TypeScript, Playwright when E2E flows exist |
 | Local infrastructure | Docker Compose for PostgreSQL |
 
-**Not currently implemented:** X adapter, login/session system, background worker, persisted embeddings/retrieval, prediction, baseline or metrics collection. Local synthetic CPU embedding inference is available; no X text is processed.
+**Not currently implemented:** X adapter, login/session system, background worker, persisted embeddings/retrieval, prediction or metrics collection. COD-353 baseline calculations and COD-352 pure retrieval/reranking are implemented; no retrieval persistence or database read adapter exists. Local synthetic CPU embedding inference is available; no X text is processed.
 
 ## Repository
 
@@ -99,12 +99,24 @@ Draft -> draft Post Profile -> comparable post retrieval
 
 ### COD-350 Post Profile contract
 
-`apps/api/src/bipme/intelligence/post_profiles.py` extracts `post-profile-v1` from provider-neutral, timestamped input. Its frozen output is the typed descriptive contract for future COD-352 retrieval; embedding vectors remain in the separate COD-351 interface and observed outcomes remain separate records. COD-345 owns the eventual shared persistence representation and migrations.
+`apps/api/src/bipme/intelligence/post_profiles.py` extracts `post-profile-v1` from provider-neutral, timestamped input. Its frozen output is the typed descriptive input consumed by the pure COD-352 retrieval engine; embedding vectors remain in the separate COD-351 interface and observed outcomes remain separate records. COD-345 owns the eventual shared persistence representation and migrations.
 
 - `features_as_of` bounds both the content/format observation and creator-context snapshot. Future observations, naive timestamps, and unsupported feature versions are rejected. The profile stores input and creator-context observation times so consumers can assess provenance and staleness.
 - `None` means unknown; empty text and an empty media tuple mean known absence. Text length counts Unicode code points, word count counts Unicode word tokens after URLs are removed, and sentence count uses punctuation boundaries (`.`, `!`, `?`) after URL removal. These are lexical heuristics, not language understanding.
 - Hashtags are case-folded topic signals, with duplicates retained in the structural list and removed in the topic-signal list. A topic or intent label is included only when explicitly supplied by the creator. `question_marker` and `reply_invitation` describe visible wording, not the creator's true intent or likely performance.
 - Format uses known media metadata, topology and thread role; missing metadata stays unknown. The input and profile have no impression, engagement, outcome or future audience fields. A new extraction algorithm must receive a new supported version, and historical profiles must be regenerated before retrieval mixes versions.
+
+### COD-352 comparable retrieval contract
+
+`apps/api/src/bipme/intelligence/retrieval.py` implements deterministic, provider-neutral retrieval and re-ranking over a bounded candidate page. `VectorCandidateSource` is the persistence boundary; `InMemoryVectorCandidateSource` provides exact-cosine synthetic retrieval today. No SQL query, pgvector index, migration or persistence implementation is claimed. The future COD-345 adapter should constrain by creator, publication cutoff and exact `EmbeddingIdentity` before vector ordering, return stable top-K rows, and report the source candidate count, truncation and any storage-side exclusions. The engine rechecks eligibility after retrieval.
+
+- A candidate must be available, belong to the assessment creator, have been published strictly before the cutoff, and have a valid embedding in the exact model/revision/dimensions/preprocessing/normalization/embedding-version space. Candidate embedding observation, profile `features_as_of`, profile input observation and creator-context observation must all be no later than the assessment cutoff. Draft-side profile and embedding are likewise validated at construction.
+- A missing profile, incompatible profile version, duplicate post ID, missing/corrupt embedding, future timestamp or unavailable post is excluded with explicit reasons. Known topology, thread-role and content-format mismatches are hard exclusions; unknown fields stay unknown and are omitted from scoring. When configured for a baseline, required metric definition/window evidence must be usable and observed after publication but no later than the assessment. Metric values are not part of the retrieval contract.
+- The versioned starter ranking uses cosine mapped to `[0,1]`, `0.30 × semantic + 0.18 × topic Jaccard + 0.15 × intent agreement + 0.12 × format compatibility`; it computes structural-length similarity too, but its default weight is zero. Available configured components are normalized by their active weights. These are the illustrative, configurable values from the research design, not validated weights. The default minimum relevance of `0.55`, three-match evidence minimum, 100-candidate query limit and 20-result limit are configurable engineering heuristics, not calibrated quality thresholds. Ties resolve by stable post ID. No outcome value participates in score calculation.
+- Output is a frozen `ComparableSet` with assessment ID, algorithm/config version, embedding identity, cutoff, ranked IDs, component scores, relevance, inclusion/exclusion reasons, candidate counts, source truncation and explicit `matched`, `insufficient_evidence` or `no_match` state. `insufficient_evidence` and `no_match` never force low-scoring matches.
+- COD-345 should expose stable canonical post IDs, creator/account key, publication/availability state, versioned profile fields and observation times, plus versioned embedding vectors and full identity/timestamp metadata. If baseline eligibility is requested, it should also expose metric name/definition/window and timestamped usable/missing state. The persistence adapter owns SQLAlchemy and pgvector details.
+- A COD-353 caller can map returned post IDs and positive relevance-derived weights to its `OutcomeObservation` inputs only after retrieval; outcome values cannot flow back into retrieval. COD-354 can consume the same IDs, component scores, reasons, evidence state and coverage limitations for creator-facing explanations.
+
 ## V1 creator decision and experiment contract (planned)
 
 - **Decision-first output:** never expose only a "viral potential" score. For an analyzed draft return the eligible comparables and relevance reasons, supported pattern observations, named uncertainty and an actionable *suggestion to test* only when justified. Relative outcome intervals are **secondary** and optional: when evidence is insufficient, abstain rather than fabricate a range.
