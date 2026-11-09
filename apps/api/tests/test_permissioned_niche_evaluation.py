@@ -109,6 +109,17 @@ def test_unpermissioned_or_unverified_peers_never_enter_niche_evidence() -> None
     assert dict(result.exclusions)["owner_verification_missing"] > 0
 
 
+def test_target_creator_does_not_count_toward_minimum_peer_contributors() -> None:
+    posts = tuple(post for post in make_posts() if post.creator_key in (TARGET, "synthetic-peer-a"))
+
+    result = evaluate_permissioned_niche_comparisons(posts, spec())
+
+    assert result.niche_contributor_count == 1
+    assert result.personal.recommendation_count > 0
+    assert result.permissioned_niche.recommendation_count == 0
+    assert result.permissioned_niche.pattern is None
+
+
 def test_future_incompatible_missing_and_wrong_age_evidence_is_excluded() -> None:
     posts = list(make_posts())
     peer_index = next(i for i, post in enumerate(posts) if post.creator_key == "synthetic-peer-a")

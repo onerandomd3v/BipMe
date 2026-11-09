@@ -294,8 +294,9 @@ def _recommend(
         by_creator_pattern_band[(row.post.creator_key, row.post.pattern, row.band)] += 1
         by_creator_band[(row.post.creator_key, row.band)] += 1
     creators = sorted({row.post.creator_key for row in sampled})
-    if niche and len(creators) < spec.minimum_niche_contributors:
-        return None, counts, len(creators)
+    peer_creators = [creator for creator in creators if creator != spec.target_creator_key]
+    if niche and len(peer_creators) < spec.minimum_niche_contributors:
+        return None, counts, len(peer_creators)
     candidates = sorted({row.post.pattern for row in sampled if row.band == "strong"})
     scores: list[tuple[float, str]] = []
     for pattern in candidates:
@@ -311,8 +312,12 @@ def _recommend(
             scores.append((math.fsum(contributor_scores) / len(contributor_scores), pattern))
     positive = [item for item in scores if item[0] > 0]
     if not positive:
-        return None, counts, len(creators)
-    return sorted(positive, key=lambda item: (-item[0], item[1]))[0][1], counts, len(creators)
+        return None, counts, len(peer_creators) if niche else len(creators)
+    return (
+        sorted(positive, key=lambda item: (-item[0], item[1]))[0][1],
+        counts,
+        len(peer_creators) if niche else len(creators),
+    )
 
 
 def _without_outliers(
