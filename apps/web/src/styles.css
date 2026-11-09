@@ -557,12 +557,13 @@ h2 {
     pointer-events: none;
     transition:
       transform 0.22s ease,
-      visibility 0.22s;
+      visibility 0s linear 0.22s;
   }
   .sidebar[data-open='true'] {
     transform: translateX(0);
     visibility: visible;
     pointer-events: auto;
+    transition-delay: 0s, 0s;
   }
   .brand-row {
     padding-inline: 7px;

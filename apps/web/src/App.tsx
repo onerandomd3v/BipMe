@@ -322,6 +322,16 @@ export function App() {
 
   const closeDrawer = () => setDrawerOpen(false)
 
+  const openDrawer = () => {
+    setDrawerOpen(true)
+    window.requestAnimationFrame(() => {
+      const sidebar = sidebarRef.current
+      if (sidebar?.dataset.open === 'true') {
+        sidebar.querySelector<HTMLButtonElement>('.drawer-close')?.focus()
+      }
+    })
+  }
+
   const onDrawerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -470,7 +480,7 @@ export function App() {
               aria-label="Open navigation"
               aria-expanded={drawerOpen}
               aria-controls="primary-navigation"
-              onClick={() => setDrawerOpen(true)}
+              onClick={openDrawer}
             >
               <span aria-hidden="true">☰</span>
             </button>
