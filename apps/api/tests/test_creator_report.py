@@ -374,9 +374,7 @@ def test_codex_missing_topology_is_not_counted_as_absence() -> None:
         topology = "original" if record.post_id.startswith("post-") else None
         if int(record.post_id.split("-")[1]) >= 9:
             topology = None
-        selected.append(
-            replace(record, profile=replace(record.profile, topology=topology))
-        )
+        selected.append(replace(record, profile=replace(record.profile, topology=topology)))
     cohort = PersonalMetricCohort(
         metric="replies",
         metric_definition="observed reply count",
@@ -388,9 +386,7 @@ def test_codex_missing_topology_is_not_counted_as_absence() -> None:
         excluded_count=0,
         limitations=(),
     )
-    patterns = compare_personal_content_patterns(
-        "creator", NOW, (cohort,), tuple(selected)
-    )
+    patterns = compare_personal_content_patterns("creator", NOW, (cohort,), tuple(selected))
     assert not any(pattern.feature == "topology" for pattern in patterns)
 
 
