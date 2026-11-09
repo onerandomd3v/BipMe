@@ -2,7 +2,7 @@
 
 **Checked against `main` at `d9bd57b` on 9 November 2026.** This report prepares verification; it is not a full V1 acceptance sign-off. All code evidence listed below is from synthetic fixtures or mocked services unless explicitly stated otherwise. No real X account, archive, provider request, or post-observation window was used.
 
-**Local API verification on this branch:** Ruff lint passed; Ruff format check passed (64 files); mypy passed (39 source files); pytest passed (**328 passed, 15 skipped**). The focused unknown-version regression passed (**1 passed**). The skips are one opt-in model download and 14 PostgreSQL cases requiring `BIPME_TEST_DATABASE_URL`; PostgreSQL migration/integration behavior is therefore not locally verified in this run. `git diff --check` passed. GitHub PR CI is the remaining CI gate.
+**Local API verification on this branch:** Ruff lint passed; Ruff format check passed (64 files); mypy passed (39 source files); pytest passed (**328 passed, 15 skipped**). The focused unknown-version regression passed (**1 passed**). The skips are one opt-in model download and 14 PostgreSQL cases requiring `BIPME_TEST_DATABASE_URL`; PostgreSQL migration/integration behavior is therefore not locally verified in this run. `git diff --check` passed. GitHub PR CI subsequently passed all three jobs (`api-checks`, including PostgreSQL-backed tests; `web-checks`; `workspace-checks`) on PR #39.
 
 ## Acceptance coverage
 
