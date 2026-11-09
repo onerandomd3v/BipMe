@@ -421,6 +421,7 @@ def _make_evidence_bundle(
     personal_sources: tuple[ReportSource, ...] = ()
     evidence_records: list[ReportEvidence] = []
     observations: tuple[OutcomeObservation, ...] = ()
+    excluded_observations: tuple[OutcomeObservation, ...] = ()
     profiles: tuple[PersonalPostProfile, ...] = ()
     evidence_snapshot: dict[str, Any] = {"sources": [], "observations": [], "profiles": []}
     limitations: list[str] = []
@@ -467,7 +468,6 @@ def _make_evidence_bundle(
                 OutcomeObservationRecord.creator_id == creator_id,
                 OutcomeObservationRecord.post_id.in_(post_ids),
                 OutcomeObservationRecord.observed_at <= as_of,
-                OutcomeObservationRecord.state.in_(("observed", "missing")),
             )
             observation_count = (
                 db.scalar(
@@ -504,10 +504,36 @@ def _make_evidence_bundle(
                     rows = list(
                         db.scalars(select(OutcomeObservationRecord).where(*outcome_filter)).all()
                     )
+                    # Select the latest row before converting states. A newer invalid row
+                    # is an explicit gap and must not resurrect an older observed value.
                     rows = _latest_observation_records(rows, as_of)
                     weights = {str(post_id): 1.0 for post_id in post_ids}
-                    observations = outcome_observations_from_records(
+                    all_observations = outcome_observations_from_records(
                         rows, weights_by_post_id=weights
+                    )
+                    definitions_by_dimension: dict[tuple[str, str], set[str]] = {}
+                    for item in all_observations:
+                        definitions_by_dimension.setdefault((item.metric, item.window), set()).add(
+                            item.metric_definition
+                        )
+                    ambiguous_dimensions = {
+                        dimension
+                        for dimension, definitions in definitions_by_dimension.items()
+                        if len(definitions) > 1
+                    }
+                    for metric, window in sorted(ambiguous_dimensions):
+                        limitations.append(
+                            f"{metric} ({window}) has multiple metric definitions and was excluded rather than mixed."
+                        )
+                    observations = tuple(
+                        item
+                        for item in all_observations
+                        if (item.metric, item.window) not in ambiguous_dimensions
+                    )
+                    excluded_observations = tuple(
+                        item
+                        for item in all_observations
+                        if (item.metric, item.window) in ambiguous_dimensions
                     )
 
             if (
@@ -532,6 +558,8 @@ def _make_evidence_bundle(
                 )
                 grouped: dict[tuple[str, str, str], list[OutcomeObservation]] = {}
                 for item in observations:
+                    if item.value is None:
+                        continue
                     grouped.setdefault(
                         (item.metric, item.metric_definition, item.window), []
                     ).append(item)
@@ -569,6 +597,12 @@ def _make_evidence_bundle(
                 evidence_snapshot = {
                     "sources": [asdict(item) for item in personal_sources],
                     "observations": [asdict(item) for item in observations],
+                    "missing_observations": [
+                        asdict(item) for item in observations if item.value is None
+                    ],
+                    "excluded_ambiguous_observations": [
+                        asdict(item) for item in excluded_observations
+                    ],
                     "profiles": [
                         {
                             "post_id": item.post_id,

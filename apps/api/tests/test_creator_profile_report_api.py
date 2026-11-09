@@ -437,3 +437,151 @@ def test_niche_source_selection_is_rejected_until_discovery_is_available(report_
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_request"
+
+
+def test_invalid_latest_observation_does_not_resurrect_an_older_value(
+    report_api, monkeypatch
+) -> None:
+    client, factory = report_api
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED", "true")
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT", "2026-11-08T12:00:00Z")
+    _create_profile(client)
+    post_ids = _seed_history(factory)
+    with factory() as db:
+        post = db.get(CanonicalPost, post_ids[0])
+        assert post is not None
+        db.add(
+            OutcomeObservationRecord(
+                id=uuid4(),
+                post_id=post.id,
+                creator_id=CREATOR_ID,
+                published_at=post.published_at,
+                metric_name="replies",
+                metric_definition="public_reply_count_v1",
+                metric_unit="replies",
+                metric_value=None,
+                state="invalid",
+                window_kind="age_aligned",
+                window_key="age:24h",
+                observed_at=NOW - timedelta(days=1),
+                idempotency_key="synthetic-invalid-latest",
+                provenance={"source": "synthetic_test_fixture"},
+            )
+        )
+        db.commit()
+    _grant_personal_history(client)
+
+    response = client.post(
+        "/api/v1/creators/me/report",
+        headers={"Idempotency-Key": "report-invalid-latest-001"},
+        json={"data_sources": ["personal_history"]},
+    )
+
+    assert response.status_code == 200, response.text
+    outcomes = response.json()["evidence"]["observations"]
+    assert len(outcomes) == 3
+    assert str(post_ids[0]) not in {item["post_id"] for item in outcomes}
+
+
+def test_missing_outcomes_are_gaps_and_do_not_become_measured_claims(
+    report_api, monkeypatch
+) -> None:
+    client, factory = report_api
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED", "true")
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT", "2026-11-08T12:00:00Z")
+    _create_profile(client)
+    _seed_history(factory)
+    with factory() as db:
+        rows = db.scalars(
+            select(OutcomeObservationRecord).where(
+                OutcomeObservationRecord.creator_id == CREATOR_ID
+            )
+        ).all()
+        for row in rows:
+            row.state = "missing"
+            row.metric_value = None
+        db.commit()
+    _grant_personal_history(client)
+
+    response = client.post(
+        "/api/v1/creators/me/report",
+        headers={"Idempotency-Key": "report-missing-outcomes-001"},
+        json={"data_sources": ["personal_history"]},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["coverage"] == "insufficient_evidence"
+    assert len(body["evidence"]["observations"]) == 4
+    assert all(item["value"] is None for item in body["evidence"]["observations"])
+    assert len(body["evidence"]["missing_observations"]) == 4
+    assert body["evidence"]["bundle"]["personal_evidence"] == []
+
+
+def test_metric_definition_conflicts_are_excluded_without_failing_other_metrics(
+    report_api, monkeypatch
+) -> None:
+    client, factory = report_api
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED", "true")
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT", "2026-11-08T12:00:00Z")
+    _create_profile(client)
+    post_ids = _seed_history(factory)
+    with factory() as db:
+        for index, post_id in enumerate(post_ids):
+            post = db.get(CanonicalPost, post_id)
+            assert post is not None
+            db.add(
+                OutcomeObservationRecord(
+                    id=uuid4(),
+                    post_id=post_id,
+                    creator_id=CREATOR_ID,
+                    published_at=post.published_at,
+                    metric_name="replies",
+                    metric_definition="public_reply_count_v2",
+                    metric_unit="replies",
+                    metric_value=index + 10,
+                    state="observed",
+                    window_kind="age_aligned",
+                    window_key="age:24h",
+                    observed_at=post.published_at + timedelta(days=1),
+                    idempotency_key=f"synthetic-alternate-replies-{index}",
+                    provenance={"source": "synthetic_test_fixture"},
+                )
+            )
+            db.add(
+                OutcomeObservationRecord(
+                    id=uuid4(),
+                    post_id=post_id,
+                    creator_id=CREATOR_ID,
+                    published_at=post.published_at,
+                    metric_name="likes",
+                    metric_definition="public_like_count_v1",
+                    metric_unit="likes",
+                    metric_value=index + 5,
+                    state="observed",
+                    window_kind="age_aligned",
+                    window_key="age:24h",
+                    observed_at=post.published_at + timedelta(days=1),
+                    idempotency_key=f"synthetic-likes-{index}",
+                    provenance={"source": "synthetic_test_fixture"},
+                )
+            )
+        db.commit()
+    _grant_personal_history(client)
+
+    response = client.post(
+        "/api/v1/creators/me/report",
+        headers={"Idempotency-Key": "report-metric-definition-conflict-001"},
+        json={"data_sources": ["personal_history"]},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    included_metrics = {item["metric"] for item in body["evidence"]["observations"]}
+    excluded_metrics = {
+        item["metric"] for item in body["evidence"]["excluded_ambiguous_observations"]
+    }
+    assert "replies" not in included_metrics
+    assert "likes" in included_metrics
+    assert excluded_metrics == {"replies"}
+    assert any("multiple metric definitions" in item for item in body["limitations"])
