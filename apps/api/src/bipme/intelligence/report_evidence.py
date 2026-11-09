@@ -9,12 +9,13 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from bipme.intelligence.creator_goals import CreatorGoalsSnapshot
 
 REPORT_EVIDENCE_VERSION = "creator-report-evidence-v2"
+NICHE_FRESHNESS_DAYS = 30
 EvidencePool = Literal["personal", "niche"]
 EvidenceKind = Literal["observation", "inference", "hypothesis", "unknown"]
 ReportCoverage = Literal["personal_and_niche", "personal_only_partial", "insufficient_evidence"]
@@ -127,6 +128,30 @@ class ReportEvidence:
             _nonempty(self.descriptor_value or "", "descriptor_value")
 
 
+def niche_evidence_freshness(
+    as_of: datetime,
+    evidence: ReportEvidence,
+    sources: dict[str, ReportSource],
+) -> Literal["current", "stale", "unknown_time", "unverified", "not_observation"]:
+    """Classify niche evidence with the shared report coverage freshness gate."""
+    if evidence.kind != "observation":
+        return "not_observation"
+    source_records = tuple(sources.get(source_id) for source_id in evidence.source_ids)
+    if any(source is None or not source.authorization_verified for source in source_records):
+        return "unverified"
+    if evidence.observed_at is None or evidence.published_at is None:
+        return "unknown_time"
+    verified_sources = tuple(source for source in source_records if source is not None)
+    cutoff_age = timedelta(days=NICHE_FRESHNESS_DAYS)
+    if (
+        as_of - evidence.published_at > cutoff_age
+        or as_of - evidence.observed_at > cutoff_age
+        or any(as_of - source.observed_at > cutoff_age for source in verified_sources)
+    ):
+        return "stale"
+    return "current"
+
+
 @dataclass(frozen=True)
 class CreatorReportEvidenceBundle:
     """Frozen evidence to be consumed by deterministic reports or later synthesis.
@@ -205,12 +230,13 @@ class CreatorReportEvidenceBundle:
         personal = tuple(
             evidence
             for evidence in self.personal_evidence
-            if all(sources[source_id].authorization_verified for source_id in evidence.source_ids)
+            if evidence.kind == "observation"
+            and all(sources[source_id].authorization_verified for source_id in evidence.source_ids)
         )
         niche = tuple(
             evidence
             for evidence in self.niche_evidence
-            if all(sources[source_id].authorization_verified for source_id in evidence.source_ids)
+            if niche_evidence_freshness(self.as_of, evidence, sources) == "current"
         )
         if not personal:
             return "insufficient_evidence"

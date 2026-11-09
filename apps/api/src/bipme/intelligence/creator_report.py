@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 from bipme.intelligence.baselines import (
@@ -26,15 +26,17 @@ from bipme.intelligence.content_patterns import (
     compare_personal_content_patterns,
 )
 from bipme.intelligence.creator_goals import CreatorOutcome
+from bipme.intelligence.post_profiles import PROFILE_VERSION
 from bipme.intelligence.report_evidence import (
+    NICHE_FRESHNESS_DAYS,
     REPORT_EVIDENCE_VERSION,
     CreatorReportEvidenceBundle,
     ReportEvidence,
     ReportSource,
+    niche_evidence_freshness,
 )
 
 REPORT_ALGORITHM_VERSION = "creator-intelligence-report-v2"
-NICHE_FRESHNESS_DAYS = 30
 SectionName = Literal["personal_history", "niche_observations", "limitations"]
 ReportState = Literal["personal_and_niche", "personal_only_partial", "insufficient_evidence"]
 Freshness = Literal["current", "stale", "historical", "unknown"]
@@ -252,15 +254,25 @@ def _verified_baselines(
     """
     verified: list[tuple[CreatorBaseline, str]] = []
     for baseline in baselines:
+        supported = set(baseline.supporting_post_ids)
+        supporting_matches = tuple(
+            item
+            for item in outcomes
+            if item.metric == baseline.metric
+            and item.window == baseline.window
+            and item.post_id in supported
+        )
+        definitions = {item.metric_definition for item in supporting_matches}
+        if len(definitions) != 1 or not supporting_matches:
+            continue
+        definition = next(iter(definitions))
         matches = tuple(
             item
             for item in outcomes
-            if item.metric == baseline.metric and item.window == baseline.window
+            if item.metric == baseline.metric
+            and item.window == baseline.window
+            and item.metric_definition == definition
         )
-        definitions = {item.metric_definition for item in matches}
-        if len(definitions) != 1 or not matches:
-            continue
-        definition = next(iter(definitions))
         candidate = build_creator_baseline(
             matches,
             BaselineRequest(
@@ -565,6 +577,7 @@ def _complete_personal_feature_coverage(
         profile = record.profile
         if (
             profile.creator_key != creator_key
+            or profile.version != PROFILE_VERSION
             or profile.features_as_of > as_of
             or profile.input_observed_at > as_of
             or record.post_id in values
@@ -588,22 +601,17 @@ def _fresh_niche_evidence(
     """Return only current, permission-verified niche records plus exclusion counts."""
     current: list[ReportEvidence] = []
     unverified = stale = unknown_time = 0
-    cutoff_age = timedelta(days=NICHE_FRESHNESS_DAYS)
     for item in niche_evidence:
-        if item.kind != "observation":
+        freshness = niche_evidence_freshness(bundle.as_of, item, all_sources)
+        if freshness == "not_observation":
             continue
-        if not all(source_id in all_sources for source_id in item.source_ids):
+        if freshness == "unverified":
             unverified += 1
             continue
-        if item.observed_at is None or item.published_at is None:
+        if freshness == "unknown_time":
             unknown_time += 1
             continue
-        source_records = tuple(all_sources[source_id] for source_id in item.source_ids)
-        if (
-            bundle.as_of - item.published_at > cutoff_age
-            or bundle.as_of - item.observed_at > cutoff_age
-            or any(bundle.as_of - source.observed_at > cutoff_age for source in source_records)
-        ):
+        if freshness == "stale":
             stale += 1
             continue
         current.append(item)
@@ -613,8 +621,14 @@ def _fresh_niche_evidence(
 def _one_evidence_covers_pattern(
     pattern: ContentPatternContrast,
     personal_evidence: tuple[ReportEvidence, ...],
+    baseline_by_dimension: dict[tuple[str, str], tuple[CreatorBaseline, str]],
+    personal_findings: tuple[ReportFinding, ...],
 ) -> ReportEvidence | None:
     required = set(pattern.strong_group_post_ids + pattern.weak_group_post_ids)
+    verified = baseline_by_dimension.get((pattern.metric, pattern.window))
+    if verified is None or verified[1] != pattern.metric_definition:
+        return None
+    supported = set(verified[0].supporting_post_ids)
     return next(
         (
             item
@@ -624,6 +638,12 @@ def _one_evidence_covers_pattern(
             and item.metric_definition == pattern.metric_definition
             and item.metric_window == pattern.window
             and required.issubset(item.post_ids)
+            and set(item.post_ids).issubset(supported)
+            and any(
+                finding.evidence_ids == (item.evidence_id,)
+                and finding.evidence_strength in ("High", "Moderate")
+                for finding in personal_findings
+            )
         ),
         None,
     )
@@ -636,6 +656,8 @@ def _niche_opportunities(
     profiles: tuple[PersonalPostProfile, ...],
     niche_evidence: tuple[ReportEvidence, ...],
     sources: dict[str, ReportSource],
+    baseline_by_dimension: dict[tuple[str, str], tuple[CreatorBaseline, str]],
+    personal_findings: tuple[ReportFinding, ...],
 ) -> tuple[tuple[ReportOpportunity, ...], tuple[ReportExperiment, ...]]:
     """Join explicit recent niche descriptors to personal evidence without pooling metrics."""
     personal_feature = {
@@ -667,23 +689,6 @@ def _niche_opportunities(
         source_versions = tuple(
             sorted((source_id, sources[source_id].source_version) for source_id in source_ids)
         )
-        selected: tuple[CreatorOutcome, PersonalMetricCohort] | None = None
-        for goal in bundle.goals.priority_outcomes:
-            candidate = next(
-                (
-                    cohort
-                    for cohort in cohorts
-                    if metric_goals.get(cohort.metric) == goal
-                    and cohort.evidence_strength in ("High", "Moderate")
-                ),
-                None,
-            )
-            if candidate is not None:
-                selected = (goal, candidate)
-                break
-        if selected is None:
-            continue
-        goal, cohort = selected
         mapped_pattern_name = next(
             (
                 feature
@@ -692,21 +697,56 @@ def _niche_opportunities(
             ),
             None,
         )
-        matching_pattern = next(
-            (
-                pattern
-                for pattern in patterns
-                if pattern.metric == cohort.metric
-                and pattern.metric_definition == cohort.metric_definition
-                and pattern.window == cohort.window
-                and pattern.feature == mapped_pattern_name
-                and pattern.feature_value.casefold() == value
-                and pattern.strong_count >= 3
-                and pattern.strong_count * pattern.weak_total
-                > pattern.weak_count * pattern.strong_total
-            ),
-            None,
-        )
+        selected: (
+            tuple[
+                CreatorOutcome,
+                PersonalMetricCohort,
+                ContentPatternContrast | None,
+                dict[str, str] | None,
+            ]
+            | None
+        ) = None
+        for goal in bundle.goals.priority_outcomes:
+            for candidate in cohorts:
+                if metric_goals.get(
+                    candidate.metric
+                ) != goal or candidate.evidence_strength not in ("High", "Moderate"):
+                    continue
+                matching_pattern = next(
+                    (
+                        pattern
+                        for pattern in patterns
+                        if pattern.metric == candidate.metric
+                        and pattern.metric_definition == candidate.metric_definition
+                        and pattern.window == candidate.window
+                        and pattern.feature == mapped_pattern_name
+                        and pattern.feature_value.casefold() == value
+                        and pattern.strong_count >= 3
+                        and pattern.strong_count * pattern.weak_total
+                        > pattern.weak_count * pattern.strong_total
+                    ),
+                    None,
+                )
+                if matching_pattern is not None:
+                    selected = (goal, candidate, matching_pattern, None)
+                    break
+                coverage = (
+                    _complete_personal_feature_coverage(
+                        candidate, descriptor, profiles, bundle.creator_key, bundle.as_of
+                    )
+                    if mapped_pattern_name is not None
+                    else None
+                )
+                if coverage is not None and all(
+                    feature_value != value for feature_value in coverage.values()
+                ):
+                    selected = (goal, candidate, None, coverage)
+                    break
+            if selected is not None:
+                break
+        if selected is None:
+            continue
+        goal, cohort, matching_pattern, coverage = selected
         kind: OpportunityKind
         personal_post_ids: tuple[str, ...]
         personal_limitations: tuple[str, ...]
@@ -728,16 +768,7 @@ def _niche_opportunities(
                 f"{matching_pattern.weak_count}/{matching_pattern.weak_total})."
             )
         else:
-            coverage = (
-                _complete_personal_feature_coverage(
-                    cohort, descriptor, profiles, bundle.creator_key, bundle.as_of
-                )
-                if mapped_pattern_name is not None
-                else None
-            )
-            if coverage is None or any(
-                feature_value == value for feature_value in coverage.values()
-            ):
+            if coverage is None:
                 continue
             kind = "niche_gap"
             personal_post_ids = cohort.eligible_post_ids
@@ -786,6 +817,8 @@ def _niche_opportunities(
                     if record.kind == "observation"
                     and all(source_id in sources for source_id in record.source_ids)
                 ),
+                baseline_by_dimension,
+                personal_findings,
             )
             if evidence is None or matching_pattern.strong_count < 3:
                 continue
@@ -1159,7 +1192,14 @@ def assemble_creator_report(
         )
 
     niche_opportunities, niche_experiments = _niche_opportunities(
-        bundle, cohorts, patterns, personal_profiles, niche_evidence, sources
+        bundle,
+        cohorts,
+        patterns,
+        personal_profiles,
+        niche_evidence,
+        sources,
+        baseline_by_dimension,
+        tuple(personal),
     )
     personal_opportunities = tuple(
         ReportOpportunity(

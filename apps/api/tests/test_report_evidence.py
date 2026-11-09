@@ -40,6 +40,7 @@ def source(pool: str, source_id: str) -> ReportSource:
 
 
 def evidence(pool: str, evidence_id: str, source_id: str) -> ReportEvidence:
+    observed_at = NOW - timedelta(hours=2)
     return ReportEvidence(
         evidence_id=evidence_id,
         pool=pool,
@@ -52,6 +53,8 @@ def evidence(pool: str, evidence_id: str, source_id: str) -> ReportEvidence:
         metric_window="age:24h",
         metric_value=3.0,
         limitations=("No causal interpretation",),
+        observed_at=observed_at,
+        published_at=observed_at - timedelta(days=1),
     )
 
 
@@ -152,6 +155,43 @@ def test_unverified_sources_do_not_count_as_report_coverage() -> None:
         authorization_verified_at=None,
     )
     assert replace(original, personal_sources=(unverified,)).coverage == "insufficient_evidence"
+
+
+def test_coverage_excludes_non_observations_and_stale_or_undated_niche_data() -> None:
+    original = bundle()
+    non_observation = replace(
+        original,
+        personal_evidence=(replace(original.personal_evidence[0], kind="inference"),),
+    )
+    assert non_observation.coverage == "insufficient_evidence"
+
+    full = replace(
+        original,
+        niche_sources=(source("niche", "niche-1"),),
+        niche_evidence=(evidence("niche", "e-niche", "niche-1"),),
+    )
+    stale_evidence = replace(
+        full.niche_evidence[0],
+        observed_at=NOW - timedelta(days=32),
+        published_at=NOW - timedelta(days=33),
+    )
+    stale = replace(
+        full,
+        niche_sources=(
+            replace(
+                full.niche_sources[0],
+                observed_at=NOW - timedelta(days=31),
+                authorization_verified_at=NOW - timedelta(days=31),
+            ),
+        ),
+        niche_evidence=(stale_evidence,),
+    )
+    assert stale.coverage == "personal_only_partial"
+    undated = replace(
+        full,
+        niche_evidence=(replace(full.niche_evidence[0], published_at=None),),
+    )
+    assert undated.coverage == "personal_only_partial"
 
 
 def test_future_evidence_and_unsupported_niche_descriptors_are_rejected() -> None:

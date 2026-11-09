@@ -225,6 +225,40 @@ def test_metric_definition_mismatch_is_not_comparable() -> None:
     assert report.experiments == ()
 
 
+def test_incompatible_metric_definition_outside_baseline_does_not_poison_it() -> None:
+    original = _bundle()
+    additional = replace(
+        _observations()[0],
+        post_id="post-other-definition",
+        metric_definition="replies per thousand impressions",
+        value=4.0,
+    )
+    extra_evidence = replace(
+        original.personal_evidence[0],
+        evidence_id="other-definition-claim",
+        post_ids=(additional.post_id,),
+        metric_definition=additional.metric_definition,
+    )
+    report = assemble_creator_report(
+        replace(
+            original,
+            personal_evidence=original.personal_evidence + (extra_evidence,),
+        ),
+        personal_baselines=(_baseline(),),
+        personal_outcomes=_observations() + (additional,),
+    )
+    assert report.personal_cohorts
+    assert report.personal_cohorts[0].eligible_post_ids == tuple(
+        sorted(item.post_id for item in _observations())
+    )
+    original_claim = next(
+        finding
+        for finding in report.personal_findings
+        if finding.evidence_ids == (original.personal_evidence[0].evidence_id,)
+    )
+    assert original_claim.evidence_strength == "Moderate"
+
+
 def test_duplicate_outcome_excluded_from_strong_typical_weak_groups() -> None:
     duplicated = _observations() + (_observations()[0],)
     report = assemble_creator_report(
@@ -569,6 +603,102 @@ def test_fully_known_personal_history_reports_niche_gap_as_low_strength_test() -
     assert experiment.evidence_strength == "Low"
     assert "exploratory test" in experiment.hypothesis
     assert any("not evidence" in item for item in gap.limitations)
+
+
+def test_unsupported_profile_version_cannot_establish_a_niche_gap() -> None:
+    original = _bundle(niche_days=1)
+    evidence = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{index}" for index in range(20)),
+    )
+    profiles = tuple(
+        replace(record, profile=replace(record.profile, version="unsupported-profile-v99"))
+        for record in _twenty_profiles()
+    )
+    report = assemble_creator_report(
+        replace(
+            original,
+            personal_evidence=(evidence,),
+            niche_evidence=(
+                _niche_descriptor_evidence("niche-topic-a", "niche-topic-a", "engineering"),
+                _niche_descriptor_evidence("niche-topic-b", "niche-topic-b", "engineering"),
+            ),
+        ),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+        personal_profiles=profiles,
+    )
+    assert not any(item.kind == "niche_gap" for item in report.opportunities)
+    assert not any(item.opportunity_kind == "niche_gap" for item in report.experiments)
+
+
+def test_niche_experiment_cannot_reinstate_an_unsupported_personal_claim() -> None:
+    original = _bundle(niche_days=1)
+    rejected = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{index}" for index in range(20)) + ("not-owned",),
+    )
+    report = assemble_creator_report(
+        replace(
+            original,
+            personal_evidence=(rejected,),
+            niche_evidence=(
+                _niche_descriptor_evidence("niche-build-a", "niche-a", "build"),
+                _niche_descriptor_evidence("niche-build-b", "niche-b", "build"),
+            ),
+        ),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+        personal_profiles=_twenty_profiles(),
+    )
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
+    assert not any(item.opportunity_kind == "niche_intersection" for item in report.experiments)
+
+
+def test_niche_matching_checks_all_goal_cohorts_before_falling_back() -> None:
+    original = _bundle(niche_days=1)
+    evidence = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{index}" for index in range(20)),
+    )
+    hour_evidence = replace(
+        evidence,
+        evidence_id="personal-hour-claim",
+        metric_window="age:1h",
+    )
+    hour_observations = tuple(
+        replace(item, window="age:1h", value=float(20 - index))
+        for index, item in enumerate(_twenty_observations())
+    )
+    hour_baseline = build_creator_baseline(
+        hour_observations,
+        BaselineRequest(
+            creator_key="creator",
+            metric="replies",
+            metric_definition="observed reply count",
+            window="age:1h",
+            as_of=NOW,
+        ),
+    )
+    report = assemble_creator_report(
+        replace(
+            original,
+            personal_evidence=(evidence, hour_evidence),
+            niche_evidence=(
+                _niche_descriptor_evidence("niche-build-a", "niche-a", "build"),
+                _niche_descriptor_evidence("niche-build-b", "niche-b", "build"),
+            ),
+        ),
+        personal_baselines=(_twenty_baseline(), hour_baseline),
+        personal_outcomes=_twenty_observations() + hour_observations,
+        personal_profiles=_twenty_profiles(),
+    )
+    intersection = next(item for item in report.opportunities if item.kind == "niche_intersection")
+    assert intersection.metric_window == "age:24h"
+    hypothesis = next(
+        item for item in report.experiments if item.opportunity_kind == "niche_intersection"
+    )
+    assert hypothesis.metric_window == "age:24h"
 
 
 def test_missing_personal_metadata_is_not_reported_as_niche_absence() -> None:
