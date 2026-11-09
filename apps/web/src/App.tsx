@@ -5,17 +5,17 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react'
+import { authApi, ApiResponseError } from './auth/client'
+import { ConnectionsPage } from './connections/ConnectionsPage'
+import {
+  StateNotice,
+  stateMessages,
+  type ViewState,
+} from './components/StateNotice'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
-type ViewState =
-  | 'loading'
-  | 'unauthenticated'
-  | 'error'
-  | 'empty'
-  | 'rate-limited'
-  | 'insufficient-evidence'
 type ApiHealth = 'checking' | 'available' | 'unavailable'
-type SessionStatus =
+export type SessionStatus =
   'checking' | 'authenticated' | 'unauthenticated' | 'unavailable'
 
 type Page = {
@@ -47,7 +47,7 @@ const pages: Page[] = [
     description: 'Manage authorized sources for your creator history.',
     stateTitle: 'Sign-in required',
     stateBody:
-      'A private BipMe session is required to view or manage data sources. Sign-in is not available in this development interface.',
+      'Sign in to view your private session and manage optional data sources.',
   },
   {
     id: 'history',
@@ -113,71 +113,6 @@ function useView() {
   }
 
   return { view, navigate }
-}
-
-const stateMessages: Record<
-  ViewState,
-  { title: string; body: string; symbol: string }
-> = {
-  loading: {
-    title: 'Loading your workspace',
-    body: 'Please wait while the requested information is retrieved.',
-    symbol: '◌',
-  },
-  unauthenticated: {
-    title: 'Sign-in required',
-    body: 'A private BipMe session is required to access creator data. This interface does not provide sign-in.',
-    symbol: '↗',
-  },
-  error: {
-    title: 'We could not load this information',
-    body: 'The request failed. Your existing data has not been changed.',
-    symbol: '!',
-  },
-  empty: {
-    title: 'This view is not available yet',
-    body: 'This navigation shell does not load creator records, metrics or recommendations.',
-    symbol: '○',
-  },
-  'rate-limited': {
-    title: 'Request limit reached',
-    body: 'The data provider is temporarily limiting requests. Try again later; no automatic retry will be made.',
-    symbol: '↻',
-  },
-  'insufficient-evidence': {
-    title: 'Not enough evidence',
-    body: 'There are not enough eligible comparable observations to support a responsible recommendation.',
-    symbol: '?',
-  },
-}
-
-export function StateNotice({
-  state,
-  title,
-  body,
-}: {
-  state: ViewState
-  title?: string
-  body?: string
-}) {
-  const message = stateMessages[state]
-  const alert = state === 'error' || state === 'rate-limited'
-
-  return (
-    <section
-      className={`state-notice state-notice--${state}`}
-      role={alert ? 'alert' : 'status'}
-      aria-live={alert ? 'assertive' : 'polite'}
-    >
-      <span className="state-symbol" aria-hidden="true">
-        {message.symbol}
-      </span>
-      <div className="state-copy">
-        <h2>{title ?? message.title}</h2>
-        <p>{body ?? message.body}</p>
-      </div>
-    </section>
-  )
 }
 
 function DevelopmentStatePreview() {
@@ -256,19 +191,14 @@ export function App() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/auth/session', {
-      credentials: 'same-origin',
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (response.status === 401) return 'unauthenticated'
-        if (!response.ok) return 'unavailable'
-        const session = (await response.json()) as { authenticated?: boolean }
-        return session.authenticated === true ? 'authenticated' : 'unavailable'
-      })
-      .then((status) => setSessionStatus(status))
-      .catch(() => {
-        if (!controller.signal.aborted) setSessionStatus('unavailable')
+    authApi
+      .readSession(controller.signal)
+      .then(() => setSessionStatus('authenticated'))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        if (error instanceof ApiResponseError && error.status === 401)
+          setSessionStatus('unauthenticated')
+        else setSessionStatus('unavailable')
       })
     return () => controller.abort()
   }, [])
@@ -513,39 +443,46 @@ export function App() {
             <p className="intro">{page.description}</p>
           </div>
 
-          <section
-            className="workspace-card"
-            aria-labelledby="workspace-card-title"
-          >
-            <div className="workspace-card__header">
-              <div className="workspace-card__mark" aria-hidden="true">
-                i
-              </div>
-              <div>
-                <p className="card-kicker">Private workspace</p>
-                <h2 id="workspace-card-title">
-                  Built for evidence, not guesswork.
-                </h2>
-              </div>
-            </div>
-            <StateNotice
-              state={workspaceState}
-              title={
-                workspaceState === 'unauthenticated'
-                  ? page.stateTitle
-                  : undefined
-              }
-              body={
-                workspaceState === 'unauthenticated'
-                  ? page.stateBody
-                  : undefined
-              }
+          {view === 'connections' ? (
+            <ConnectionsPage
+              sessionStatus={sessionStatus}
+              onSessionStatus={setSessionStatus}
             />
-            <p className="workspace-card__note">
-              BipMe will show observed creator data only after access and
-              evidence are available.
-            </p>
-          </section>
+          ) : (
+            <section
+              className="workspace-card"
+              aria-labelledby="workspace-card-title"
+            >
+              <div className="workspace-card__header">
+                <div className="workspace-card__mark" aria-hidden="true">
+                  i
+                </div>
+                <div>
+                  <p className="card-kicker">Private workspace</p>
+                  <h2 id="workspace-card-title">
+                    Built for evidence, not guesswork.
+                  </h2>
+                </div>
+              </div>
+              <StateNotice
+                state={workspaceState}
+                title={
+                  workspaceState === 'unauthenticated'
+                    ? page.stateTitle
+                    : undefined
+                }
+                body={
+                  workspaceState === 'unauthenticated'
+                    ? page.stateBody
+                    : undefined
+                }
+              />
+              <p className="workspace-card__note">
+                BipMe will show observed creator data only after access and
+                evidence are available.
+              </p>
+            </section>
+          )}
 
           <DevelopmentStatePreview />
           <footer className="page-footer">
