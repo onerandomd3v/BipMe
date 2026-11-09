@@ -153,7 +153,8 @@ def _verified_baselines(
     for baseline in baselines:
         supported = set(baseline.supporting_post_ids)
         matches = tuple(
-            item for item in outcomes
+            item
+            for item in outcomes
             if item.metric == baseline.metric
             and item.window == baseline.window
             and item.post_id in supported
@@ -308,8 +309,7 @@ def assemble_creator_report(
         for baseline, definition in verified
     }
     definitions_by_dimension = {
-        dimension: definition
-        for dimension, (_, definition) in baseline_by_dimension.items()
+        dimension: definition for dimension, (_, definition) in baseline_by_dimension.items()
     }
 
     personal: list[ReportFinding] = []
@@ -327,7 +327,8 @@ def assemble_creator_report(
                 support = set(baseline.supporting_post_ids)
                 if item.post_ids and set(item.post_ids).issubset(support):
                     subset = tuple(
-                        record for record in eligible
+                        record
+                        for record in eligible
                         if record.metric == item.metric
                         and record.metric_definition == item.metric_definition
                         and record.window == item.metric_window
