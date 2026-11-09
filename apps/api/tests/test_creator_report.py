@@ -410,9 +410,7 @@ def test_codex_exact_two_fifths_prevalence_cutoff() -> None:
     profiles = []
     for index, record in enumerate(_twenty_profiles()[:10]):
         topic = "build" if index in (0, 1, 2, 5) else "misc"
-        profiles.append(
-            replace(record, profile=replace(record.profile, declared_topic=topic))
-        )
+        profiles.append(replace(record, profile=replace(record.profile, declared_topic=topic)))
     cohort = PersonalMetricCohort(
         metric="replies",
         metric_definition="observed reply count",
@@ -424,9 +422,7 @@ def test_codex_exact_two_fifths_prevalence_cutoff() -> None:
         excluded_count=0,
         limitations=(),
     )
-    patterns = compare_personal_content_patterns(
-        "creator", NOW, (cohort,), tuple(profiles)
-    )
+    patterns = compare_personal_content_patterns("creator", NOW, (cohort,), tuple(profiles))
     assert any(
         pattern.feature == "declared_topic"
         and pattern.feature_value == "build"
@@ -474,8 +470,7 @@ def test_codex_weak_associated_feature_not_recommended() -> None:
     assert any(
         pattern.feature == "declared_topic"
         and pattern.feature_value == "build"
-        and pattern.strong_count * pattern.weak_total
-        < pattern.weak_count * pattern.strong_total
+        and pattern.strong_count * pattern.weak_total < pattern.weak_count * pattern.strong_total
         for pattern in report.content_patterns
     )
     assert report.experiments == ()
@@ -495,7 +490,8 @@ def test_codex_single_exclusion_keeps_pattern_nonvacuous() -> None:
         personal_profiles=profiles + (profiles[17],),
     )
     matches = [
-        pattern for pattern in report.content_patterns
+        pattern
+        for pattern in report.content_patterns
         if pattern.feature == "declared_topic" and pattern.feature_value == "build"
     ]
     assert matches
