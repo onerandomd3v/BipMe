@@ -7,14 +7,30 @@ They only use versioned PostProfile data collected by the report cutoff.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
 from bipme.intelligence.post_profiles import PROFILE_VERSION, PostProfile
 
-ATTENTION_FEATURES_VERSION = "attention-descriptors-v1"
+ATTENTION_FEATURES_VERSION = "attention-descriptors-v2"
 SignalOrigin = Literal["observed_structure", "lexical_heuristic", "creator_declared"]
+
+_SPECIFICITY_MARKER = re.compile(r"(?:\b\d+(?:[.,]\d+)?%?\b|`[^`\n]+`)")
+_STORY_CUE = re.compile(
+    r"\b(?:i|we|my|our|when|before|after|then|eventually|started|built|learned|realized)\b",
+    re.IGNORECASE,
+)
+_OPINION_MARKER = re.compile(
+    r"\b(?:i think|i believe|in my opinion|i would argue|should|must|is overrated|is underrated)\b",
+    re.IGNORECASE,
+)
+_CONTRAST_OPENING = re.compile(r"\b(?:but|however|instead|although|yet)\b", re.IGNORECASE)
+_IMPERATIVE_OPENING = re.compile(
+    r"^(?:stop|start|try|build|learn|use|remember|imagine|consider|never|don't|do not)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -34,8 +50,16 @@ class AttentionDescriptor:
     unknowns: tuple[str, ...]
 
 
-def describe_attention_features(profile: PostProfile, *, as_of: datetime) -> AttentionDescriptor:
-    """Provide explainable input features without exposure or performance claims."""
+def describe_attention_features(
+    profile: PostProfile, *, as_of: datetime, text: str | None = None
+) -> AttentionDescriptor:
+    """Describe inspectable content signals without exposure or performance claims.
+
+    ``text`` is optional because a persisted PostProfile intentionally does not
+    retain raw text. Text-derived heuristics are emitted only when the caller has
+    the authorized content at evaluation time; they are not reconstructed from
+    outcome metrics or inferred audience behavior.
+    """
     if profile.version != PROFILE_VERSION:
         raise ValueError("Unsupported Post Profile version")
     if as_of.tzinfo is None or as_of.utcoffset() is None:
@@ -76,6 +100,41 @@ def describe_attention_features(profile: PostProfile, *, as_of: datetime) -> Att
         for name in profile.intent_signals:
             # A '?' indicates a question marker, not evidence that viewers responded.
             signals.append(AttentionSignal(name, "lexical_heuristic", "present"))
+
+    if text is None:
+        unknowns.extend(
+            (
+                "specificity_markers",
+                "storytelling_cues",
+                "opinion_marker",
+                "opening_structure",
+            )
+        )
+    else:
+        specificity_count = len(_SPECIFICITY_MARKER.findall(text))
+        signals.append(
+            AttentionSignal("specificity_markers", "lexical_heuristic", str(specificity_count))
+        )
+        story_count = len(_STORY_CUE.findall(text))
+        signals.append(AttentionSignal("storytelling_cues", "lexical_heuristic", str(story_count)))
+        opinion_present = _OPINION_MARKER.search(text) is not None
+        if opinion_present:
+            signals.append(AttentionSignal("opinion_marker", "lexical_heuristic", "present"))
+
+        opening = text.strip().splitlines()[0].strip() if text.strip() else ""
+        if not opening:
+            opening_value = "empty"
+        elif "?" in opening:
+            opening_value = "question"
+        elif _CONTRAST_OPENING.search(opening):
+            opening_value = "contrast"
+        elif re.match(r"^\d+[.)]", opening):
+            opening_value = "numbered"
+        elif _IMPERATIVE_OPENING.search(opening):
+            opening_value = "imperative"
+        else:
+            opening_value = "other"
+        signals.append(AttentionSignal("opening_structure", "lexical_heuristic", opening_value))
 
     if profile.declared_intent is not None:
         signals.append(
