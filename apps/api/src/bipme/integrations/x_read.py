@@ -383,6 +383,7 @@ class XCreatorHistoryReader:
         now: datetime | None = None,
     ) -> XReadResult:
         instant = (now or datetime.now(UTC)).astimezone(UTC)
+        fixed_request_time = now is not None
         if not self._settings.enabled:
             return XReadResult("unavailable", unavailable_reason="disabled")
         if (
@@ -443,6 +444,7 @@ class XCreatorHistoryReader:
         pagination_token: str | None = None
         pages_read = 0
         for page_number in range(max_pages):
+            request_time = instant if fixed_request_time else datetime.now(UTC)
             requested = min(page_size, max_posts - len(collected))
             if requested < 5:
                 # X timeline endpoints require at least five per page. A final response may
@@ -451,7 +453,7 @@ class XCreatorHistoryReader:
             try:
                 # Reserve the whole bounded retry envelope before the provider can issue
                 # the first request. Retries may each be billable even when the page is not.
-                estimate = self._pricing.estimate(requested, now=instant) * Decimal(
+                estimate = self._pricing.estimate(requested, now=request_time) * Decimal(
                     self._settings.max_retries + 1
                 )
                 key = f"x-history:{import_hash}:{page_number}"
@@ -462,7 +464,7 @@ class XCreatorHistoryReader:
                     idempotency_key=key,
                     estimated_cost=estimate,
                     limits=self._limits,
-                    now=instant,
+                    now=request_time,
                     import_id=import_hash,
                     request_metadata={
                         "method": "GET",
@@ -493,7 +495,7 @@ class XCreatorHistoryReader:
             if (
                 locked_connection is None
                 or locked_connection.access_token_expires_at is not None
-                and locked_connection.access_token_expires_at <= instant
+                and locked_connection.access_token_expires_at <= request_time
                 or not {"tweet.read", "users.read"}.issubset(set(locked_connection.scopes))
             ):
                 complete_x_request(
@@ -501,7 +503,7 @@ class XCreatorHistoryReader:
                     reservation_id=reservation.ledger_id,
                     usage_units=0,
                     request_count=0,
-                    completed_at=max(instant, datetime.now(UTC)),
+                    completed_at=max(request_time, datetime.now(UTC)),
                     response_received=False,
                 )
                 return self._finish(
@@ -520,7 +522,7 @@ class XCreatorHistoryReader:
                     reservation_id=reservation.ledger_id,
                     usage_units=0,
                     request_count=0,
-                    completed_at=max(instant, datetime.now(UTC)),
+                    completed_at=max(request_time, datetime.now(UTC)),
                     response_received=False,
                 )
                 return self._finish(
@@ -536,7 +538,7 @@ class XCreatorHistoryReader:
                     reservation_id=reservation.ledger_id,
                     usage_units=0,
                     request_count=0,
-                    completed_at=max(instant, datetime.now(UTC)),
+                    completed_at=max(request_time, datetime.now(UTC)),
                     response_received=False,
                 )
                 return self._finish(
@@ -561,7 +563,7 @@ class XCreatorHistoryReader:
                         reservation_id=reservation.ledger_id,
                         usage_units=0,
                         request_count=exc.request_count,
-                        completed_at=max(instant, datetime.now(UTC)),
+                        completed_at=max(request_time, datetime.now(UTC)),
                         response_received=False,
                     )
                 except UsageBudgetError:
@@ -576,7 +578,7 @@ class XCreatorHistoryReader:
                         reservation_id=reservation.ledger_id,
                         usage_units=0,
                         request_count=1,
-                        completed_at=max(instant, datetime.now(UTC)),
+                        completed_at=max(request_time, datetime.now(UTC)),
                         response_received=False,
                     )
                 except UsageBudgetError:
@@ -590,7 +592,7 @@ class XCreatorHistoryReader:
                     reservation_id=reservation.ledger_id,
                     usage_units=len(page.posts),
                     request_count=page.request_count,
-                    completed_at=max(instant, page.observed_at),
+                    completed_at=max(request_time, page.observed_at),
                     response_received=True,
                 )
             except UsageBudgetError:

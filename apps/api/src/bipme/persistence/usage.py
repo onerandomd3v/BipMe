@@ -112,9 +112,14 @@ def reserve_x_usage(
         for row in ledger_rows:
             if row.estimated_cost is None and row.actual_cost is None:
                 raise UsageBudgetError("usage_controls_unavailable")
-            # Until X reports actual usage, hold the full reservation. Once reconciled,
-            # never undercount if reported actual exceeds the estimate.
-            charged = max(row.estimated_cost or Decimal("0"), row.actual_cost or Decimal("0"))
+            # Pending rows hold their estimate. Reconciled rows use actual provider usage,
+            # including any amount above the prior estimate.
+            if row.reconciliation_state == "reconciled":
+                if row.actual_cost is None:
+                    raise UsageBudgetError("usage_controls_unavailable")
+                charged = row.actual_cost
+            else:
+                charged = row.estimated_cost or row.actual_cost or Decimal("0")
             totals += charged
             if row.requested_at >= day_start:
                 daily += charged
