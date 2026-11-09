@@ -77,12 +77,6 @@ class CreatorIntelligenceReport:
     baseline_version: str
     creator_key: str
     as_of: datetime
-    cohorts = _personal_metric_cohorts(bundle, personal_baselines, personal_outcomes)
-    # Content/intent descriptors are not yet joined to independently observed
-    # cohort differences. Withhold experiments instead of claiming patterns
-    # solely because an arbitrary evidence statement cites three post IDs.
-    experiments = []
-
     state: ReportState
     personal_findings: tuple[ReportFinding, ...]
     niche_findings: tuple[ReportFinding, ...]
