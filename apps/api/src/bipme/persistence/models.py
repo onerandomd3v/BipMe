@@ -57,6 +57,104 @@ class Creator(TimestampMixin, Base):
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
 
 
+class CreatorGoalRevision(Base):
+    """Append-only versioned creator declarations used by report snapshots."""
+
+    __tablename__ = "creator_goal_revisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["creator_id"], ["creators.id"], ondelete="CASCADE", name="fk_goal_revision_creator"
+        ),
+        UniqueConstraint("creator_id", "revision", name="creator_goal_revision_number"),
+        UniqueConstraint("id", "creator_id", name="creator_goal_revision_owner"),
+        CheckConstraint("revision > 0", name="goal_revision_positive"),
+        CheckConstraint("length(trim(goals_version)) > 0", name="goal_version_not_blank"),
+        Index("ix_creator_goal_revision_latest", "creator_id", "recorded_at", "revision"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    goals_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    niche: Mapped[str] = mapped_column(String(255), nullable=False)
+    intended_audience: Mapped[str] = mapped_column(String(512), nullable=False)
+    priority_outcomes: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    preferred_styles: Mapped[list[str]] = mapped_column(JSON_DOCUMENT, nullable=False)
+    language: Mapped[str | None] = mapped_column(String(64))
+
+
+class CreatorProcessingPermission(Base):
+    """Append-only opt-in/revocation for local deterministic personal-history use."""
+
+    __tablename__ = "creator_processing_permissions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["creator_id"],
+            ["creators.id"],
+            ondelete="CASCADE",
+            name="fk_processing_permission_creator",
+        ),
+        UniqueConstraint("creator_id", "revision", name="processing_permission_revision"),
+        CheckConstraint("revision > 0", name="permission_revision_positive"),
+        CheckConstraint("source_kind = 'personal_history'", name="permission_source_supported"),
+        CheckConstraint("length(trim(policy_version)) > 0", name="permission_policy_not_blank"),
+        Index("ix_creator_processing_permission_latest", "creator_id", "source_kind", "revision"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+
+
+class CreatorReportSnapshot(Base):
+    """Immutable deterministic report, evidence, source and permission snapshot."""
+
+    __tablename__ = "creator_report_snapshots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["creator_id"], ["creators.id"], ondelete="CASCADE", name="fk_report_snapshot_creator"
+        ),
+        ForeignKeyConstraint(
+            ["goals_revision_id", "creator_id"],
+            ["creator_goal_revisions.id", "creator_goal_revisions.creator_id"],
+            ondelete="RESTRICT",
+            name="fk_report_snapshot_goals_owner",
+        ),
+        UniqueConstraint("creator_id", "idempotency_key", name="creator_report_idempotency"),
+        UniqueConstraint("id", "creator_id", name="creator_report_snapshot_owner"),
+        CheckConstraint("length(trim(idempotency_key)) > 0", name="report_idempotency_not_blank"),
+        CheckConstraint("length(request_fingerprint) = 64", name="report_fingerprint_sha256"),
+        CheckConstraint(
+            "report_state IN ('personal_and_niche', 'personal_only_partial', 'insufficient_evidence')",
+            name="report_state_valid",
+        ),
+        Index("ix_creator_report_latest", "creator_id", "generated_at", "id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    goals_revision_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    as_of: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    goals_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    goals_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    evidence_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    report_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    baseline_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    report_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    report_snapshot: Mapped[JsonObject] = mapped_column(JSON_DOCUMENT, nullable=False)
+    evidence_snapshot: Mapped[JsonObject] = mapped_column(JSON_DOCUMENT, nullable=False)
+    permission_snapshot: Mapped[JsonObject] = mapped_column(JSON_DOCUMENT, nullable=False)
+    freshness_snapshot: Mapped[JsonObject] = mapped_column(JSON_DOCUMENT, nullable=False)
+
+
 class CreatorPlatformIdentity(TimestampMixin, Base):
     """External provider identity mapped to exactly one canonical creator."""
 
