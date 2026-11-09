@@ -66,9 +66,9 @@ class CreatorIntelligenceReport:
     def to_json(self) -> str:
         return json.dumps(
             asdict(self),
-            default=lambda value: value.isoformat()
-            if isinstance(value, datetime)
-            else _unsupported(value),
+            default=lambda value: (
+                value.isoformat() if isinstance(value, datetime) else _unsupported(value)
+            ),
             sort_keys=True,
             separators=(",", ":"),
             allow_nan=False,
@@ -178,11 +178,7 @@ def assemble_creator_report(
         if not set(item.post_ids).issubset(set(baseline.supporting_post_ids)):
             continue
         goal = next(
-            (
-                goal
-                for goal in bundle.goals.priority_outcomes
-                if _goal_metric(goal, item.metric)
-            ),
+            (goal for goal in bundle.goals.priority_outcomes if _goal_metric(goal, item.metric)),
             None,
         )
         if goal is None:
