@@ -16,7 +16,7 @@ from bipme.intelligence.post_profiles import PostProfile
 PATTERN_VERSION = "personal-content-contrasts-v1"
 MIN_GROUP_POSTS = 2
 MIN_TOTAL_POSTS = 8
-MIN_PREVALENCE_GAP = 0.40
+MIN_PREVALENCE_GAP = 0.40  # Documentation; threshold enforced as exact 2/5 fraction.
 
 if TYPE_CHECKING:
     from bipme.intelligence.creator_report import PersonalMetricCohort
@@ -42,6 +42,8 @@ class ContentPatternContrast:
     weak_total: int
     strong_post_ids: tuple[str, ...]
     weak_post_ids: tuple[str, ...]
+    strong_group_post_ids: tuple[str, ...]
+    weak_group_post_ids: tuple[str, ...]
     limitations: tuple[str, ...]
 
 
@@ -137,8 +139,13 @@ def compare_personal_content_patterns(
                 continue
             stronger = tuple(pid for pid in known_strong if (name, value) in features[pid])
             weaker = tuple(pid for pid in known_weak if (name, value) in features[pid])
-            gap = len(stronger) / len(known_strong) - len(weaker) / len(known_weak)
-            if abs(gap) < MIN_PREVALENCE_GAP or min(len(stronger), len(weaker)) == 0:
+            # A 2/5 prevalence gap is compared with exact integer arithmetic;
+            # equal mathematical gaps must not diverge due to float rounding.
+            numerator = abs(
+                len(stronger) * len(known_weak) - len(weaker) * len(known_strong)
+            )
+            denominator = len(known_strong) * len(known_weak)
+            if numerator * 5 < denominator * 2 or min(len(stronger), len(weaker)) == 0:
                 continue
             results.append(
                 ContentPatternContrast(
@@ -154,6 +161,8 @@ def compare_personal_content_patterns(
                     weak_total=len(known_weak),
                     strong_post_ids=stronger,
                     weak_post_ids=weaker,
+                    strong_group_post_ids=known_strong,
+                    weak_group_post_ids=known_weak,
                     limitations=(
                         "Historical association only, not causal or predictive.",
                         "Strong/weak selection depends on measured outcomes and can be biased.",
