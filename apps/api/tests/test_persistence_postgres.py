@@ -30,6 +30,7 @@ from bipme.api.dependencies import (
     get_db_session,
     get_embedder,
 )
+from bipme.integrations.x_read import XReadPost
 from bipme.intelligence.embeddings import EmbeddingIdentity
 from bipme.intelligence.post_profiles import (
     CreatorContextSnapshot,
@@ -75,6 +76,7 @@ from bipme.persistence.usage import (
     reserve_x_usage,
 )
 from bipme.persistence.vector_candidates import PostgresVectorCandidateSource
+from bipme.posts.history import CreatorHistoryImporter
 
 API_DIR = Path(__file__).parents[1]
 NOW = datetime(2026, 11, 8, 14, tzinfo=UTC)
@@ -1194,6 +1196,78 @@ def test_creator_scoped_ownership_and_post_ingestion_are_enforced(session: Sessi
                 )
             )
             session.flush()
+
+
+def test_concurrent_history_post_upserts_share_one_canonical_row(
+    migrated_postgres: tuple[Engine, str],
+) -> None:
+    """A duplicate canonical post is contained by the savepoint under real PostgreSQL."""
+    engine, schema = migrated_postgres
+    creator_id = uuid4()
+    post = XReadPost(
+        external_post_id="concurrent-history-post",
+        text="synthetic concurrent post",
+        published_at=NOW,
+        observed_at=NOW,
+        source="x_creator_authorized_history",
+        source_endpoint="/2/users/{id}/tweets",
+        topology="original",
+        media_present=False,
+        metrics={},
+    )
+    with engine.connect() as connection:
+        connection.execute(text(f'SET search_path TO "{schema}", public'))
+        connection.commit()
+        with Session(bind=connection) as db:
+            db.add(Creator(id=creator_id))
+            db.commit()
+
+    barrier = threading.Barrier(2)
+    outcomes: list[bool] = []
+    errors: list[BaseException] = []
+    lock = threading.Lock()
+
+    def worker() -> None:
+        connection = engine.connect()
+        connection.execute(text(f'SET search_path TO "{schema}", public'))
+        connection.commit()
+        db = Session(bind=connection)
+        try:
+            barrier.wait(timeout=10)
+            imported = CreatorHistoryImporter._upsert_post(
+                db, creator_id, "concurrent-import", post
+            )
+            db.commit()
+            with lock:
+                outcomes.append(imported)
+        except BaseException as exc:
+            with lock:
+                errors.append(exc)
+            db.rollback()
+        finally:
+            db.close()
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(worker) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=20)
+
+    assert errors == []
+    assert outcomes == [True, True] or outcomes == [True, False]
+    with engine.connect() as connection:
+        connection.execute(text(f'SET search_path TO "{schema}", public'))
+        connection.commit()
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM canonical_posts "
+                    "WHERE creator_id = :creator_id AND external_post_id = :external_post_id"
+                ),
+                {"creator_id": str(creator_id), "external_post_id": post.external_post_id},
+            )
+            == 1
+        )
 
 
 def test_outcome_snapshots_are_idempotent_and_preserve_zero_missing_and_time(

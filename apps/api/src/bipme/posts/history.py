@@ -181,9 +181,9 @@ class CreatorHistoryImporter:
                     "observed_at": post.observed_at.isoformat(),
                 },
             )
-            db.add(existing)
             try:
                 with db.begin_nested():
+                    db.add(existing)
                     db.flush()
             except IntegrityError:
                 existing = db.scalar(
