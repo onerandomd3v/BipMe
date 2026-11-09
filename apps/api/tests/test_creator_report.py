@@ -69,7 +69,7 @@ def _bundle(niche_days: int | None = None) -> CreatorReportEvidenceBundle:
     )
 
 
-def _baseline():
+def _observations() -> tuple[OutcomeObservation, ...]:
     observations = [
         OutcomeObservation(
             creator_key="creator",
@@ -83,8 +83,12 @@ def _baseline():
         )
         for index in range(10)
     ]
+    return tuple(observations)
+
+
+def _baseline():
     return build_creator_baseline(
-        observations,
+        _observations(),
         BaselineRequest(
             creator_key="creator",
             metric="replies",
@@ -96,15 +100,16 @@ def _baseline():
 
 
 def test_report_is_deterministic_personal_only_and_goal_aligned() -> None:
-    report = assemble_creator_report(_bundle(), personal_baselines=(_baseline(),))
+    report = assemble_creator_report(
+        _bundle(), personal_baselines=(_baseline(),), personal_outcomes=_observations()
+    )
     assert report.state == "personal_only_partial"
     assert report.personal_findings[0].source_ids == ("owned",)
     assert report.niche_findings == ()
-    assert len(report.experiments) == 1
-    assert report.experiments[0].goal == "conversation"
-    assert report.experiments[0].supporting_post_ids == tuple(
-        f"post-{index}" for index in range(10)
-    )
+    assert report.experiments == ()
+    assert report.personal_cohorts[0].strong_post_ids
+    assert report.personal_cohorts[0].typical_post_ids
+    assert report.personal_cohorts[0].weak_post_ids
     assert json.loads(report.to_json())["state"] == "personal_only_partial"
     assert report.to_json() == report.to_json()
 
@@ -146,6 +151,56 @@ def test_unsupported_evidence_ids_cannot_justify_experiments() -> None:
     report = assemble_creator_report(
         replace(bundle, personal_evidence=(bad_claim,)),
         personal_baselines=(_baseline(),),
+        personal_outcomes=_observations(),
     )
     assert report.experiments == ()
     assert report.personal_findings[0].evidence_strength == "Insufficient"
+
+
+def test_missing_outcome_observations_cannot_establish_claim_strength() -> None:
+    report = assemble_creator_report(_bundle(), personal_baselines=(_baseline(),))
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
+    assert report.personal_cohorts == ()
+    assert report.experiments == ()
+
+
+def test_metric_definition_mismatch_is_not_comparable() -> None:
+    bundle = _bundle()
+    altered = replace(
+        bundle.personal_evidence[0], metric_definition="replies per thousand impressions"
+    )
+    report = assemble_creator_report(
+        replace(bundle, personal_evidence=(altered,)),
+        personal_baselines=(_baseline(),),
+        personal_outcomes=_observations(),
+    )
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
+    assert report.experiments == ()
+
+
+def test_duplicate_outcome_excluded_from_strong_typical_weak_groups() -> None:
+    duplicated = _observations() + (_observations()[0],)
+    report = assemble_creator_report(
+        _bundle(), personal_baselines=(_baseline(),), personal_outcomes=duplicated
+    )
+    cohort = report.personal_cohorts[0]
+    included = cohort.strong_post_ids + cohort.typical_post_ids + cohort.weak_post_ids
+    assert "post-0" not in included
+    assert len(included) == 9
+    assert cohort.excluded_count >= 2
+
+
+def test_future_and_cross_creator_outcomes_are_excluded() -> None:
+    records = _observations()
+    future = replace(records[0], post_id="future", observed_at=NOW + timedelta(hours=1))
+    other_creator = replace(records[1], post_id="another", creator_key="stranger")
+    report = assemble_creator_report(
+        _bundle(),
+        personal_baselines=(_baseline(),),
+        personal_outcomes=records + (future, other_creator),
+    )
+    cohort = report.personal_cohorts[0]
+    included = cohort.strong_post_ids + cohort.typical_post_ids + cohort.weak_post_ids
+    assert "future" not in included
+    assert "another" not in included
+    assert cohort.excluded_count >= 2
