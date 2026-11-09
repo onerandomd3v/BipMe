@@ -596,11 +596,13 @@ def refresh_connection_tokens(
 ) -> XAccountConnection:
     """Rotate an authorized connection's token pair without exposing token values."""
     connection = db.scalar(
-        select(XAccountConnection).where(
+        select(XAccountConnection)
+        .where(
             XAccountConnection.creator_id == creator_id,
             XAccountConnection.platform == "x",
             XAccountConnection.state == "connected",
         )
+        .with_for_update()
     )
     if connection is None:
         raise ApiError(404, "x_connection_not_found", "No active X connection was found.")
