@@ -349,9 +349,7 @@ def test_codex_future_definition_does_not_poison_eligible_report() -> None:
 
 def test_codex_one_post_claim_does_not_inherit_moderate_strength() -> None:
     original = _bundle()
-    single_post = replace(
-        original.personal_evidence[0], post_ids=("post-9",)
-    )
+    single_post = replace(original.personal_evidence[0], post_ids=("post-9",))
     report = assemble_creator_report(
         replace(original, personal_evidence=(single_post,)),
         personal_baselines=(_baseline(),),
@@ -359,6 +357,5 @@ def test_codex_one_post_claim_does_not_inherit_moderate_strength() -> None:
     )
     assert report.personal_findings[0].evidence_strength == "Insufficient"
     assert not any(
-        "At least 8 effective posts" in reason
-        for reason in report.personal_findings[0].limitations
+        "At least 8 effective posts" in reason for reason in report.personal_findings[0].limitations
     )
