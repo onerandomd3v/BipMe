@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 15852)
-Total output lines: 389
-
 # BipMe — Technical architecture
 
 **Status:** Current architecture and intended module boundaries. Marked `planned` components are **not yet implemented**. This is the living reference for engineers and coding agents.
@@ -103,7 +100,174 @@ An LLM is **not** the source of truth for performance metrics, rankings, X inter
 
 **Platform, Web and ReportSynthesizer handoff (contract proposal; no shared schema/API changes in COD-371):** Platform should store each `CreatorGoalsSnapshot` as an immutable creator-owned revision with `version`, `recorded_at`, declared niche, intended audience, ordered priority outcomes and preferred styles; reads/writes must enforce session creator ownership and preserve prior revisions. Keep canonical `PostProfile` JSON/version separate from append-only `OutcomeObservation` rows. If attention descriptors are persisted, store their descriptor/profile versions, `features_as_of`, field origin and unknowns; never blend them into outcomes or persist raw text solely to reconstruct heuristic values. Report records should retain the COD-377 `CreatorReportEvidenceBundle` version, source authorization and verification times, evidence/source IDs and versions, metric identity/window, actual timestamps, and report/baseline/profile/attention algorithm versions. Platform's first-report API must accept no draft and return an explicit personal+niche, personal-only partial, or insufficient-evidence state. Web should collect declared creator goals (not follower demographics), show their revision, keep personal and niche evidence separate, and render provenance, known-data denominators, freshness and limitations. The ReportSynthesizer consumes the typed, bounded COD-377 evidence/report contract, cites only supplied evidence IDs, preserves observation/inference/hypothesis/unknown distinctions, and falls back to deterministic report text; it must not create metrics or treat creator goals as verified audience facts. API names, database migrations and cross-lane implementation belong to Platform/Web issues and require coordination there.
 
-**Sequencing and issue ownership:** [COD-380](https://linear.app/codeddevs/issue/COD-380) implements the Intelligence synthesis adapter on [COD-377](https://linear.app/codeddevs/issue/COD-377)'s typed report evidence contract. Report assembly continues to work using deterministic templates. V1 model and hosted location are selected; rights, actual account availability…5852 tokens truncated…epeatability/outlier indicators, exclusions and limitations. Known incompatible definitions, units or windows return structured 422 errors; no historical series returns a valid Insufficient result.
+**Sequencing and issue ownership:** [COD-380](https://linear.app/codeddevs/issue/COD-380) implements the Intelligence synthesis adapter on [COD-377](https://linear.app/codeddevs/issue/COD-377)'s typed report evidence contract. Report assembly continues to work using deterministic templates. V1 model and hosted location are selected; rights, actual account availability, quotas and any shared durable production budget remain external integration gates.
+
+### COD-366 Distribution Outlook walk-forward evaluation
+
+`intelligence/backtesting.py` replays immutable COD-354 `OutlookRequest` inputs in assessment-cutoff order and invokes the existing `build_distribution_outlook` for each cutoff. The target observation is held outside the request and must be measured after the historical assessment and publication; creator profiles/context and selected comparable publication times must be available by that assessment cutoff. Outcome values observed later are excluded by the existing baseline as-of rules. Duplicate detection runs only over timestamp-eligible outcomes at that cutoff, so future duplicate records cannot change an earlier replay. Missing, negative and impossible-time values follow baseline exclusions and remain outside scoring; scoring accepts only the requested exact metric definition and observation window.
+
+The report groups cases by COD-354 evidence strength and exposes denominators, exclusions, input selection basis and sparse-band limitations. Reference-range coverage, percentile error and direction accuracy each carry their own scored-case denominator; sparse bands report insufficiency separately. It reports historical P25–P75 reference-range coverage (not probability calibration), held-out weighted-midrank distance from the historical 50th percentile, and directional accuracy only when the outlook range is entirely above or below the pre-cutoff unweighted creator-history median. Overlapping ranges are left unscored for direction because they do not support a directional distinction. A 3×IQR sensitivity view recomputes reference coverage after excluding historical outliers. Values are diagnostic summaries; no forecast, causal, statistical-significance or X-ranking claim is made. Synthetic tests verify isolation and reproducibility but cannot establish live performance. Results may be biased by incomplete creator histories, missing windows, selection, platform changes and unavailable private X signals.
+
+**COD-364 Intelligence implementation:** `intelligence/postmortems.py` consumes an immutable original assessment/outlook, a COD-361 typed publication link, and COD-363-style `OutcomeObservation` records. The handoff includes creator and assessment identities, assessed and published timestamps, the assessed content fingerprint, the publication version-match state, and exact metric definition/window values with each observation's actual publication and observation timestamps. The pure service preserves the original outlook and linked-post observations, then scores only version-verified publications with matching creator/assessment identity and exact metric/window identity. It requires target and historical observation ages to match exactly; forecast deviation/range coverage is also withheld unless every source observation behind the original reference range is verified at that same age. In that case the original outlook remains available as context, and a sufficiently supported equal-age subset may still yield a separate creator-relative percentile. It does not interpolate or reconstruct missed 5-minute, 1-hour, 24-hour, or other snapshots from later cumulative totals. Missing, duplicate, future, foreign, invalid, mismatched, or sparse evidence remains unavailable/inconclusive with explicit limitations. Where evidence is sufficient, it reports forecast deviation/coverage, the exact matched historical observations and their post IDs, and a creator-relative percentile using the existing baseline implementation. Accepted hypotheses are descriptive supported/contradicted/inconclusive labels against the matched historical median, never causal conclusions or claims of platform amplification.
+
+This is a deterministic Intelligence service and synthetic test boundary only. COD-361 publication-link persistence/version verification and COD-363 real scheduled observations remain upstream integration dependencies; this work adds no database migration, route, job, schedule, or live X call. COD-364's end-to-end product flow remains blocked until those integrations and downstream COD-365/COD-368 work are complete. COD-366 does not implement or change postmortem persistence, routes, report evidence, or COD-380 synthesis.
+
+## Technology (approved)
+
+| Area | Selection |
+| --- | --- |
+| API | Python 3.13, FastAPI |
+| Python dependencies | uv, pinned lockfile |
+| Data / schema | PostgreSQL 17 with pgvector, SQLAlchemy 2, Alembic |
+| Intelligence computations | NumPy, SciPy, scikit-learn (add dependencies when implementation needs them) |
+| Semantic embeddings | CPU-first local SentenceTransformers inference; initial implementation model `intfloat/multilingual-e5-small` (384d), replaceable via a narrow embedding adapter |
+| Browser | React 19, TypeScript, Vite |
+| Frontend dependencies | pnpm 10, committed lockfile |
+| Jobs | PostgreSQL-backed delayed jobs; choose maintained runner after a narrow test |
+| Quality | Ruff, mypy, pytest, ESLint, TypeScript, Playwright when E2E flows exist |
+| Local infrastructure | Docker Compose for PostgreSQL |
+
+**Not currently implemented:** X adapter, login/session system, background worker, real X ingestion, calibrated prediction or metrics collection. COD-352 pure retrieval/reranking, COD-353 baseline calculations, COD-354 deterministic Outlook assembly and the COD-358 private analysis API/data adapters are implemented. The COD-358 production routes remain fail-closed until COD-346 provides a verified server session. Local synthetic CPU embedding inference is available; no live X text is processed.
+
+## Repository
+
+- `apps/api/src/bipme/api/`: HTTP entrypoint and route validation.
+- `apps/api/src/bipme/integrations/`: provider-specific clients; official X API responses map to internal structures here.
+- `apps/api/src/bipme/intelligence/`: deterministic profiling/retrieval/baselines/prediction/backtesting.
+- `apps/api/src/bipme/persistence/`: SQLAlchemy schema and database coordination.
+- `apps/api/src/bipme/jobs/`: shared job handlers/worker entrypoint when built.
+- `apps/api/alembic/`: schema migration history.
+- `apps/web/src/`: client views, state and typed API access.
+- `docs/research/`: original product and prediction design sources.
+
+Create new modules for an implemented domain as needed; do not pre-create dozens of empty modules merely to match the early blueprint.
+
+## Data path (planned)
+
+```text
+X history read -> X adapter -> canonical post + creator state
+                                   |
+                                   v
+                             descriptive Post Profile
+                           (structure, topology, topic,
+                            intent, format) + separate embedding
+                                   |
+Draft -> draft Post Profile -> comparable post retrieval
+                                   |
+                          persisted Comparable Set
+                                   |
+                      outcomes of selected historical posts
+                                   |
+                    robust baseline + repeatability /
+                       outlier / sample-strength checks
+                                   |
+                      evidence-backed observations
+                      + optional testable next action
+                      + Outlook only when justified
+                                   |
+                     manually published attached X Post
+                     + original assessment / hypothesis
+                                   |
+                    real timestamped metric snapshots
+                                   |
+                    evidence-aware learning postmortem
+                                   |
+                     versioned prediction evaluation
+```
+
+### Report-first orchestration and official niche search (planned; rights gated)
+
+The previous draft-first data path remains as a **second-stage** action. Before any draft, authenticated onboarding and declared niche/goals trigger two **separate** evidence pipelines:
+
+```text
+ Creator goals / intended audience / niche
+                |
+      +---------+----------------------+
+      |                                |
+ Own archive / permitted history   Official X niche search
+ (COD-369/370 or COD-348)          (COD-344 rights/cost gate,
+      |                              COD-347 provider boundary)
+      v                                v
+ personal creator evidence         representative external niche evidence
+      |                             (strong / typical / weak, not viral-only)
+      +----------------+---------------+
+                       |
+           versioned report assembly (planned)
+            separate sources and coverage;
+           goal-aligned observations and ideas
+                       |
+         Creator Intelligence Report API
+                       |
+            Report-first web dashboard
+                       |
+                 Optional draft
+                       v
+         existing COD-358 draft analysis,
+         extended by additive niche contract
+                       |
+                publication + learning
+```
+
+- **Distinct access models:** Own archive import is not X OAuth. Authorized search into other creators' X posts requires the approved official API scopes/entitlements and applicable processing/display/retention permissions. An archive alone cannot yield current niche discovery. No scraping or assumption that public availability permits storage, embeddings, training or redistribution.
+- **Representativeness:** Search is a biased sample; record query/version, result set, sampling/coverage/selection criteria, observed metrics and timestamps. Compare strong/typical/weak examples, not only winners; normalize only with actual denominator metrics and compatible observation windows.
+- **Report contract (intelligence implemented; production integrations pending):** deterministic creator goal snapshot, own evidence and niche evidence in independent sections, sample counts, freshness, source coverage and data-quality flags, traceable post references, bounded opportunity hypotheses, limitations and partial/insufficient status. Assembly requires no draft input. The pure engine does not discover external sources or persist reports; Platform/API persistence and production authorized niche sourcing remain separate work. No fabricated niche cards when provider gates fail.
+- **Integration responsibilities:** COD-371 scopes pure report intelligence; COD-344 checks official niche-search availability/terms; COD-347 supplies budget-guarded provider work after approval; Platform owns report persistence/API; COD-359 presents post-onboarding first value; COD-360 remains the subsequent draft tool. New focused issues for discovery, report service and API are needed when Linear issue capacity allows; these are **not implemented by COD-358**.
+
+## COD-375 official niche-search handoff — verified 9 Nov 2026
+
+**Decision:** Conditional Go for a mockable, disabled-by-default discovery contract; No-Go for real third-party X collection or content analysis until the X developer-app owner verifies entitlement, current spend controls, and explicit approval for the declared analysis/processing use. COD-344 owns those account and rights checks. The personal-only partial Creator Intelligence Report remains the required fallback.
+
+**Provider seam for COD-376:** define a small `NicheDiscoveryProvider.discover(request, budget) -> NicheDiscoveryBatch` protocol. A request contains immutable creator-goal version, query-plan version, user-declared niche/audience/language, bounded time window, allowed query operators, maximum query count, page count and result cap, sort order, requested fields, and a verified policy/authorization reference. Query expansions must be deterministic, explainable variants of creator-declared terms; do not infer follower demographics or recursively expand from found posts.
+
+The batch should return `available`, `partial`, `unavailable`, `insufficient_evidence`, `rights_blocked`, or `budget_exhausted`; source/provider and endpoint; request and response timestamps; query-plan/version and per-query provenance; requested versus returned pages and results; cap/truncation and per-query errors; the covered time/language window; and a coverage/limitations summary. Each permitted item needs source post ID/URL, author ID when allowed, creation time, returned-field list, and separately typed metric observations with metric identity, value-or-unknown, window, source, and observation time. Preserve existing COD-347 budget reservation/reconciliation and rate/backoff behavior. Count duplicate pages/posts conservatively for the budget until actual billing reconciliation.
+
+Keep raw third-party text transient and only after rights approval; do not persist it or derive local embeddings before that gate. Keep external niche evidence separate from owner history. After authorization, compare strong/typical/weak sets only within compatible language, format/thread role, post-age and creator-size bands; carry missing denominators and observed-at timestamps. Search results are an API-ranked retrieval set, not a probability sample, so report coverage and uncertainty without saying it is representative. Do not alter COD-377's evidence schema or COD-347's adapter/ledger in this research handoff; if COD-376 proves an additive compatibility need, coordinate with the responsible owner first.
+
+### Non-negotiable data separation
+
+- **Post description/features** cannot include the outcome being predicted.
+- **Post outcomes/metrics** remain separate, timestamped records.
+- **Comparable sets** must be reproducible and bounded by `features_as_of`.
+- **Future observations** cannot be used in a historical backtest.
+- **Model, feature, retrieval and baseline versions** must be recorded for reproducibility.
+
+### COD-350 Post Profile contract
+
+`apps/api/src/bipme/intelligence/post_profiles.py` extracts `post-profile-v1` from provider-neutral, timestamped input. Its frozen output is the typed descriptive input consumed by the pure COD-352 retrieval engine; embedding vectors remain in the separate COD-351 interface and observed outcomes remain separate records. COD-345 supplies the shared persistence representation and migration; full runtime integrations remain separate work.
+
+- `features_as_of` bounds both the content/format observation and creator-context snapshot. Future observations, naive timestamps, and unsupported feature versions are rejected. The profile stores input and creator-context observation times so consumers can assess provenance and staleness.
+- `None` means unknown; empty text and an empty media tuple mean known absence. Text length counts Unicode code points, word count counts Unicode word tokens after URLs are removed, and sentence count uses punctuation boundaries (`.`, `!`, `?`) after URL removal. These are lexical heuristics, not language understanding.
+- Hashtags are case-folded topic signals, with duplicates retained in the structural list and removed in the topic-signal list. A topic or intent label is included only when explicitly supplied by the creator. `question_marker` and `reply_invitation` describe visible wording, not the creator's true intent or likely performance.
+- Format uses known media metadata, topology and thread role; missing metadata stays unknown. The input and profile have no impression, engagement, outcome or future audience fields. A new extraction algorithm must receive a new supported version, and historical profiles must be regenerated before retrieval mixes versions.
+
+### COD-352 comparable retrieval contract
+
+`apps/api/src/bipme/intelligence/retrieval.py` implements deterministic, provider-neutral retrieval and re-ranking over a bounded candidate page. `VectorCandidateSource` is the persistence boundary; `InMemoryVectorCandidateSource` provides an exact-cosine synthetic implementation. COD-345 supplies the canonical schema, migration and partial pgvector HNSW index. COD-358's `PostgresVectorCandidateSource` executes the bounded query, maps canonical rows, and returns total/vector candidate counts, deterministic truncation and storage-side exclusion reasons. The intelligence engine rechecks eligibility after retrieval.
+
+- A candidate must be available, belong to the assessment creator, have been published strictly before the cutoff, and have a valid embedding in the exact model/revision/dimensions/preprocessing/normalization/embedding-version space. Candidate embedding observation, profile `features_as_of`, profile input observation and creator-context observation must all be no later than the assessment cutoff. Draft-side profile and embedding are likewise validated at construction.
+- A missing profile, incompatible profile version, duplicate post ID, missing/corrupt embedding, future timestamp or unavailable post is excluded with explicit reasons. Known topology, thread-role and content-format mismatches are hard exclusions; unknown fields stay unknown and are omitted from scoring. When configured for a baseline, required metric definition/window evidence must be usable and observed after publication but no later than the assessment. Metric values are not part of the retrieval contract.
+- The versioned starter ranking uses cosine mapped to `[0,1]`, `0.30 × semantic + 0.18 × topic Jaccard + 0.15 × intent agreement + 0.12 × format compatibility`; it computes structural-length similarity too, but its default weight is zero. Available configured components are normalized by their active weights. These are the illustrative, configurable values from the research design, not validated weights. The default minimum relevance of `0.55`, three-match evidence minimum, 100-candidate query limit and 20-result limit are configurable engineering heuristics, not calibrated quality thresholds. Ties resolve by stable post ID. No outcome value participates in score calculation.
+- Output is a frozen `ComparableSet` with assessment ID, algorithm/config version, embedding identity, cutoff, ranked IDs, component scores, relevance, inclusion/exclusion reasons, candidate counts, source truncation and explicit `matched`, `insufficient_evidence` or `no_match` state. `insufficient_evidence` and `no_match` never force low-scoring matches.
+- COD-345 supplies canonical post/creator IDs, publication/availability, versioned profiles and observation timestamps, exact embedding identities and vectors, plus outcome metric definition/window and observed/missing state. COD-358 implements the read adapter and bounded candidate metadata without changing COD-352's public contracts. It does not use outcomes to select or rank candidates.
+- A COD-353 caller can map returned post IDs and positive relevance-derived weights to its `OutcomeObservation` inputs only after retrieval; outcome values cannot flow back into retrieval. COD-354 can consume the same IDs, component scores, reasons, evidence state and coverage limitations for creator-facing explanations.
+
+### COD-345 canonical persistence contract
+
+`apps/api/src/bipme/persistence/models.py` is the SQLAlchemy owner of the initial canonical PostgreSQL schema. Migration `0002_canonical_persistence` extends the already-applied `0001_enable_vector` foundation; it does not rewrite the initial migration.
+
+- `creators` owns stable internal UUIDs. `creator_platform_identities` maps `(platform, external_creator_id)` uniquely to one creator. `x_account_connections` references the identity and same creator with a composite foreign key; its opaque token columns require a `BIPME-ENC` v1 envelope marker and retain key-version/expiry/rotation metadata. The marker only rejects ordinary plaintext values; COD-346 supplies application encryption and clears both tokens on revocation.
+- `canonical_posts` stores platform/external ID, creator, publication time, availability/deletion state and known reply/quote/thread topology. Provider payloads and raw post text are excluded. `(platform, external_post_id)` and creator-scoped ingestion keys make repeated imports idempotent. Reply links and assessment links are creator-scoped by composite foreign keys.
+- `post_profiles` stores a versioned COD-350 descriptive `PostProfile` JSON object plus queryable version/cutoff/observation columns. JSON `null` retains unknown values and empty arrays retain known absence. Outcome metrics and embeddings are separate tables. The adapter round-trips the frozen `PostProfile`; unsupported versions fail closed.
+- `post_embeddings` stores the COD-351 vector and every `EmbeddingIdentity` field, with a unique key per post and full identity. V1 uses `vector(384)` and a partial HNSW cosine index for the pinned E5 identity only. A dimension/model/configuration change requires an explicit migration and reindex; vectors from different identities are never compared.
+- `outcome_observations` is append-only by exact metric definition, unit, window kind/key and observed timestamp. `observed`, `missing` and `invalid` states distinguish zero from missing. `mature_cumulative` and `age_aligned` are distinct. The stored publication timestamp is protected by a composite foreign key against the canonical post; measurement times cannot predate publication. The COD-353 adapter encodes identity as `definition|unit=<unit>` and `<window_kind>:<window_key>` because its current contract has one definition and one window string. It skips invalid records and requires caller-provided, non-outcome relevance weights.
+- `api_usage_ledger` records sanitized provider/operation/request metadata, units, estimated/actual costs and reconciliation state with provider-scoped idempotency keys. Do not put tokens, headers, raw payloads or unnecessary user content in metadata.
+- `draft_assessments` stores a versioned immutable COD-354 decision snapshot and optional creator-accepted hypothesis. A database trigger rejects updates. A published `canonical_posts` row can reference one assessment from the same creator and records `match`, `mismatch` or `unknown` version status; attaching a post never rewrites the original outlook or hypothesis. COD-358 should persist the full stable JSON snapshot and accepted hypothesis at creation time; COD-361 owns the later attachment/version comparison. This is a small snapshot/link boundary, not an experiment service.
+
+`persistence/contracts.py` maps canonical rows to existing intelligence dataclasses without changing their public contracts. `pgvector_candidate_statement(VectorCandidateQuery)` applies same-creator, available-post, strict publication cutoff, latest eligible profile, profile/context/embedding observation cutoffs and exact full embedding identity before cosine-distance ordering and bounded top-K. `PostgresVectorCandidateSource` adds total and vector-eligible counts, truncation and reasons for storage-filtered rows; COD-352 still owns final eligibility/reranking. The HNSW index only serves the current E5 identity. `BIPME_TEST_DATABASE_URL` enables real PostgreSQL tests for query execution and migration upgrades/downgrades.
+
+### COD-358 API and persistence orchestration
+
+- `GET /api/v1/creators/me/baseline` accepts an exact metric, definition, unit, window kind/key and optional `as_of`. It returns COD-353's version, eligible/effective sample sizes, robust percentiles, repeatability/outlier indicators, exclusions and limitations. Known incompatible definitions, units or windows return structured 422 errors; no historical series returns a valid Insufficient result.
 - `POST /api/v1/creators/me/draft-assessments` accepts a validated draft, descriptive metadata, optional exact metric preferences, an optional creator-selected hypothesis, and an `Idempotency-Key`. It extracts COD-350 features, generates a COD-351 local embedding, retrieves/reranks via COD-352, reads outcomes only after comparable selection, and assembles COD-354's immutable response.
 - `GET /api/v1/creators/me/draft-assessments/{assessment_id}` returns only assessments owned by the verified creator; foreign or absent IDs both return 404. Creator identity is never accepted from request content.
 - The analysis input fingerprint uses SHA-256 over a version marker and canonical sorted JSON. Draft text is NFC-normalized, CRLF/CR become LF, and meaningful leading/trailing whitespace is preserved. Fingerprinted metadata includes topology, media, declared labels and exact metric preferences. Raw draft text is not persisted. Same creator/key/fingerprint replays the original snapshot; a different input under the same key returns 409.

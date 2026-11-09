@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 13069)
-Total output lines: 1479
-
 # X-Only Discovery & Distribution MVP
 
 ## Purpose
@@ -882,7 +879,479 @@ Starting with X makes the scope narrow enough to:
 
 The African creator focus can then be expressed through the initial creator cohort and training/validation data instead of through superficial branding.
 
-For example, early testing could deliberately focus on Nigerian and…3069 tokens truncated…ostmortem analysis;
+For example, early testing could deliberately focus on Nigerian and African creators whose audience behavior, content categories, languages, timing, communities, and network structures are underrepresented in generic creator-growth tooling.
+
+---
+
+# 24. Immediate Research Questions Before Implementation
+
+Before building the production MVP, answer these questions:
+
+1. Which parts of `xai-org/x-algorithm` reflect the current production system?
+2. Which signals exposed in the repository can creators or third-party applications realistically observe?
+3. What X API data is currently accessible for creator-authorized accounts?
+4. Which metrics require paid X API access?
+5. Which signals cannot be observed directly and must therefore be estimated?
+6. What creator historical data do we need for a useful baseline?
+7. How many historical posts are needed before personalization becomes meaningful?
+8. How should cold-start creators be handled?
+9. Which engagement outcomes should V1 predict?
+10. How should confidence and prediction intervals be calibrated?
+11. What constitutes "qualified reach" in V1?12. How should A/B or controlled recommendation experiments be run without misleading creators?
+13. How will we distinguish correlation from actual recommendation lift?
+14. Which parts of the historical Twitter algorithm remain conceptually useful but are no longer production-representative?
+15. What rate limits, pricing, and API restrictions could affect post-performance monitoring?
+
+These questions should be resolved through technical research before finalizing the implementation architecture.
+
+---
+
+# Summary
+
+The first version should deliberately choose **depth over breadth**.
+
+We are not building a generic social media optimization platform.
+
+We are building:
+
+> **A highly focused, measurable X distribution intelligence system for creators.**
+
+The open-source X recommendation architecture gives us an unusually strong technical starting point.
+
+But the real product will come from the feedback loop:
+
+> **predict → recommend → publish → observe → compare → learn**
+
+If that loop becomes accurate enough to consistently improve creator distribution relative to their historical baseline, the product becomes genuinely valuable.
+
+
+---
+
+# 25. X Archive Import as an Optional Historical Data Source
+
+X allows users to download an archive of their account data from X settings.
+
+For this product, that archive is potentially very valuable because it can provide **deeper historical context than the normal API timeline alone**.
+
+X Help Center reference:
+
+https://help.x.com/en/managing-your-account/accessing-your-x-data
+
+The archive can contain machine-readable account information such as:
+
+- historical posts;
+- profile/account information;
+- followers;
+- following;
+- media;
+- Lists;
+- inferred interests;
+- ad interactions;
+- other account-associated information.
+
+The archive should be treated as a **historical-context source**, not as a replacement for the X API.
+
+## 25.1 Why the Archive Matters
+
+The normal X timeline API is useful for recent creator history, but the archive can extend much further back and may include posts from the creator's earliest account history.
+
+Example:
+
+```text
+API-accessible recent history:
+~3,200 posts
+
+Archive history:
+2014 → 2026
+18,000+ posts
+```
+
+That additional history can improve:
+
+- creator topic profiling;
+- content clustering;
+- posting-frequency analysis;
+- long-term format analysis;
+- language-use analysis;
+- creator-content eras;
+- historical audience relationships;
+- matched-post retrieval;
+- cold-start personalization.
+
+The archive is therefore most valuable for understanding:
+
+> **Who this creator has historically been on X.**
+
+# 26. Recommended Dual Onboarding Model
+
+The product should support two complementary onboarding paths.
+
+## Option A — Connect X
+
+Primary onboarding path:
+
+```text
+Sign in with X
+↓
+retrieve current account data
+↓
+retrieve recent creator history
+↓
+build initial baseline
+↓
+monitor future posts automatically
+```
+
+This path is best for:
+
+- current metrics;
+- live analytics;
+- ongoing synchronization;
+- follower updates;
+- post-publish monitoring;
+- creator-authorized non-public metrics.
+
+## Option B — Import X Archive
+
+Optional deeper-personalization path:
+
+```text
+Download X archive
+↓
+upload archive ZIP
+↓
+parse approved machine-readable files
+↓
+reconstruct long-term creator history
+↓
+merge with current API data
+```
+
+This creates a combined model:
+
+```text
+X ARCHIVE
+long-term historical context
+
++
+
+X API
+current and live behavior
+```
+
+The product should use both sources where available.
+
+# 27. Archive Import Helps With Cold Start
+
+One of the biggest product problems is personalization for a newly connected creator.
+
+Without historical data, the product may initially know very little and may require future observations before recommendations become strongly creator-specific.
+
+An archive import can accelerate that process.
+
+Example:
+
+```text
+Historical creator-topic profile
+
+Software engineering     38%
+AI                       24%
+Startups                  17%
+Personal journey           9%
+Other                     12%
+```
+
+Then:
+
+```text
+Historically strongest content areas
+
+AI + engineering
+Founder/building posts
+Technical explanations
+```
+
+This enables the product to build a meaningful creator profile immediately.
+
+# 28. Archive Is a Snapshot, Not a Live Feed
+
+The archive is not a replacement for ongoing API access. It represents account information available when the archive was generated.
+
+Therefore the architecture should be:
+
+```text
+          X ARCHIVE
+              │
+              │ historical context
+              ▼
+       Creator Data Store
+              ▲
+              │ current/live data
+              │
+            X API
+```
+
+The archive provides depth. The API provides freshness.
+
+# 29. Data Minimization for Archive Imports
+
+An X archive may contain information that is completely unnecessary for distribution intelligence.
+
+The importer should **not blindly ingest the entire archive**. Instead, use a strict allowlist.
+
+Recommended example:
+
+```text
+IMPORT
+
+✓ Posts
+✓ Account/profile metadata
+✓ Followers
+✓ Following
+✓ Lists
+✓ Public media metadata
+✓ Relevant interest/topic information
+
+IGNORE
+
+✗ Direct Messages
+✗ Address-book data
+✗ Email history
+✗ Phone numbers
+✗ Login/IP history
+✗ private device information
+✗ unnecessary advertising identifiers
+```
+
+Principle:
+
+> **Only ingest information that materially contributes to creator distribution intelligence.**
+
+# 30. Treat Archive Data and API Metrics Differently
+
+Do not assume that the X archive contains all historical analytics required by the product.
+
+The working architectural assumption should be:
+
+```text
+ARCHIVE
+=
+content + behavioral + account history
+```
+
+and:
+
+```text
+API
+=
+performance metrics + live analytics + ongoing synchronization
+```
+
+until a real current archive schema is inspected and verified.
+
+# 31. Creator Identity Representation
+
+Archive history can make pre-publish intelligence substantially more creator-specific.
+
+A creator's historical posts can be semantically clustered.
+
+Example:
+
+```text
+Cluster 1
+Backend / NestJS / distributed systems
+
+Cluster 2
+AI / OpenAI / Codex
+
+Cluster 3
+Startup / building in public
+
+Cluster 4
+Personal developer journey
+
+Cluster 5
+Hackathons
+```
+
+When the creator writes a new draft, the system can compare it against those historical clusters.
+
+The pre-publish question becomes:
+
+> **How does this draft fit this creator's established content graph?**
+
+rather than:
+
+> "Is this a globally good X post?"
+
+# 32. Archive Data Improves Comparable-Post Matching
+
+The matched-baseline system becomes stronger when more historical posts are available.
+
+However, old posts must not be weighted equally with recent posts because follower count, audience composition, creator niche, platform behavior, and recommendation architecture can change substantially over time.
+
+Comparable-post matching should therefore apply time-aware weighting.
+
+Conceptually:
+
+```text
+Historical similarity
+×
+recency weight
+×
+audience-era weight
+×
+format similarity
+×
+topic similarity
+```
+
+The archive should **expand historical context without allowing stale history to dominate predictions**.
+
+# 33. Revised Creator Data Architecture
+
+```text
+                 ONBOARDING
+                     │
+           ┌─────────┴─────────┐
+           │                   │
+        X OAuth          Archive Import
+           │                   │
+           ▼                   ▼
+       Current API       Historical Data
+           │                   │
+           └─────────┬─────────┘
+                     ▼
+             Creator History
+                  Engine
+                     │
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+      Topics       Formats     Behavior
+        │            │            │
+        └────────────┼────────────┘
+                     ▼
+             Creator Baseline
+                     │
+                     ▼
+           Distribution Outlook
+```
+
+After onboarding, X API synchronization continues to feed new creator and post-performance data into the system.
+
+# 34. Archive Import as an Accuracy Upgrade
+
+Archive import does not necessarily need to be mandatory in the first hackathon build.
+
+It creates extra onboarding friction because the creator must request, download, and upload their X archive.
+
+Instead, it can be presented as an optional accuracy upgrade:
+
+> **Want more personalized recommendations? Import your X archive.**
+
+Example creator-facing output:
+
+```text
+We've analyzed:
+
+8 years of X history
+11,482 historical posts
+5 major content clusters
+```
+
+This can support much more personalized findings than generic social-media advice.
+
+# 35. Do Not Make Archive Import Mandatory for V1
+
+For the initial product, **X OAuth should remain the primary onboarding path**.
+
+Reasons:
+
+- lower friction;
+- immediate access;
+- live metrics;
+- automatic updates;
+- easier demo flow.
+
+Archive import should be designed into the data model but can remain optional or post-onboarding.
+
+# 36. Additional Archive Research Required
+
+Before finalizing archive support, inspect a **real current X archive schema**.
+
+Research should identify:
+
+1. Exact archive file names.
+2. Which files contain posts.
+3. Whether posts are JSON, JavaScript-wrapped JSON, or another structure.
+4. Exact post fields.
+5. Whether deleted or historical records appear.
+6. How followers and following are represented.
+7. Whether Likes are included and how complete they are.
+8. How media references are represented.
+9. What interest/inference files are included.
+10. Whether useful historical analytics metrics exist.
+11. Whether engagement counts are preserved with historical posts.
+12. How large archives should be streamed and parsed safely.
+13. Which archive files should be explicitly ignored.
+14. What retention/deletion controls should apply after import.
+15. How archive data should be merged with live API records without duplication.
+
+Until that schema is verified:
+
+> **Treat the archive as a historical content/context source, not as a guaranteed historical analytics source.**
+
+# 37. Updated Working Product Data Model
+
+The product now has three major information layers.
+
+## Layer 1 — Long-Term Creator History
+
+Primarily sourced from:
+
+- X archive;
+- historical API-accessible posts.
+
+Used for:
+
+- creator identity;
+- topic clusters;
+- content eras;
+- language patterns;
+- format preferences;
+- long-term comparable-post retrieval.
+
+## Layer 2 — Current Creator State
+
+Primarily sourced from:
+
+- X API;
+- current profile;
+- current followers/following;
+- recent posts;
+- recent topic context.
+
+Used for:
+
+- current audience state;
+- recent baselines;
+- current creator niche;
+- current posting behavior.
+
+## Layer 3 — Live Performance
+
+Primarily sourced from:
+
+- creator-authorized X metrics;
+- post-publish metric polling;
+- search/topic context.
+
+Used for:
+
+- distribution velocity;
+- matched-baseline comparisons;
+- live trajectory;
+- postmortem analysis;
 - future calibration.
 
 Combined:
