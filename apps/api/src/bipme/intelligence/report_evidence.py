@@ -119,7 +119,7 @@ class CreatorReportEvidenceBundle:
         if self.version != REPORT_EVIDENCE_VERSION:
             raise ValueError("unsupported evidence bundle version")
         self.goals.require_available_by(self.as_of, self.creator_key)
-        source_ids: dict[str, EvidencePool] = {}
+        source_ids: dict[str, str] = {}
         for pool, sources in (
             ("personal", self.personal_sources),
             ("niche", self.niche_sources),
@@ -143,7 +143,9 @@ class CreatorReportEvidenceBundle:
                 if evidence.evidence_id in evidence_ids:
                     raise ValueError("duplicate evidence ID")
                 evidence_ids.add(evidence.evidence_id)
-                if any(source_ids.get(source_id) != pool for source_id in evidence.source_ids):
+                if any(
+                    source_ids.get(source_id) != pool for source_id in evidence.source_ids
+                ):
                     raise ValueError("evidence references missing or cross-pool source")
         for limitation in self.limitations:
             _nonempty(limitation, "limitation")
