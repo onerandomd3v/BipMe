@@ -404,3 +404,101 @@ def test_codex_rejected_claim_cannot_reappear_as_experiment() -> None:
     )
     assert report.personal_findings[0].evidence_strength == "Insufficient"
     assert report.experiments == ()
+
+
+def test_codex_exact_two_fifths_prevalence_cutoff() -> None:
+    profiles = []
+    for index, record in enumerate(_twenty_profiles()[:10]):
+        topic = "build" if index in (0, 1, 2, 5) else "misc"
+        profiles.append(
+            replace(record, profile=replace(record.profile, declared_topic=topic))
+        )
+    cohort = PersonalMetricCohort(
+        metric="replies",
+        metric_definition="observed reply count",
+        window="age:24h",
+        evidence_strength="Moderate",
+        strong_post_ids=tuple(f"post-{idx}" for idx in range(5)),
+        typical_post_ids=(),
+        weak_post_ids=tuple(f"post-{idx}" for idx in range(5, 10)),
+        excluded_count=0,
+        limitations=(),
+    )
+    patterns = compare_personal_content_patterns(
+        "creator", NOW, (cohort,), tuple(profiles)
+    )
+    assert any(
+        pattern.feature == "declared_topic"
+        and pattern.feature_value == "build"
+        and pattern.strong_count == 3
+        and pattern.strong_total == 5
+        and pattern.weak_count == 1
+        and pattern.weak_total == 5
+        for pattern in patterns
+    )
+
+
+def test_codex_experiment_requires_feature_negative_comparisons() -> None:
+    original = _bundle()
+    # Six feature-positive posts and two unrelated posts give eight supporting
+    # measurements, but omit four weak posts from the actual contrast denominator.
+    subset = tuple(f"post-{idx}" for idx in (0, 5, 6, 15, 16, 17, 18, 19))
+    evidence = replace(original.personal_evidence[0], post_ids=subset)
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(evidence,)),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+        personal_profiles=_twenty_profiles(),
+    )
+    assert report.personal_findings[0].evidence_strength == "Moderate"
+    assert report.content_patterns
+    assert report.experiments == ()
+
+
+def test_codex_weak_associated_feature_not_recommended() -> None:
+    original = _bundle()
+    evidence = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{idx}" for idx in range(20)),
+    )
+    changed = []
+    for index, record in enumerate(_twenty_profiles()):
+        topic = "build" if index in (0, 1, 2, 3, 4, 15, 16, 17) else "misc"
+        changed.append(replace(record, profile=replace(record.profile, declared_topic=topic)))
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(evidence,)),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+        personal_profiles=tuple(changed),
+    )
+    assert any(
+        pattern.feature == "declared_topic"
+        and pattern.feature_value == "build"
+        and pattern.strong_count * pattern.weak_total
+        < pattern.weak_count * pattern.strong_total
+        for pattern in report.content_patterns
+    )
+    assert report.experiments == ()
+
+
+def test_codex_single_exclusion_keeps_pattern_nonvacuous() -> None:
+    original = _bundle()
+    evidence = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{idx}" for idx in range(20)),
+    )
+    profiles = _twenty_profiles()
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(evidence,)),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+        personal_profiles=profiles + (profiles[17],),
+    )
+    matches = [
+        pattern for pattern in report.content_patterns
+        if pattern.feature == "declared_topic" and pattern.feature_value == "build"
+    ]
+    assert matches
+    assert "post-17" not in matches[0].strong_group_post_ids
+    assert report.experiments
+    assert "post-17" not in report.experiments[0].supporting_post_ids
