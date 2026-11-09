@@ -7,10 +7,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING
 
 from bipme.intelligence.attention_features import describe_attention_features
-from bipme.intelligence.creator_report import PersonalMetricCohort
 from bipme.intelligence.post_profiles import PostProfile
 
 PATTERN_VERSION = "personal-content-contrasts-v1"
@@ -18,10 +17,8 @@ MIN_GROUP_POSTS = 2
 MIN_TOTAL_POSTS = 8
 MIN_PREVALENCE_GAP = 0.40
 
-FeatureName = Literal[
-    "content_format", "topology", "thread_role", "declared_topic",
-    "declared_intent", "question_marker", "reply_invitation",
-]
+if TYPE_CHECKING:
+    from bipme.intelligence.creator_report import PersonalMetricCohort
 
 
 @dataclass(frozen=True)
