@@ -1481,7 +1481,7 @@ Public docs were read on the verification date above. The console exposed projec
 
 ## COD-372 — Permissioned niche comparison protocol and synthetic evaluation
 
-**Checkpoint — 9 Nov 2026.** Cross-creator comparison remains research-only. COD-369 has not inspected an owner-supplied archive, and COD-375/COD-344 have not cleared X processing, storage, display, embedding or sharing rights. No real creator posts, archives, X API calls, embeddings or Groq processing were used here. A creator's opt-in alone does not establish platform or copyright permission.
+**Checkpoint — 9 Nov 2026.** Cross-creator comparison remains research-only. COD-369 documents public archive feasibility but no owner-supplied archive has been inspected; COD-375/COD-344 have not cleared X processing, storage, display, embedding or sharing rights. No real creator posts, archives, X API calls, embeddings or Groq processing were used here. A creator's opt-in alone does not establish platform or copyright permission.
 
 ### Evidence protocol for a later authorized pilot
 
