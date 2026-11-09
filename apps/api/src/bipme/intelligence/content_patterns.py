@@ -3,6 +3,7 @@
 Only versioned, cutoff-safe personal post profiles are eligible. Cohort groups
 must come from already measured same-creator, exact-window outcomes.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -86,8 +87,13 @@ def compare_personal_content_patterns(
         approved: set[tuple[str, str]] = set()
         for signal in signals:
             if signal.name in (
-                "content_format", "topology", "thread_role",
-                "declared_topic", "declared_intent", "question_marker", "reply_invitation",
+                "content_format",
+                "topology",
+                "thread_role",
+                "declared_topic",
+                "declared_intent",
+                "question_marker",
+                "reply_invitation",
             ):
                 approved.add((signal.name, signal.value.casefold()))
         features[post_id] = approved
@@ -99,7 +105,8 @@ def compare_personal_content_patterns(
         strong = tuple(sorted(pid for pid in cohort.strong_post_ids if pid in features))
         weak = tuple(sorted(pid for pid in cohort.weak_post_ids if pid in features))
         if (
-            len(strong) < MIN_GROUP_POSTS or len(weak) < MIN_GROUP_POSTS
+            len(strong) < MIN_GROUP_POSTS
+            or len(weak) < MIN_GROUP_POSTS
             or len(strong) + len(weak) < MIN_TOTAL_POSTS
         ):
             continue
@@ -131,6 +138,14 @@ def compare_personal_content_patterns(
                     ),
                 )
             )
-    return tuple(sorted(results, key=lambda item: (
-        item.metric, item.window, item.feature, item.feature_value,
-    )))
+    return tuple(
+        sorted(
+            results,
+            key=lambda item: (
+                item.metric,
+                item.window,
+                item.feature,
+                item.feature_value,
+            ),
+        )
+    )
