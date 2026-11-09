@@ -314,6 +314,8 @@ def _score_case(
     target = case.target_observation
     if target.value is None:
         limitations.append("Target metric is missing; missing values are not imputed as zero.")
+    if target.value is not None and target.value < 0:
+        limitations.append("Negative target metric is invalid and is excluded from scoring.")
     if target.observed_at > spec.evaluation_as_of:
         limitations.append("Target observation was not yet available at the report cutoff.")
     if metric is None or metric.outlook is None:
@@ -324,7 +326,12 @@ def _score_case(
         limitations.append(
             "Fewer than 3 known, compatible prior observations support percentile scoring."
         )
-    if target.value is None or target.observed_at > spec.evaluation_as_of or metric is None:
+    if (
+        target.value is None
+        or target.value < 0
+        or target.observed_at > spec.evaluation_as_of
+        or metric is None
+    ):
         return (
             BacktestCaseResult(
                 case.case_id,
@@ -511,6 +518,8 @@ def evaluate_distribution_outlooks(
         replay_count += 1
         if case.target_observation.value is None:
             exclusions["missing_target_value"] += 1
+        elif case.target_observation.value < 0:
+            exclusions["negative_target_value"] += 1
         elif case.target_observation.observed_at <= spec.evaluation_as_of and has_range:
             all_coverage.append(bool(result.reference_range_covered))
             interval = next(

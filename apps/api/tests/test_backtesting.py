@@ -420,6 +420,18 @@ def test_target_observation_cannot_precede_publication() -> None:
         evaluate_distribution_outlooks((impossible_target,), _spec())
 
 
+def test_negative_target_metric_is_excluded_from_all_quality_scores() -> None:
+    report = evaluate_distribution_outlooks((_case(0, value=-10),), _spec())
+
+    assert report.replay_count == 1
+    assert report.scored_count == 0
+    assert report.cases[0].reference_range_covered is None
+    assert report.cases[0].absolute_percentile_error is None
+    assert report.cases[0].direction_correct is None
+    assert dict((item.name, item.count) for item in report.exclusions)["negative_target_value"] == 1
+    assert any("Negative target metric" in note for note in report.cases[0].limitations)
+
+
 def test_report_is_reproducible_chronological_and_groups_each_evidence_band() -> None:
     cases = (
         _case(2, history_count=21, value=55),
