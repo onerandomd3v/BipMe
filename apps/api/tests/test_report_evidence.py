@@ -91,8 +91,18 @@ def test_partial_and_full_coverage_and_serialization() -> None:
         ({"personal_evidence": (evidence("niche", "e-1", "owned-1"),)}, "wrong pool"),
         ({"personal_evidence": (evidence("personal", "e-1", "absent"),)}, "missing or cross-pool"),
         ({"niche_sources": (source("niche", "owned-1"),)}, "duplicate source ID"),
-        ({"personal_evidence": (evidence("personal", "e-1", "owned-1"),) * 2}, "duplicate evidence ID"),
-        ({"personal_sources": (replace(source("personal", "owned-1"), observed_at=NOW + timedelta(seconds=1)),)}, "after report cutoff"),
+        (
+            {"personal_evidence": (evidence("personal", "e-1", "owned-1"),) * 2},
+            "duplicate evidence ID",
+        ),
+        (
+            {
+                "personal_sources": (
+                    replace(source("personal", "owned-1"), observed_at=NOW + timedelta(seconds=1)),
+                )
+            },
+            "after report cutoff",
+        ),
     ],
 )
 def test_rejects_invalid_provenance(change: dict, reason: str) -> None:
