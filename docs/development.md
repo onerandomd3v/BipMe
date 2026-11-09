@@ -121,6 +121,16 @@ uv run python -c 'import json; from bipme.api.app import app; print(json.dumps(a
 
 `tests/test_analysis_api.py` checks that the artifact matches the generated schema. COD-356 and COD-360 should generate their client types from `apps/api/openapi.json`; do not hand-copy response interfaces. Draft text is fingerprinted but is not stored. Reusing an `Idempotency-Key` with the same creator and canonical input replays the original immutable assessment; a different input returns 409.
 
+The Web client contract is generated from that checked-in artifact with pinned `openapi-typescript`, `openapi-fetch`, MSW and Vitest versions. From `apps/web`, run:
+
+```bash
+pnpm generate:api
+pnpm check:api
+pnpm test
+```
+
+`generate:api` writes `src/api/generated/schema.d.ts`; `check:api` regenerates into a temporary directory and fails when the checked-in output is stale. Neither command starts the API or makes network requests. `src/api/client.ts` is the reusable same-origin client: it sends cookies, retains the server-provided CSRF token only in memory, accepts `AbortSignal` for cancellable reads, maps structured API errors to `ApiRequestError`, and preserves HTTP status, API codes, validation details and rate-limit headers. Synthetic MSW handlers and fixtures live in `src/api/mocks.ts` and `src/api/fixtures.ts`; they must not be treated as production creator data.
+
 COD-378 adds typed `/api/v1/creators/me/profile`, `/data-permissions`, `/report`, `/report/latest` and `/reports/{id}` contracts. Profile updates append revisions; report generation is draft-free and replays by creator-scoped `Idempotency-Key`. `data_sources` currently accepts only explicitly opted-in personal history; the server-side X-history policy gate requires both `BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED=true` and a valid `BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT` timestamp, niche discovery is unavailable, and synthesis is disabled. The latest report response exposes coverage, source freshness, processing permission snapshot and limitations so Web can render insufficient/partial states without inventing data. Regenerate `openapi.json` when these schemas change.
 
 The GitHub Actions workflow runs on PRs targeting `main`; it uses locked Python installation and frozen pnpm installation. The API job's PostgreSQL service is pgvector-enabled so persistence tests exercise real PostgreSQL constraints, vector queries and Alembic upgrades/downgrades. No CI job should call live X endpoints.
