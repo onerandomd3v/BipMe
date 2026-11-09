@@ -271,6 +271,21 @@ def test_changed_or_unverified_publication_keeps_observation_but_withholds_scori
     assert result.hypothesis_evaluation.status == "inconclusive"
 
 
+def test_unknown_publication_version_is_not_scored_as_the_assessed_draft() -> None:
+    request = _request(version_match_state="unknown", published_fingerprint=None)
+
+    result = build_postmortem(request)
+
+    assert result.version_state == "unverified"
+    comparison = result.metric_comparisons[0]
+    assert comparison.status == "version_unverified"
+    assert comparison.observed_value == 95.0
+    assert comparison.deviation_from_median is None
+    assert result.hypothesis_evaluation is not None
+    assert result.hypothesis_evaluation.status == "inconclusive"
+    assert any("mismatched or unverified" in item for item in comparison.limitations)
+
+
 def test_different_content_fingerprint_cannot_score_even_if_link_state_claims_match() -> None:
     result = build_postmortem(_request(published_fingerprint="sha256:" + "c" * 64))
 
