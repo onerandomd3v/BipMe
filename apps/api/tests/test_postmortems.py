@@ -89,6 +89,7 @@ def _request(
     published_fingerprint: str | None = FINGERPRINT,
     future_target: bool = False,
     duplicate_target: bool = False,
+    history_ages: tuple[timedelta, ...] | None = None,
     extra_historical: tuple[OutcomeObservation, ...] = (),
 ) -> PostmortemRequest:
     comparable_ids = tuple(f"history-{i}" for i in range(history_count))
@@ -131,6 +132,7 @@ def _request(
                 post_id,
                 float((index + 1) * 10),
                 AS_OF - timedelta(days=history_count - index + 2),
+                age=history_ages[index] if history_ages is not None else AGE,
             )
             for index, post_id in enumerate(comparable_ids)
         )
@@ -321,6 +323,21 @@ def test_sparse_historical_reference_data_does_not_invent_comparison() -> None:
     assert result.hypothesis_evaluation is not None
     assert result.hypothesis_evaluation.status == "inconclusive"
     assert result.metric_comparisons[0].matched_sample_count == 2
+
+
+def test_forecast_range_is_withheld_when_its_source_ages_differ_from_target() -> None:
+    ages = (AGE,) * 4 + (timedelta(hours=48),) * 6
+    result = build_postmortem(_request(history_ages=ages))
+
+    comparison = result.metric_comparisons[0]
+    assert comparison.status == "scored"
+    assert comparison.matched_sample_count == 4
+    assert comparison.relative_percentile is not None
+    assert comparison.reference_range is None
+    assert comparison.deviation_from_median is None
+    assert comparison.within_reference_range is None
+    assert result.original_outlook.metrics[0].outlook is not None
+    assert any("different or unverifiable ages" in item for item in comparison.limitations)
 
 
 def test_absent_published_metric_is_unavailable_without_substituting_other_series() -> None:

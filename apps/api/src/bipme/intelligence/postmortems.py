@@ -392,11 +392,20 @@ def _compare_metric(
         )
 
     stats = baseline.statistics
-    reference = metric.outlook
+    source_range = metric.outlook
+    range_age_compatible = source_range is not None and set(
+        item.post_id for item in history
+    ) == set(source_range.comparable_post_ids)
+    reference = source_range if range_age_compatible else None
     deviation = float(target.value) - reference.median_p50 if reference else None
     within = reference.lower_p25 <= target.value <= reference.upper_p75 if reference else None
     if reference is None:
-        limitations.append("The original outlook withheld a reference range for this metric.")
+        if source_range is None:
+            limitations.append("The original outlook withheld a reference range for this metric.")
+        else:
+            limitations.append(
+                "The original outlook range includes source observations with different or unverifiable ages; forecast deviation and range coverage are withheld."
+            )
     limitations.append(
         "Equal-age historical associations do not show what caused the published outcome."
     )
