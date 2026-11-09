@@ -2,11 +2,16 @@
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "0005_creator_history_import"
 down_revision = "0004_creator_report_api"
 branch_labels = None
 depends_on = None
+
+JSON_DOCUMENT = sa.JSON(none_as_null=True).with_variant(
+    postgresql.JSONB(none_as_null=True), "postgresql"
+)
 
 
 def upgrade() -> None:
@@ -24,7 +29,8 @@ def upgrade() -> None:
         sa.Column("source_observed_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.add_column(
-        "canonical_posts", sa.Column("provenance", sa.JSON(), nullable=False, server_default="{}")
+        "canonical_posts",
+        sa.Column("provenance", JSON_DOCUMENT, nullable=False, server_default="{}"),
     )
     op.create_table(
         "creator_history_imports",
@@ -40,7 +46,7 @@ def upgrade() -> None:
         sa.Column("next_page_available", sa.Boolean(), nullable=False),
         sa.Column("error_code", sa.String(length=64), nullable=True),
         sa.Column("source", sa.String(length=100), nullable=False),
-        sa.Column("provenance", sa.JSON(), nullable=False),
+        sa.Column("provenance", JSON_DOCUMENT, nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

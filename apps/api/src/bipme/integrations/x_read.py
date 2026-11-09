@@ -255,6 +255,7 @@ class HttpXReadProvider:
         params: dict[str, str | int] = {
             "max_results": max_results,
             "tweet.fields": X_POST_FIELDS,
+            "exclude": "retweets",
         }
         if pagination_token is not None:
             params["pagination_token"] = pagination_token
@@ -636,6 +637,8 @@ class XCreatorHistoryReader:
             for row in page.posts:
                 if len(collected) >= max_posts:
                     break
+                if _is_retweet(row):
+                    continue
                 try:
                     normalized = _normalize_post(row, page.observed_at)
                 except (ValueError, TypeError, KeyError):
@@ -751,4 +754,13 @@ def _normalize_post(row: dict[str, Any], observed_at: datetime) -> XReadPost:
         quoted_external_post_id=quoted_id,
         thread_id=thread_id,
         media_present=media_present,
+    )
+
+
+def _is_retweet(row: dict[str, Any]) -> bool:
+    """Return whether a provider row is a repost, even if exclude was ignored."""
+    references = row.get("referenced_tweets")
+    return isinstance(references, list) and any(
+        isinstance(reference, dict) and reference.get("type") == "retweeted"
+        for reference in references
     )

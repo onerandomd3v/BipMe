@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -31,7 +32,7 @@ router = APIRouter(prefix="/api/v1/creators/me/history", tags=["creator-history"
 class HistoryImportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     import_id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9._:-]+$")
-    max_posts: int = Field(default=20, ge=1, le=3200)
+    max_posts: int = Field(default=20, ge=1, le=400)
 
 
 class HistoryImportResponse(BaseModel):
@@ -49,7 +50,7 @@ class HistoryImportResponse(BaseModel):
     provenance: dict[str, object]
 
 
-def get_history_importer() -> CreatorHistoryImporter:
+def get_history_importer() -> Iterator[CreatorHistoryImporter]:
     """Build the importer only when every external-use and spend gate is explicit."""
     auth = AuthSettings.from_environment()
     enabled = os.getenv("BIPME_X_HISTORY_IMPORT_ENABLED", "false").lower() in {"1", "true", "yes"}
@@ -110,8 +111,9 @@ def get_history_importer() -> CreatorHistoryImporter:
         data_rights_verified=True,
     )
     cipher = TokenCipher(auth.token_encryption_keys, auth.active_token_key_version or "")
+    provider = HttpXReadProvider(settings=settings)
     reader = XCreatorHistoryReader(
-        provider=HttpXReadProvider(settings=settings),
+        provider=provider,
         cipher=cipher,
         settings=settings,
         pricing=XReadPricing(request_cost, result_cost, observed_at, expires_at, source),
@@ -122,7 +124,10 @@ def get_history_importer() -> CreatorHistoryImporter:
             import_limit,
         ),
     )
-    return CreatorHistoryImporter(reader)
+    try:
+        yield CreatorHistoryImporter(reader)
+    finally:
+        provider.close()
 
 
 @router.post("/imports", response_model=HistoryImportResponse, status_code=200)

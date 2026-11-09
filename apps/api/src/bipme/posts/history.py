@@ -9,6 +9,7 @@ from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from bipme.integrations.x_read import XReadPost, XReadResult
@@ -86,22 +87,56 @@ class CreatorHistoryImporter:
             },
         )
         db.add(state)
-        db.commit()
-        result = self.reader.read(
-            db, creator_id=creator_id, import_id=import_id, max_posts=max_posts, now=now
-        )
-        imported = 0
-        for post in result.posts:
-            if self._upsert_post(db, creator_id, import_id, post):
-                imported += 1
-        state.status = result.status
-        state.completed_at = (now or datetime.now(UTC)).astimezone(UTC)
-        state.pages_read = result.pages_read
-        state.imported_posts = imported
-        state.next_page_available = result.next_page_available
-        state.error_code = result.unavailable_reason
-        db.commit()
-        return _summary(state)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            winner = db.scalar(
+                select(CreatorHistoryImport).where(
+                    CreatorHistoryImport.creator_id == creator_id,
+                    CreatorHistoryImport.import_id == import_id,
+                )
+            )
+            if winner is not None:
+                return _summary(winner)
+            raise
+        try:
+            result = self.reader.read(
+                db, creator_id=creator_id, import_id=import_id, max_posts=max_posts, now=now
+            )
+            imported = 0
+            for post in result.posts:
+                if self._upsert_post(db, creator_id, import_id, post):
+                    imported += 1
+            state.status = result.status
+            state.completed_at = (now or datetime.now(UTC)).astimezone(UTC)
+            state.pages_read = result.pages_read
+            state.imported_posts = imported
+            state.next_page_available = result.next_page_available
+            state.error_code = result.unavailable_reason
+            db.commit()
+            return _summary(state)
+        except Exception as exc:
+            db.rollback()
+            failed = db.scalar(
+                select(CreatorHistoryImport).where(
+                    CreatorHistoryImport.creator_id == creator_id,
+                    CreatorHistoryImport.import_id == import_id,
+                )
+            )
+            if failed is not None:
+                failed.status = "unavailable"
+                failed.completed_at = (now or datetime.now(UTC)).astimezone(UTC)
+                failed.error_code = _failure_code(exc)
+                failed.provenance = {
+                    **failed.provenance,
+                    "failure_code": failed.error_code,
+                }
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
+            raise
 
     @staticmethod
     def _upsert_post(db: Session, creator_id: UUID, import_id: str, post: XReadPost) -> bool:
@@ -147,7 +182,20 @@ class CreatorHistoryImporter:
                 },
             )
             db.add(existing)
-            db.flush()
+            try:
+                with db.begin_nested():
+                    db.flush()
+            except IntegrityError:
+                existing = db.scalar(
+                    select(CanonicalPost).where(
+                        CanonicalPost.platform == "x",
+                        CanonicalPost.external_post_id == post.external_post_id,
+                    )
+                )
+                if existing is None:
+                    raise
+                if existing.creator_id != creator_id:
+                    return False
             post_id = existing.id
             changed = True
         for metric_name, metric in post.metrics.items():
@@ -188,4 +236,15 @@ class CreatorHistoryImporter:
 
 
 def import_summary(row: CreatorHistoryImport) -> dict[str, object]:
+    """Serialize a persisted import state for the typed API response."""
     return _summary(row)
+
+
+def _failure_code(exc: Exception) -> str:
+    """Map an exception to a safe, stable status code without exposing internals."""
+    if isinstance(exc, IntegrityError):
+        return "persistence_conflict"
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and re.fullmatch(r"[a-z0-9_:-]{1,64}", code):
+        return code
+    return "import_failed"

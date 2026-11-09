@@ -81,7 +81,7 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
         command.upgrade(config, "head")
         connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0004_creator_report_api"
+            "0005_creator_history_import"
         )
         command.downgrade(config, "0001_enable_vector")
         connection.commit()
@@ -107,8 +107,33 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
             "creator_goal_revisions",
             "creator_processing_permissions",
             "creator_report_snapshots",
+            "creator_history_imports",
         }
         assert expected <= tables
+        history_columns = {
+            column["name"] for column in inspect(connection).get_columns("creator_history_imports")
+        }
+        assert {
+            "import_id",
+            "status",
+            "requested_posts",
+            "pages_read",
+            "imported_posts",
+            "next_page_available",
+            "error_code",
+            "provenance",
+        } <= history_columns
+        post_columns = {
+            column["name"] for column in inspect(connection).get_columns("canonical_posts")
+        }
+        assert {
+            "text",
+            "media_present",
+            "source",
+            "source_endpoint",
+            "source_observed_at",
+            "provenance",
+        } <= post_columns
         indexes = {index["name"] for index in inspect(connection).get_indexes("post_embeddings")}
         assert "ix_embeddings_e5_v1_cosine" in indexes
         assert "ix_posts_creator_published" in {

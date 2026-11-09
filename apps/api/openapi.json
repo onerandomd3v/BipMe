@@ -1304,7 +1304,7 @@
           },
           "max_posts": {
             "default": 20,
-            "maximum": 3200.0,
+            "maximum": 400.0,
             "minimum": 1.0,
             "title": "Max Posts",
             "type": "integer"
