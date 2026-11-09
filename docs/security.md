@@ -52,13 +52,15 @@ The selected V1 hosted inference is **GroqCloud serving `openai/gpt-oss-120b`** 
 
 Do not run a prelaunch multi-model benchmark. Require only focused smoke/unit tests of auth, source entitlement, spend boundaries, output schema, supported evidence references, prompt-injection resistance, and the deterministic fallback. Decide precise retention windows and private sign-in mechanism before handling real user data.
 
-## Generative-model data processing boundary (planned)
+## Generative-model data processing boundary
 
 - Treat evidence supplied to any LLM as *untrusted* content: reject prompt injection in posts, delimit data, constrain structured outputs and validate every cited post ID and numeric claim.
-- Confirm both **X-derived content inference rights** and separately **third-party transfer/subprocessor rights** before sending any real creator/niche post text to an external LLM. Model training policies, retention, geographic processing and provider DPA require verification; consent alone may not override platform terms.
+- Confirm both **X-derived content inference rights** and separately **third-party transfer/subprocessor rights** before sending any real creator/niche post text to an external LLM. The synthesis interface requires separate source-processing and provider-transfer attestations and source-ID allowlists; these attestations must come from a verified authorization flow before real data is eligible. Model training policies, retention, geographic processing and provider DPA require verification; consent alone may not override platform terms.
 - Prefer minimal derived, approved evidence bundles rather than raw archives, tokens or entire corpora; never put post history, credentials, PII or prompts containing private content in logs/CI fixtures.
 - Define bounded token, latency and monetary budgets; redact errors, disable unsupported training/data retention where contractually possible, and fail safely with a deterministic template when access or quality is insufficient.
 - Keep audit trails with evidence IDs, prompt/model/schema versions and policy decisions so explanations can be reproduced and deleted when source rights change.
+
+The pure COD-380 synthesis service is disabled by default and is not yet connected to a report API or persistence layer. Its built-in daily cost reservation is process-local and resets when the process restarts; use a shared durable budget implementation before enabling it across production workers. Current tests use synthetic fixtures and mocked provider responses only. They do not verify real X processing rights, provider-transfer rights, Groq account access, quotas, retention terms or billing configuration.
 
 ## Data handling
 
