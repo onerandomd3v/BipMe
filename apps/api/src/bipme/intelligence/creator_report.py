@@ -7,7 +7,7 @@ never fetches X data, calls an LLM, ranks creators, or predicts exposure.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import Literal
 
@@ -249,6 +249,8 @@ def _verified_baselines(
     bundle: CreatorReportEvidenceBundle,
     baselines: tuple[CreatorBaseline, ...],
     outcomes: tuple[OutcomeObservation, ...],
+    all_outcomes: tuple[OutcomeObservation, ...],
+    personal_evidence: tuple[ReportEvidence, ...],
 ) -> tuple[tuple[CreatorBaseline, str], ...]:
     """Reconcile baseline provenance with exact-definition eligible data.
 
@@ -288,6 +290,38 @@ def _verified_baselines(
                 as_of=bundle.as_of,
             ),
         )
+        evidenced_post_ids = {
+            post_id
+            for item in personal_evidence
+            if item.kind == "observation"
+            and item.metric == baseline.metric
+            and item.metric_definition == definition
+            and item.metric_window == baseline.window
+            for post_id in item.post_ids
+        }
+        # Recompute exclusion metadata from the full input, restricted to the
+        # same permissioned evidence IDs and exact metric identity. The report
+        # statistics still come only from `matches`, which are eligible at the
+        # assessment cutoff. This retains visible reasons for evidence-backed
+        # rows filtered before replay (such as a future snapshot or owner key).
+        evidenced_inputs = tuple(
+            item
+            for item in all_outcomes
+            if item.metric == baseline.metric
+            and item.metric_definition == definition
+            and item.window == baseline.window
+            and item.post_id in evidenced_post_ids
+        )
+        diagnostic = build_creator_baseline(
+            evidenced_inputs,
+            BaselineRequest(
+                creator_key=bundle.creator_key,
+                metric=baseline.metric,
+                metric_definition=definition,
+                window=baseline.window,
+                as_of=bundle.as_of,
+            ),
+        )
         if (
             candidate.supporting_post_ids != baseline.supporting_post_ids
             or candidate.evidence_strength != baseline.evidence_strength
@@ -295,9 +329,11 @@ def _verified_baselines(
             or candidate.statistics != baseline.statistics
         ):
             continue
-        # Use the locally reproduced result so its exclusion accounting and
-        # statistics are derived from the exact evidence-backed observations.
-        verified.append((candidate, definition))
+        # Keep statistics from eligible rows but retain separately recomputed,
+        # permission-scoped exclusions from the full source input.
+        verified.append(
+            (replace(candidate, exclusion_counts=diagnostic.exclusion_counts), definition)
+        )
     return tuple(verified)
 
 
@@ -923,7 +959,9 @@ def assemble_creator_report(
         )
     )
     eligible = _eligible_outcomes(bundle, personal_outcomes, personal_evidence)
-    verified = _verified_baselines(bundle, personal_baselines, eligible)
+    verified = _verified_baselines(
+        bundle, personal_baselines, eligible, personal_outcomes, personal_evidence
+    )
     baseline_by_dimension = {
         (baseline.metric, baseline.window): (baseline, definition)
         for baseline, definition in verified

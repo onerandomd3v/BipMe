@@ -286,6 +286,45 @@ def test_future_and_cross_creator_outcomes_are_excluded() -> None:
     assert len(included) == 10
 
 
+@pytest.mark.parametrize(
+    ("exclusion", "reason"),
+    (("future", "observed_after_as_of"), ("cross_creator", "incompatible_creator")),
+)
+def test_verified_outcome_exclusion_survives_baseline_replay(exclusion: str, reason: str) -> None:
+    observations = _observations()
+    if exclusion == "future":
+        excluded = replace(
+            observations[0], post_id="future-snapshot", observed_at=NOW + timedelta(hours=1)
+        )
+    else:
+        excluded = replace(observations[0], post_id="cross-owner", creator_key="another-creator")
+    all_observations = observations + (excluded,)
+    request = BaselineRequest(
+        creator_key="creator",
+        metric="replies",
+        metric_definition="observed reply count",
+        window="age:24h",
+        as_of=NOW,
+    )
+    source_baseline = build_creator_baseline(all_observations, request)
+    evidence = replace(
+        _bundle().personal_evidence[0],
+        post_ids=tuple(f"post-{index}" for index in range(10)) + (excluded.post_id,),
+    )
+
+    report = assemble_creator_report(
+        replace(_bundle(), personal_evidence=(evidence,)),
+        personal_baselines=(source_baseline,),
+        personal_outcomes=all_observations,
+    )
+
+    assert len(report.personal_cohorts) == 1
+    cohort = report.personal_cohorts[0]
+    assert cohort.eligible_post_ids == tuple(f"post-{index}" for index in range(10))
+    assert cohort.exclusion_counts == ((reason, 1),)
+    assert any(reason in limitation for limitation in cohort.limitations)
+
+
 def test_missing_metric_is_reported_as_an_exclusion_not_a_zero() -> None:
     original = _bundle()
     evidence = replace(
