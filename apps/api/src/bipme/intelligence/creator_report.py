@@ -416,9 +416,9 @@ def assemble_creator_report(
                 and support.issubset(set(item.post_ids))
                 and set(item.post_ids).issubset(
                     set(
-                        baseline_by_dimension[
-                            (pattern.metric, pattern.window)
-                        ][0].supporting_post_ids
+                        baseline_by_dimension[(pattern.metric, pattern.window)][
+                            0
+                        ].supporting_post_ids
                     )
                 )
             ),
