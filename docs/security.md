@@ -137,11 +137,12 @@ Search docs list OAuth 2.0 Bearer authorization; X describes app-only bearer aut
 
 For bounded example budgets and source-field details see [COD-375 research findings](research/X_DISCOVERY_DISTRIBUTION_MVP.md). The examples are estimates at the published rates, assume no daily deduplication discount, and are not charges or an approval to buy credits. The reported 7 Nov console screenshot (USD 5 cycle cap, USD 0 credits/spend, auto-recharge unavailable) is historical owner-provided evidence; recheck the live console before relying on it.
 
-### Confirmed console configuration (owner-provided evidence, 7 Nov 2026)
+### Historical console observations (owner-provided screenshots, 7 Nov 2026)
 
 - X developer app: BipME by CodedDevs; connected test-account **handle** `@onerandomd3v` (the immutable numeric X user ID is still unverified).
-- The owner reported saving OAuth 2.0 **Web App, Automated App or Bot**, read permissions, email request off, and local callback `http://127.0.0.1:8000/api/auth/x/callback`. These are console configuration observations, **not** a successful OAuth handshake or API authorization proof.
-- Console screenshot confirmed **USD 5.00 billing-cycle cap** and **USD 0.00 available credits/spend**; auto-recharge unavailable without a payment method. Application-level spending limits and ledger remain unimplemented under COD-347, so no billable reads are approved.
+- The screenshots show **Read** permission, email request off, **Web App (confidential client)** selected, callback `http://127.0.0.1:8000/api/auth/x/callback`, and the BipMe GitHub website URL. Whether these OAuth form changes were saved was not independently confirmed; these screenshots are not a successful OAuth handshake or API authorization proof. OAuth 2.0 requested scopes remain unverified.
+- A follow-up screenshot confirms a **saved USD 5.00 billing-cycle cap**, **USD 0.00 remaining credits/current spend**, and auto-recharge unavailable without a payment method. This is dated evidence, not a current console check; re-open the console before relying on it. Do not buy credits or enable auto-recharge as part of this research.
+- COD-347's budget-guarded read adapter and usage ledger are implemented on `main` through [PR #33](https://github.com/onerandomd3v/BipMe/pull/33) (merged 9 Nov 2026). Code availability does not verify this app's endpoint entitlement, current billing controls, or processing rights; live reads remain disabled until COD-344 gates pass.
 - The owner requested developer-credit support through X's community; no grant or credits have been verified. Do not infer special privileges or discounts.
 
 ### Console-only checks needed from the developer-app owner
