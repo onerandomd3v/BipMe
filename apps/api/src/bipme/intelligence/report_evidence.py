@@ -9,15 +9,17 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from bipme.intelligence.creator_goals import CreatorGoalsSnapshot
 
-REPORT_EVIDENCE_VERSION = "creator-report-evidence-v1"
+REPORT_EVIDENCE_VERSION = "creator-report-evidence-v2"
+NICHE_FRESHNESS_DAYS = 30
 EvidencePool = Literal["personal", "niche"]
 EvidenceKind = Literal["observation", "inference", "hypothesis", "unknown"]
 ReportCoverage = Literal["personal_and_niche", "personal_only_partial", "insufficient_evidence"]
+NicheDescriptor = Literal["topic", "content_format", "intent"]
 
 
 def _aware(value: datetime, name: str) -> None:
@@ -40,6 +42,8 @@ class ReportSource:
     source_version: str
     authorization_basis: str
     coverage_note: str
+    authorization_verified: bool = False
+    authorization_verified_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for name in ("source_id", "source_version", "authorization_basis", "coverage_note"):
@@ -47,6 +51,12 @@ class ReportSource:
         _aware(self.observed_at, "observed_at")
         if self.pool not in ("personal", "niche"):
             raise ValueError("unknown evidence pool")
+        if not isinstance(self.authorization_verified, bool):
+            raise ValueError("authorization_verified must be a boolean")
+        if self.authorization_verified and self.authorization_verified_at is None:
+            raise ValueError("verified authorization requires authorization_verified_at")
+        if self.authorization_verified_at is not None:
+            _aware(self.authorization_verified_at, "authorization_verified_at")
 
 
 @dataclass(frozen=True)
@@ -68,6 +78,10 @@ class ReportEvidence:
     metric_window: str | None = None
     metric_value: float | None = None
     limitations: tuple[str, ...] = ()
+    observed_at: datetime | None = None
+    published_at: datetime | None = None
+    descriptor_name: NicheDescriptor | None = None
+    descriptor_value: str | None = None
 
     def __post_init__(self) -> None:
         _nonempty(self.evidence_id, "evidence_id")
@@ -93,6 +107,49 @@ class ReportEvidence:
         if self.metric_value is not None:
             if self.metric is None or not math.isfinite(self.metric_value):
                 raise ValueError("metric_value requires a complete finite metric")
+        if self.observed_at is not None:
+            _aware(self.observed_at, "evidence observed_at")
+        if self.published_at is not None:
+            _aware(self.published_at, "evidence published_at")
+        if (
+            self.observed_at is not None
+            and self.published_at is not None
+            and self.published_at > self.observed_at
+        ):
+            raise ValueError("evidence publication cannot be after observation")
+        if (self.descriptor_name is None) != (self.descriptor_value is None):
+            raise ValueError("descriptor name and value must be supplied together")
+        if self.descriptor_name is not None:
+            if self.descriptor_name not in ("topic", "content_format", "intent"):
+                raise ValueError("unsupported niche descriptor")
+            if self.pool != "niche" or self.kind != "observation":
+                raise ValueError("structured descriptors require observed niche evidence")
+            _nonempty(self.descriptor_name, "descriptor_name")
+            _nonempty(self.descriptor_value or "", "descriptor_value")
+
+
+def niche_evidence_freshness(
+    as_of: datetime,
+    evidence: ReportEvidence,
+    sources: dict[str, ReportSource],
+) -> Literal["current", "stale", "unknown_time", "unverified", "not_observation"]:
+    """Classify niche evidence with the shared report coverage freshness gate."""
+    if evidence.kind != "observation":
+        return "not_observation"
+    source_records = tuple(sources.get(source_id) for source_id in evidence.source_ids)
+    if any(source is None or not source.authorization_verified for source in source_records):
+        return "unverified"
+    if evidence.observed_at is None or evidence.published_at is None:
+        return "unknown_time"
+    verified_sources = tuple(source for source in source_records if source is not None)
+    cutoff_age = timedelta(days=NICHE_FRESHNESS_DAYS)
+    if (
+        as_of - evidence.published_at > cutoff_age
+        or as_of - evidence.observed_at > cutoff_age
+        or any(as_of - source.observed_at > cutoff_age for source in verified_sources)
+    ):
+        return "stale"
+    return "current"
 
 
 @dataclass(frozen=True)
@@ -129,6 +186,9 @@ class CreatorReportEvidenceBundle:
                     raise ValueError("source placed in the wrong evidence pool")
                 if source.observed_at > self.as_of:
                     raise ValueError("source was observed after report cutoff")
+                if source.authorization_verified_at is not None:
+                    if source.authorization_verified_at > self.as_of:
+                        raise ValueError("authorization was verified after report cutoff")
                 if source.source_id in source_ids:
                     raise ValueError("duplicate source ID across evidence pools")
                 source_ids[source.source_id] = pool
@@ -145,14 +205,43 @@ class CreatorReportEvidenceBundle:
                 evidence_ids.add(evidence.evidence_id)
                 if any(source_ids.get(source_id) != pool for source_id in evidence.source_ids):
                     raise ValueError("evidence references missing or cross-pool source")
+                for timestamp_name in ("observed_at", "published_at"):
+                    timestamp = getattr(evidence, timestamp_name)
+                    if timestamp is not None and timestamp > self.as_of:
+                        raise ValueError("evidence was recorded after the report cutoff")
+                if evidence.observed_at is not None and any(
+                    next(
+                        source.observed_at
+                        for source in (*self.personal_sources, *self.niche_sources)
+                        if source.source_id == source_id
+                    )
+                    < evidence.observed_at
+                    for source_id in evidence.source_ids
+                ):
+                    raise ValueError("evidence observation is after its source snapshot")
         for limitation in self.limitations:
             _nonempty(limitation, "limitation")
 
     @property
     def coverage(self) -> ReportCoverage:
-        if not self.personal_evidence:
+        """Classify permissioned personal and fresh niche observation coverage."""
+        sources = {
+            source.source_id: source for source in (*self.personal_sources, *self.niche_sources)
+        }
+        personal = tuple(
+            evidence
+            for evidence in self.personal_evidence
+            if evidence.kind == "observation"
+            and all(sources[source_id].authorization_verified for source_id in evidence.source_ids)
+        )
+        niche = tuple(
+            evidence
+            for evidence in self.niche_evidence
+            if niche_evidence_freshness(self.as_of, evidence, sources) == "current"
+        )
+        if not personal:
             return "insufficient_evidence"
-        if not self.niche_evidence:
+        if not niche:
             return "personal_only_partial"
         return "personal_and_niche"
 
@@ -170,4 +259,5 @@ class CreatorReportEvidenceBundle:
 
 
 def _unsupported(value: object) -> object:
+    """Reject values outside the bundle's JSON-compatible data contract."""
     raise TypeError(f"unsupported JSON value: {type(value).__name__}")
