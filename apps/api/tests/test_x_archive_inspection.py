@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import stat
+import struct
 import zipfile
 from importlib.util import module_from_spec, spec_from_file_location
 from io import BytesIO
@@ -36,6 +37,16 @@ def _post_entry(posts: list[dict[str, object]], *, wrapped: bool = False) -> byt
     if wrapped:
         data = f"window.YTD.tweets.part0 = {data};"
     return data.encode("utf-8")
+
+
+def _corrupt_deflate_payload(path: Path) -> None:
+    with zipfile.ZipFile(path) as archive:
+        info = archive.getinfo("data/tweets.json")
+        data = bytearray(path.read_bytes())
+        header = struct.unpack_from(zipfile.structFileHeader, data, info.header_offset)
+        data_offset = info.header_offset + zipfile.sizeFileHeader + header[-2] + header[-1]
+        data[data_offset] = (data[data_offset] & 0xF9) | 0x06
+    path.write_bytes(data)
 
 
 def test_counts_candidate_fields_and_never_emits_post_values(tmp_path: Path, capsys) -> None:
@@ -136,6 +147,83 @@ def test_rejects_symlink_entries_even_outside_the_allowlist(tmp_path: Path) -> N
         inspector.inspect_archive(archive)
 
 
+def test_rejects_encrypted_entries_and_closes_archive_on_validation_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    archive_path = _archive(
+        tmp_path / "encrypted.zip",
+        [("data/tweets.json", _post_entry([{"id": "synthetic"}]), None)],
+    )
+    original_zip_file = zipfile.ZipFile
+    opened: list[zipfile.ZipFile] = []
+
+    class TrackingZipFile(original_zip_file):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            opened.append(self)
+
+    original_infolist = original_zip_file.infolist
+
+    def encrypted_infolist(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+        entries = original_infolist(archive)
+        entries[0].flag_bits |= 0x1
+        return entries
+
+    monkeypatch.setattr(inspector.zipfile, "ZipFile", TrackingZipFile)
+    monkeypatch.setattr(TrackingZipFile, "infolist", encrypted_infolist)
+
+    with pytest.raises(inspector.ArchiveInspectionError, match="encrypted"):
+        inspector.inspect_archive(archive_path)
+
+    assert len(opened) == 1
+    assert opened[0].fp is None
+
+
+def test_rejects_selected_entry_and_total_expanded_size_limits(tmp_path: Path, monkeypatch) -> None:
+    archive = _archive(
+        tmp_path / "bounded.zip",
+        [("data/tweets.json", _post_entry([{"id": "synthetic"}]), None)],
+    )
+    monkeypatch.setattr(inspector, "MAX_SELECTED_ENTRY_BYTES", 1)
+    with pytest.raises(inspector.ArchiveInspectionError, match="selected-entry limit"):
+        inspector.inspect_archive(archive)
+
+    monkeypatch.setattr(inspector, "MAX_SELECTED_ENTRY_BYTES", 64 * 1024 * 1024)
+    monkeypatch.setattr(inspector, "MAX_TOTAL_UNCOMPRESSED_BYTES", 1)
+    with pytest.raises(inspector.ArchiveInspectionError, match="expanded-size limit"):
+        inspector.inspect_archive(archive)
+
+
+def test_rejects_symlinked_and_non_regular_input_paths(tmp_path: Path) -> None:
+    directory = tmp_path / "directory"
+    directory.mkdir()
+    with pytest.raises(inspector.ArchiveInspectionError, match="regular file"):
+        inspector.inspect_archive(directory)
+
+    target = _archive(
+        tmp_path / "target.zip",
+        [("data/tweets.json", _post_entry([{"id": "synthetic"}]), None)],
+    )
+    link = tmp_path / "archive-link.zip"
+    link.symlink_to(target)
+    with pytest.raises(inspector.ArchiveInspectionError, match="regular file"):
+        inspector.inspect_archive(link)
+
+
+def test_cli_refuses_corrupt_selected_entry_without_echoing_content(tmp_path: Path, capsys) -> None:
+    archive = _archive(
+        tmp_path / "corrupt.zip",
+        [("data/tweets.json", _post_entry([{"text": "private-synthetic-secret"}]), None)],
+    )
+    _corrupt_deflate_payload(archive)
+
+    assert inspector.main([str(archive)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "inspection refused" in captured.err
+    assert "private-synthetic-secret" not in captured.err
+
+
 def test_rejects_high_compression_ratio_and_excess_entry_count(tmp_path: Path, monkeypatch) -> None:
     bomb = _archive(
         tmp_path / "ratio.zip",
@@ -173,6 +261,20 @@ def test_rejects_javascript_execution_syntax_and_unknown_archive_layouts(tmp_pat
     )
     with pytest.raises(inspector.ArchiveInspectionError, match="exactly one allowlisted"):
         inspector.inspect_archive(unknown)
+
+
+def test_rejects_json_integer_conversion_limit_as_safe_inspection_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    oversized_integer = b"[" + b"1" * 4_301 + b"]"
+    archive = _archive(
+        tmp_path / "oversized-integer.zip",
+        [("data/tweets.json", oversized_integer, None)],
+    )
+    monkeypatch.setattr(inspector, "MAX_COMPRESSION_RATIO", 10_000)
+
+    with pytest.raises(inspector.ArchiveInspectionError, match="inert JSON"):
+        inspector.inspect_archive(archive)
 
 
 def test_rejects_duplicate_allowlisted_entries_and_requires_explicit_input(tmp_path: Path) -> None:

@@ -12,6 +12,7 @@ import re
 import stat
 import sys
 import zipfile
+import zlib
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -62,37 +63,35 @@ def _validate_archive(path: Path) -> zipfile.ZipFile:
     except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile):
         raise ArchiveInspectionError("input is not a readable ZIP archive") from None
 
-    infos = archive.infolist()
-    if len(infos) > MAX_ENTRIES:
+    try:
+        infos = archive.infolist()
+        if len(infos) > MAX_ENTRIES:
+            raise ArchiveInspectionError("archive exceeds the entry-count limit")
+        total_uncompressed = 0
+        seen_names: set[str] = set()
+        for info in infos:
+            _safe_member_name(info.filename)
+            if info.filename in seen_names:
+                raise ArchiveInspectionError("archive contains duplicate entry names")
+            seen_names.add(info.filename)
+            mode = info.external_attr >> 16
+            if stat.S_ISLNK(mode):
+                raise ArchiveInspectionError("archive contains a symbolic link")
+            if info.flag_bits & 0x1:
+                raise ArchiveInspectionError("encrypted archive entries are not supported")
+            if info.file_size < 0 or info.compress_size < 0:
+                raise ArchiveInspectionError("archive contains invalid entry sizes")
+            total_uncompressed += info.file_size
+            if total_uncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES:
+                raise ArchiveInspectionError("archive exceeds the total expanded-size limit")
+            if info.file_size > 0 and (
+                info.compress_size == 0
+                or info.file_size > info.compress_size * MAX_COMPRESSION_RATIO
+            ):
+                raise ArchiveInspectionError("archive exceeds the compression-ratio limit")
+    except BaseException:
         archive.close()
-        raise ArchiveInspectionError("archive exceeds the entry-count limit")
-    total_uncompressed = 0
-    seen_names: set[str] = set()
-    for info in infos:
-        _safe_member_name(info.filename)
-        if info.filename in seen_names:
-            archive.close()
-            raise ArchiveInspectionError("archive contains duplicate entry names")
-        seen_names.add(info.filename)
-        mode = info.external_attr >> 16
-        if stat.S_ISLNK(mode):
-            archive.close()
-            raise ArchiveInspectionError("archive contains a symbolic link")
-        if info.flag_bits & 0x1:
-            archive.close()
-            raise ArchiveInspectionError("encrypted archive entries are not supported")
-        if info.file_size < 0 or info.compress_size < 0:
-            archive.close()
-            raise ArchiveInspectionError("archive contains invalid entry sizes")
-        total_uncompressed += info.file_size
-        if total_uncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES:
-            archive.close()
-            raise ArchiveInspectionError("archive exceeds the total expanded-size limit")
-        if info.file_size > 0 and (
-            info.compress_size == 0 or info.file_size > info.compress_size * MAX_COMPRESSION_RATIO
-        ):
-            archive.close()
-            raise ArchiveInspectionError("archive exceeds the compression-ratio limit")
+        raise
     return archive
 
 
@@ -102,7 +101,7 @@ def _read_selected_entry(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> byt
     try:
         with archive.open(info, "r") as source:
             data = source.read(MAX_SELECTED_ENTRY_BYTES + 1)
-    except (OSError, RuntimeError, zipfile.BadZipFile, NotImplementedError):
+    except (OSError, RuntimeError, EOFError, zlib.error, zipfile.BadZipFile, NotImplementedError):
         raise ArchiveInspectionError("post-history entry could not be read safely") from None
     if len(data) > MAX_SELECTED_ENTRY_BYTES or len(data) != info.file_size:
         raise ArchiveInspectionError("post-history entry exceeded its declared size")
@@ -122,7 +121,7 @@ def _unwrap_json(data: bytes) -> tuple[Any, str]:
             text = text[:-1].rstrip()
     try:
         value = json.loads(text)
-    except (json.JSONDecodeError, RecursionError):
+    except (ValueError, RecursionError):
         raise ArchiveInspectionError(
             "post-history entry is not a recognized inert JSON structure"
         ) from None
