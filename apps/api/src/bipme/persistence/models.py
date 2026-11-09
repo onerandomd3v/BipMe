@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     ForeignKey,
@@ -192,6 +193,7 @@ class XAccountConnection(TimestampMixin, Base):
             name="fk_x_connection_identity_owner",
         ),
         UniqueConstraint("creator_identity_id", name="x_connection_identity_unique"),
+        UniqueConstraint("id", "creator_id", name="x_connection_id_creator"),
         CheckConstraint("platform = 'x'", name="provider_is_x"),
         CheckConstraint(
             "state IN ('pending', 'connected', 'revoked', 'reauth_required')",
@@ -313,6 +315,52 @@ class OAuthAuthorizationTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class ScheduledJob(Base):
+    """Permanent submission receipt for durable Procrastinate queue jobs."""
+
+    __tablename__ = "scheduled_jobs"
+    __table_args__ = (
+        UniqueConstraint("creator_id", "idempotency_key", name="scheduled_job_creator_key"),
+        UniqueConstraint("runner_job_id", name="scheduled_job_runner_id"),
+        ForeignKeyConstraint(
+            ["required_x_connection_id", "creator_id"],
+            ["x_account_connections.id", "x_account_connections.creator_id"],
+            ondelete="RESTRICT",
+            name="scheduled_job_required_x_owner_fk",
+        ),
+        CheckConstraint("length(trim(idempotency_key)) BETWEEN 1 AND 255", name="key_valid"),
+        CheckConstraint("length(trim(handler_name)) BETWEEN 1 AND 100", name="handler_valid"),
+        CheckConstraint("length(input_digest) = 64", name="digest_length"),
+        CheckConstraint("max_attempts BETWEEN 1 AND 10", name="max_attempts_valid"),
+        CheckConstraint(
+            "outcome IS NULL OR outcome IN "
+            "('succeeded', 'failed', 'cancelled', 'needs_reconciliation', 'revoked')",
+            name="outcome_valid",
+        ),
+        CheckConstraint("jsonb_typeof(arguments) = 'object'", name="arguments_object"),
+        Index("ix_scheduled_jobs_due", "scheduled_at", "outcome"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("creators.id", ondelete="RESTRICT"), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    handler_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    arguments: Mapped[JsonObject] = mapped_column(JSON_DOCUMENT, nullable=False)
+    input_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    runner_job_id: Mapped[int | None] = mapped_column(BigInteger())
+    required_x_connection_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+    scheduled_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    outcome: Mapped[str | None] = mapped_column(String(32))
+    failure_code: Mapped[str | None] = mapped_column(String(100))
 
 
 class DraftAssessment(Base):

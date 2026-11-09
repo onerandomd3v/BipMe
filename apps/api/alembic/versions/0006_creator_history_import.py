@@ -4,8 +4,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0005_creator_history_import"
-down_revision = "0004_creator_report_api"
+revision = "0006_creator_history_import"
+down_revision = "0005_durable_jobs"
 branch_labels = None
 depends_on = None
 

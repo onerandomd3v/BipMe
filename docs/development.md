@@ -1,6 +1,6 @@
 # BipMe — Development guide
 
-**Status:** Deterministic intelligence, canonical persistence, COD-358 analysis routes and COD-346 private session/auth contracts are implemented. Private sessions and the current creator endpoints remain fail-closed until the configured creator, database and private login secret are provisioned. X OAuth is opt-in and remains disabled until COD-344's account-specific access and rights gates are verified.
+**Status:** Deterministic intelligence, canonical persistence, COD-358 analysis routes, COD-346 private session/auth contracts, and COD-362 PostgreSQL worker infrastructure are implemented. Private sessions and the current creator endpoints remain fail-closed until the configured creator, database and private login secret are provisioned. X OAuth is opt-in and remains disabled until COD-344's account-specific access and rights gates are verified.
 
 ## Prerequisites
 
@@ -44,6 +44,17 @@ uv sync --locked --group dev
 uv run alembic upgrade head
 uv run uvicorn bipme.api.app:app --reload
 ```
+
+Run a separate durable job worker with the same database URL:
+
+```powershell
+cd apps/api
+uv run python -m bipme.jobs
+```
+
+The worker listens only to the `bipme` queue, retains runner jobs, uses a 30-second graceful timeout, and checks for stalled workers by heartbeat. Recovery is supervised alongside the worker; a recovery failure stops intake and drains the worker before returning a sanitized failure. A handler must complete within a bounded duration because Python cannot cancel its synchronous thread; shutdown waits for in-flight handler work to finish, even after Procrastinate's graceful timeout. On Windows use Ctrl+C for cooperative shutdown; Python does not install Procrastinate signal handlers there, so do not assume SIGTERM drains active work. Scheduling is currently an internal service API; no public scheduling route or COD-363 metric handler is enabled. Migration `0005_durable_jobs` installs the pinned Procrastinate schema snapshot and permanent BipMe receipts. The runner schema snapshot is fixed at Procrastinate 3.10.0 and is not dynamically upgraded by Alembic. Consent-generation invalidation is deferred to COD-363. Procrastinate startup/prune lifecycle behavior and sanitization of its own exception logs have not been verified beyond BipMe receipt/outcome logging.
+
+The PostgreSQL delay/restart integration test first confirms that a future job is not claimed, then manually clears its `scheduled_at` value to make it eligible. It creates a fresh runtime against the same database in the same test process; it does not wait for wall-clock eligibility or kill/restart a subprocess.
 
 Check `http://127.0.0.1:8000/api/health`. Migration `0001_enable_vector` creates the pgvector extension; `0002_canonical_persistence` creates canonical creator/post records; `0003_private_auth_sessions` adds revocable sessions and short-lived OAuth transactions. COD-346 provides `POST /api/auth/private/session`, `GET /api/auth/session`, `POST /api/auth/logout`, `GET /api/auth/x/authorize`, `GET /api/auth/x/callback`, and authenticated X status/refresh/disconnect routes. Protected endpoints require a configured existing `BIPME_CREATOR_ID`; private sign-in additionally requires a high-entropy `BIPME_PRIVATE_LOGIN_SECRET` (at least 32 bytes). For local OAuth callback cookies, use the same loopback host in `BIPME_APP_ORIGIN` and the registered callback URI. X OAuth stays disabled unless explicitly enabled after COD-344's access and rights checks.
 

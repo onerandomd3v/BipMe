@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+import threading
 from collections.abc import Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -14,7 +16,9 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, inspect, select, text
+from procrastinate import App
+from procrastinate.sync_psycopg_connector import SyncPsycopgConnector
+from sqlalchemy import Engine, create_engine, inspect, make_url, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
@@ -33,6 +37,18 @@ from bipme.intelligence.post_profiles import (
     extract_post_profile,
 )
 from bipme.intelligence.retrieval import VectorCandidateQuery
+from bipme.jobs.runtime import (
+    JobRuntime,
+    JobRuntimeSettings,
+    RetryableHandlerError,
+    TerminalJobError,
+    _execute_receipt,
+    _recover_stalled_job,
+    configure_windows_event_loop,
+    create_runtime,
+    run_worker_supervised,
+)
+from bipme.jobs.service import IdempotencyConflict, schedule_job
 from bipme.persistence.contracts import (
     comparable_candidate_from_records,
     pgvector_candidate_statement,
@@ -50,9 +66,14 @@ from bipme.persistence.models import (
     OutcomeObservationRecord,
     PostEmbedding,
     PostProfileRecord,
+    ScheduledJob,
     XAccountConnection,
 )
-from bipme.persistence.usage import UsageBudgetError, XUsageLimits, reserve_x_usage
+from bipme.persistence.usage import (
+    UsageBudgetError,
+    XUsageLimits,
+    reserve_x_usage,
+)
 from bipme.persistence.vector_candidates import PostgresVectorCandidateSource
 
 API_DIR = Path(__file__).parents[1]
@@ -81,7 +102,7 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
         command.upgrade(config, "head")
         connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0005_creator_history_import"
+            "0006_creator_history_import"
         )
         command.downgrade(config, "0001_enable_vector")
         connection.commit()
@@ -108,6 +129,11 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
             "creator_processing_permissions",
             "creator_report_snapshots",
             "creator_history_imports",
+            "scheduled_jobs",
+            "procrastinate_jobs",
+            "procrastinate_workers",
+            "procrastinate_events",
+            "procrastinate_periodic_defers",
         }
         assert expected <= tables
         history_columns = {
@@ -153,14 +179,11 @@ def session(migrated_postgres: tuple[Engine, str]) -> Iterator[Session]:
     connection = engine.connect()
     connection.execute(text(f'SET search_path TO "{schema}", public'))
     connection.commit()
-    transaction = connection.begin()
     db_session = Session(bind=connection)
     try:
         yield db_session
     finally:
         db_session.close()
-        if transaction.is_active:
-            transaction.rollback()
         connection.close()
 
 
@@ -258,6 +281,784 @@ def test_report_first_snapshots_persist_owner_scoped_versions_and_idempotency(
             session.flush()
 
 
+def _runtime_settings(engine: Engine, schema: str) -> JobRuntimeSettings:
+    database_url = make_url(engine.url).update_query_dict(
+        {"options": f"-csearch_path={schema},public"}
+    )
+    return JobRuntimeSettings(database_url=database_url.render_as_string(hide_password=False))
+
+
+def _run_worker_once(runtime: JobRuntime) -> None:
+    async def run() -> None:
+        async with runtime.app.open_async():
+            await runtime.app.run_worker_async(
+                queues=["bipme"], wait=False, concurrency=1, delete_jobs="never"
+            )
+
+    _asyncio_run(run())
+
+
+def _asyncio_run(coroutine: object) -> object:
+    configure_windows_event_loop()
+    return asyncio.run(coroutine)  # type: ignore[arg-type]
+
+
+def test_job_receipt_and_queue_insert_share_caller_transaction(session: Session) -> None:
+    """The permanent receipt and Procrastinate row commit or roll back together."""
+    app = App(connector=SyncPsycopgConnector())
+
+    @app.task(name="bipme.jobs.runtime.dispatch_receipt", queue="bipme")
+    def dispatch(receipt_id: str) -> None:
+        del receipt_id
+
+    creator = _creator(session)
+    session.flush()
+    receipt = schedule_job(
+        session,
+        app,
+        creator_id=creator.id,
+        idempotency_key="archive:import:001",
+        handler_name="archive.import",
+        arguments={"import_id": "001"},
+        scheduled_at=NOW + timedelta(minutes=5),
+    )
+    runner_id = receipt.runner_job_id
+    receipt_id = receipt.id
+    assert runner_id is not None
+    session.rollback()
+    assert session.get(ScheduledJob, receipt_id) is None
+    assert (
+        session.scalar(
+            text("SELECT count(*) FROM procrastinate_jobs WHERE id = :id"), {"id": runner_id}
+        )
+        == 0
+    )
+
+    creator = _creator(session)
+    receipt = schedule_job(
+        session,
+        app,
+        creator_id=creator.id,
+        idempotency_key="archive:import:001",
+        handler_name="archive.import",
+        arguments={"import_id": "001"},
+        scheduled_at=NOW + timedelta(minutes=5),
+    )
+    session.commit()
+    runner_id = receipt.runner_job_id
+    assert runner_id is not None
+    replay = schedule_job(
+        session,
+        app,
+        creator_id=creator.id,
+        idempotency_key="archive:import:001",
+        handler_name="archive.import",
+        arguments={"import_id": "001"},
+        scheduled_at=NOW + timedelta(minutes=5),
+    )
+    assert replay.id == receipt.id
+    with pytest.raises(IdempotencyConflict):
+        schedule_job(
+            session,
+            app,
+            creator_id=creator.id,
+            idempotency_key="archive:import:001",
+            handler_name="archive.import",
+            arguments={"import_id": "002"},
+            scheduled_at=NOW + timedelta(minutes=5),
+        )
+    assert (
+        session.scalar(
+            text("SELECT count(*) FROM procrastinate_jobs WHERE id = :id"), {"id": runner_id}
+        )
+        == 1
+    )
+
+
+def test_scheduled_job_orm_constraints_match_migration(session: Session) -> None:
+    inspector = inspect(session.connection())
+    orm_table = ScheduledJob.__table__
+    orm_constraints = {constraint.name for constraint in orm_table.constraints}
+    database_constraint_rows = [
+        row
+        for method in (
+            inspector.get_check_constraints,
+            inspector.get_unique_constraints,
+            inspector.get_foreign_keys,
+        )
+        for row in method("scheduled_jobs")
+    ]
+    database_constraint_rows.append(inspector.get_pk_constraint("scheduled_jobs"))
+    database_constraints = {
+        constraint["name"] for constraint in database_constraint_rows if constraint.get("name")
+    }
+    assert database_constraints == orm_constraints
+    assert {index.name for index in orm_table.indexes} == {
+        index["name"]
+        for index in inspector.get_indexes("scheduled_jobs")
+        if not index.get("duplicates_constraint")
+    }
+
+
+def test_job_delay_survives_runtime_restart_and_duplicate_replay(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    seen: list[str] = []
+    runtime1 = create_runtime(
+        _runtime_settings(engine, schema),
+        handlers={"synthetic.snapshot": lambda _db, receipt: seen.append(str(receipt.id))},
+    )
+    try:
+        creator = _creator(session)
+        scheduled_at = datetime.now(UTC) + timedelta(minutes=10)
+        receipt = schedule_job(
+            session,
+            runtime1.app,
+            creator_id=creator.id,
+            idempotency_key="snapshot:restart:01",
+            handler_name="synthetic.snapshot",
+            arguments={"post_id": "001"},
+            scheduled_at=scheduled_at,
+        )
+        receipt_id = receipt.id
+        runner_id = receipt.runner_job_id
+        assert runner_id is not None
+        session.commit()
+        _run_worker_once(runtime1)
+        assert seen == []
+        runner_row = session.execute(
+            text("SELECT status::text, scheduled_at FROM procrastinate_jobs WHERE id=:id"),
+            {"id": runner_id},
+        ).one()
+        assert runner_row.status == "todo"
+        assert runner_row.scheduled_at > datetime.now(UTC)
+    finally:
+        runtime1.close()
+
+    runtime2 = create_runtime(
+        _runtime_settings(engine, schema),
+        handlers={"synthetic.snapshot": lambda _db, receipt: seen.append(str(receipt.id))},
+    )
+    try:
+        session.execute(
+            text("UPDATE procrastinate_jobs SET scheduled_at=NULL WHERE id=:id"),
+            {"id": runner_id},
+        )
+        session.commit()
+
+        async def run_restarted_worker() -> None:
+            stop_event = asyncio.Event()
+            async with runtime2.app.open_async():
+                worker = asyncio.create_task(
+                    run_worker_supervised(runtime2, stop_event, graceful_timeout_seconds=1)
+                )
+                for _ in range(100):
+                    if seen:
+                        break
+                    await asyncio.sleep(0.05)
+                stop_event.set()
+                await worker
+
+        _asyncio_run(run_restarted_worker())
+        persisted = session.get(ScheduledJob, receipt_id)
+        assert persisted is not None and persisted.outcome == "succeeded"
+        assert seen == [str(receipt_id)]
+
+        replay = schedule_job(
+            session,
+            runtime2.app,
+            creator_id=persisted.creator_id,
+            idempotency_key="snapshot:restart:01",
+            handler_name="synthetic.snapshot",
+            arguments={"post_id": "001"},
+            scheduled_at=scheduled_at,
+        )
+        assert replay.id == receipt_id
+        assert (
+            session.scalar(
+                text("SELECT count(*) FROM procrastinate_jobs WHERE args->>'receipt_id'=:id"),
+                {"id": str(receipt_id)},
+            )
+            == 1
+        )
+        session.commit()
+    finally:
+        runtime2.close()
+
+
+def test_two_workers_claim_once_and_shutdown_drains_past_grace(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    entered = threading.Event()
+    release = threading.Event()
+    completed = threading.Event()
+    count_lock = threading.Lock()
+    calls = 0
+
+    def blocking_handler(_db: Session, _receipt: ScheduledJob) -> None:
+        nonlocal calls
+        with count_lock:
+            calls += 1
+        entered.set()
+        release.wait(timeout=10)
+        completed.set()
+
+    settings = _runtime_settings(engine, schema)
+    runtime1 = create_runtime(settings, handlers={"synthetic.block": blocking_handler})
+    runtime2 = create_runtime(settings, handlers={"synthetic.block": blocking_handler})
+    creator = _creator(session)
+    receipt = schedule_job(
+        session,
+        runtime1.app,
+        creator_id=creator.id,
+        idempotency_key="snapshot:concurrent:01",
+        handler_name="synthetic.block",
+        arguments={"post_id": "002"},
+        scheduled_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+    receipt_id = receipt.id
+    session.commit()
+
+    async def exercise() -> None:
+        stop1, stop2 = asyncio.Event(), asyncio.Event()
+        async with runtime1.app.open_async(), runtime2.app.open_async():
+            tasks = [
+                asyncio.create_task(
+                    run_worker_supervised(runtime1, stop1, graceful_timeout_seconds=0.05)
+                ),
+                asyncio.create_task(
+                    run_worker_supervised(runtime2, stop2, graceful_timeout_seconds=0.05)
+                ),
+            ]
+            assert await asyncio.to_thread(entered.wait, 10)
+            stop1.set()
+            stop2.set()
+            await asyncio.sleep(0.15)
+            assert any(not task.done() for task in tasks)
+            release.set()
+            await asyncio.gather(*tasks)
+
+    try:
+        _asyncio_run(exercise())
+        assert completed.is_set()
+        assert calls == 1
+        persisted = session.get(ScheduledJob, receipt_id)
+        assert persisted is not None and persisted.outcome == "succeeded"
+    finally:
+        release.set()
+        runtime1.close()
+        runtime2.close()
+
+
+def _x_connection(
+    session: Session, creator: Creator, *, state: str = "connected"
+) -> XAccountConnection:
+    identity = CreatorPlatformIdentity(
+        id=uuid4(),
+        creator_id=creator.id,
+        platform="x",
+        external_creator_id=str(uuid4().int)[:18],
+    )
+    session.add(identity)
+    session.flush()
+    connection = XAccountConnection(
+        id=uuid4(),
+        creator_id=creator.id,
+        creator_identity_id=identity.id,
+        platform="x",
+        state=state,
+        scopes=["tweet.read", "users.read"],
+        encrypted_access_token=b"BIPME-ENC\x01synthetic-ciphertext"
+        if state == "connected"
+        else None,
+        key_version="synthetic-test-key",
+        revoked_at=datetime.now(UTC) if state == "revoked" else None,
+    )
+    session.add(connection)
+    session.flush()
+    return connection
+
+
+def test_retry_limit_updates_receipt_and_runner_to_failed(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    attempts = 0
+    exhausted = threading.Event()
+
+    def always_retry(_db: Session, _receipt: ScheduledJob) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            exhausted.set()
+        raise RetryableHandlerError("synthetic-safe-before-side-effect")
+
+    runtime = create_runtime(
+        _runtime_settings(engine, schema),
+        handlers={"synthetic.retry": always_retry},
+        retry_exponential_wait=1,
+    )
+    creator = _creator(session)
+    receipt = schedule_job(
+        session,
+        runtime.app,
+        creator_id=creator.id,
+        idempotency_key="retry:bounded:01",
+        handler_name="synthetic.retry",
+        arguments={"operation_id": "retry-01"},
+        scheduled_at=datetime.now(UTC) - timedelta(seconds=1),
+        max_attempts=2,
+    )
+    receipt_id, runner_id = receipt.id, receipt.runner_job_id
+    session.commit()
+    assert runner_id is not None
+
+    async def exercise() -> None:
+        stop_event = asyncio.Event()
+        async with runtime.app.open_async():
+            worker = asyncio.create_task(
+                run_worker_supervised(runtime, stop_event, graceful_timeout_seconds=1)
+            )
+            assert await asyncio.to_thread(exhausted.wait, 20)
+            stop_event.set()
+            await worker
+
+    try:
+        _asyncio_run(exercise())
+        persisted = session.get(ScheduledJob, receipt_id)
+        runner_state = session.execute(
+            text("SELECT status::text FROM procrastinate_jobs WHERE id=:id"), {"id": runner_id}
+        ).scalar_one()
+        assert attempts == 2
+        assert persisted is not None and persisted.outcome == "failed"
+        assert runner_state == "failed"
+    finally:
+        runtime.close()
+
+
+def test_revoked_connection_blocks_registered_handler(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    called = False
+
+    def should_not_run(_db: Session, _receipt: ScheduledJob) -> None:
+        nonlocal called
+        called = True
+
+    runtime = create_runtime(
+        _runtime_settings(engine, schema), handlers={"synthetic.x_read": should_not_run}
+    )
+    creator = _creator(session)
+    connection = _x_connection(session, creator, state="revoked")
+    receipt = schedule_job(
+        session,
+        runtime.app,
+        creator_id=creator.id,
+        idempotency_key="revoked:connection:01",
+        handler_name="synthetic.x_read",
+        arguments={"post_id": "003"},
+        scheduled_at=datetime.now(UTC) - timedelta(seconds=1),
+        required_x_connection_id=connection.id,
+    )
+    receipt_id, runner_id = receipt.id, receipt.runner_job_id
+    session.commit()
+    assert runner_id is not None
+    try:
+        _run_worker_once(runtime)
+        persisted = session.get(ScheduledJob, receipt_id)
+        status = session.execute(
+            text("SELECT status::text FROM procrastinate_jobs WHERE id=:id"), {"id": runner_id}
+        ).scalar_one()
+        assert not called
+        assert persisted is not None and persisted.outcome == "revoked"
+        assert status == "failed"
+    finally:
+        runtime.close()
+
+
+def _mark_job_stalled(session: Session, runner_id: int) -> None:
+    worker_id = session.execute(
+        text("INSERT INTO procrastinate_workers DEFAULT VALUES RETURNING id")
+    ).scalar_one()
+    session.execute(
+        text("UPDATE procrastinate_workers SET last_heartbeat=:heartbeat WHERE id=:worker_id"),
+        {"heartbeat": datetime.now(UTC) - timedelta(minutes=5), "worker_id": worker_id},
+    )
+    session.execute(
+        text(
+            "UPDATE procrastinate_jobs SET status='doing', attempts=0, worker_id=:worker_id "
+            "WHERE id=:runner_id"
+        ),
+        {"worker_id": worker_id, "runner_id": runner_id},
+    )
+    session.commit()
+
+
+def test_stalled_recovery_skips_live_receipt_fence_then_retries_provider_independent_job(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    runtime = create_runtime(_runtime_settings(engine, schema))
+    creator = _creator(session)
+    receipt = schedule_job(
+        session,
+        runtime.app,
+        creator_id=creator.id,
+        idempotency_key="recovery:receipt-fence:01",
+        handler_name="synthetic.snapshot",
+        arguments={"post_id": "recovery-01"},
+        scheduled_at=datetime.now(UTC),
+        max_attempts=3,
+    )
+    receipt_id, runner_id = receipt.id, receipt.runner_job_id
+    assert runner_id is not None
+    session.commit()
+    _mark_job_stalled(session, runner_id)
+
+    try:
+        # A live receipt owner must make recovery skip this candidate via SKIP LOCKED.
+        lock_connection = engine.connect()
+        lock_connection.execute(text(f'SET search_path TO "{schema}", public'))
+        lock_session = Session(bind=lock_connection)
+        try:
+            lock_session.execute(
+                select(ScheduledJob).where(ScheduledJob.id == receipt_id).with_for_update()
+            ).scalar_one()
+            _recover_stalled_job(runtime, runner_id, str(receipt_id))
+            assert (
+                lock_session.scalar(
+                    text("SELECT status::text FROM procrastinate_jobs WHERE id=:id"),
+                    {"id": runner_id},
+                )
+                == "doing"
+            )
+        finally:
+            lock_session.close()
+            lock_connection.close()
+
+        _recover_stalled_job(runtime, runner_id, str(receipt_id))
+        state = session.execute(
+            text(
+                "SELECT status::text, attempts, scheduled_at FROM procrastinate_jobs WHERE id=:id"
+            ),
+            {"id": runner_id},
+        ).one()
+        assert state.status == "todo"
+        assert state.attempts == 1
+        assert state.scheduled_at > datetime.now(UTC)
+        persisted = session.get(ScheduledJob, receipt_id)
+        assert persisted is not None and persisted.outcome is None
+    finally:
+        runtime.close()
+
+
+def test_concurrent_stalled_recovery_transitions_once(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    runtime = create_runtime(_runtime_settings(engine, schema))
+    creator = _creator(session)
+    receipt = schedule_job(
+        session,
+        runtime.app,
+        creator_id=creator.id,
+        idempotency_key="recovery:concurrent:01",
+        handler_name="synthetic.snapshot",
+        arguments={"post_id": "recovery-02"},
+        scheduled_at=datetime.now(UTC),
+    )
+    receipt_id, runner_id = receipt.id, receipt.runner_job_id
+    assert runner_id is not None
+    session.commit()
+    _mark_job_stalled(session, runner_id)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [
+                pool.submit(_recover_stalled_job, runtime, runner_id, str(receipt_id))
+                for _ in range(2)
+            ]
+            for future in futures:
+                future.result(timeout=10)
+        row = session.execute(
+            text("SELECT status::text, attempts FROM procrastinate_jobs WHERE id=:id"),
+            {"id": runner_id},
+        ).one()
+        assert row.status == "todo"
+        assert row.attempts == 1
+        assert session.get(ScheduledJob, receipt_id).outcome is None
+    finally:
+        runtime.close()
+
+
+def test_recovery_skips_prune_locked_worker_without_deadlock(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    runtime = create_runtime(_runtime_settings(engine, schema))
+    creator = _creator(session)
+    receipt = schedule_job(
+        session,
+        runtime.app,
+        creator_id=creator.id,
+        idempotency_key="recovery:prune-lock-order:01",
+        handler_name="synthetic.snapshot",
+        arguments={"post_id": "recovery-prune"},
+        scheduled_at=datetime.now(UTC),
+    )
+    receipt_id, runner_id = receipt.id, receipt.runner_job_id
+    assert runner_id is not None
+    session.commit()
+    _mark_job_stalled(session, runner_id)
+    worker_id = session.scalar(
+        text("SELECT worker_id FROM procrastinate_jobs WHERE id=:id"), {"id": runner_id}
+    )
+    assert worker_id is not None
+
+    lock_connection = engine.connect()
+    lock_connection.execute(text(f'SET search_path TO "{schema}", public'))
+    lock_session = Session(bind=lock_connection)
+    try:
+        # Model the prune transaction's worker-row delete lock. Recovery must acquire
+        # worker-before-job with SKIP LOCKED and return, so prune can finish its FK update.
+        lock_session.execute(
+            text("SELECT id FROM procrastinate_workers WHERE id=:id FOR UPDATE"),
+            {"id": worker_id},
+        )
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_recover_stalled_job, runtime, runner_id, str(receipt_id))
+            future.result(timeout=5)
+        assert (
+            session.scalar(
+                text("SELECT status::text FROM procrastinate_jobs WHERE id=:id"),
+                {"id": runner_id},
+            )
+            == "doing"
+        )
+        state = session.execute(
+            text("SELECT status::text, attempts FROM procrastinate_jobs WHERE id=:id"),
+            {"id": runner_id},
+        ).one()
+        assert state.status == "doing"
+        assert state.attempts == 0
+        assert session.get(ScheduledJob, receipt_id).outcome is None
+        lock_session.rollback()
+    finally:
+        lock_session.close()
+        lock_connection.close()
+        runtime.close()
+
+
+def test_stalled_required_x_job_atomically_needs_reconciliation_and_fails(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    runtime = create_runtime(_runtime_settings(engine, schema))
+    creator = _creator(session)
+    connection = _x_connection(session, creator)
+    receipt = schedule_job(
+        session,
+        runtime.app,
+        creator_id=creator.id,
+        idempotency_key="recovery:billable-ambiguous:01",
+        handler_name="synthetic.billable",
+        arguments={"post_id": "recovery-03"},
+        scheduled_at=datetime.now(UTC),
+        required_x_connection_id=connection.id,
+    )
+    receipt_id, runner_id = receipt.id, receipt.runner_job_id
+    assert runner_id is not None
+    session.commit()
+    _mark_job_stalled(session, runner_id)
+    try:
+        _recover_stalled_job(runtime, runner_id, str(receipt_id))
+        state = session.execute(
+            text("SELECT status::text FROM procrastinate_jobs WHERE id=:id"),
+            {"id": runner_id},
+        ).scalar_one()
+        persisted = session.get(ScheduledJob, receipt_id)
+        assert state == "failed"
+        assert persisted is not None
+        assert persisted.outcome == "needs_reconciliation"
+        assert persisted.failure_code == "worker_lost_during_billable_operation"
+        assert persisted.finished_at is not None
+    finally:
+        runtime.close()
+
+
+def test_billable_duplicate_delivery_uses_one_receipt_reservation_and_call(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    provider_calls = 0
+    limits = XUsageLimits(
+        total_usd=Decimal("1"),
+        daily_usd=Decimal("1"),
+        operation_usd=Decimal("1"),
+        import_usd=None,
+    )
+
+    def fake_billable_handler(db: Session, receipt: ScheduledJob) -> None:
+        nonlocal provider_calls
+        reservation = reserve_x_usage(
+            db,
+            creator_id=receipt.creator_id,
+            operation="synthetic_post_snapshot",
+            idempotency_key=f"scheduled-job:{receipt.id}",
+            estimated_cost=Decimal("0.01"),
+            limits=limits,
+            now=datetime.now(UTC),
+            request_metadata={"endpoint": "/synthetic"},
+        )
+        if reservation.already_reserved:
+            return
+        provider_calls += 1
+
+    runtime = create_runtime(
+        _runtime_settings(engine, schema),
+        handlers={"synthetic.billable": fake_billable_handler},
+    )
+    creator = _creator(session)
+    connection = _x_connection(session, creator)
+    receipt = schedule_job(
+        session,
+        runtime.app,
+        creator_id=creator.id,
+        idempotency_key="billable:duplicate:01",
+        handler_name="synthetic.billable",
+        arguments={"post_id": "004"},
+        scheduled_at=datetime.now(UTC),
+        required_x_connection_id=connection.id,
+    )
+    receipt_id = receipt.id
+    session.commit()
+    try:
+        _execute_receipt(runtime, receipt_id, 0)
+        _execute_receipt(runtime, receipt_id, 0)
+        assert provider_calls == 1
+        assert (
+            session.scalar(
+                select(APIUsageLedger).where(
+                    APIUsageLedger.idempotency_key == f"scheduled-job:{receipt_id}"
+                )
+            )
+            is not None
+        )
+        assert (
+            session.scalar(
+                select(APIUsageLedger.id).where(
+                    APIUsageLedger.idempotency_key == f"scheduled-job:{receipt_id}"
+                )
+            )
+            is not None
+        )
+        assert (
+            session.scalar(
+                text("SELECT count(*) FROM api_usage_ledger WHERE idempotency_key=:key"),
+                {"key": f"scheduled-job:{receipt_id}"},
+            )
+            == 1
+        )
+        session.commit()
+    finally:
+        runtime.close()
+
+
+def test_billable_crash_after_reservation_reconciles_without_redelivery(
+    migrated_postgres: tuple[Engine, str], session: Session
+) -> None:
+    engine, schema = migrated_postgres
+    provider_calls = 0
+    limits = XUsageLimits(
+        total_usd=Decimal("1"),
+        daily_usd=Decimal("1"),
+        operation_usd=Decimal("1"),
+        import_usd=None,
+    )
+
+    class SimulatedProcessCrash(BaseException):
+        pass
+
+    def crash_after_provider_call(db: Session, receipt: ScheduledJob) -> None:
+        nonlocal provider_calls
+        reservation = reserve_x_usage(
+            db,
+            creator_id=receipt.creator_id,
+            operation="synthetic_post_snapshot",
+            idempotency_key=f"scheduled-job:{receipt.id}",
+            estimated_cost=Decimal("0.01"),
+            limits=limits,
+            now=datetime.now(UTC),
+            request_metadata={"endpoint": "/synthetic"},
+        )
+        assert not reservation.already_reserved
+        provider_calls += 1
+        # Emulate abrupt process loss after the durable reservation/provider call and
+        # before _execute_receipt can commit its terminal receipt state.
+        raise SimulatedProcessCrash()
+
+    settings = _runtime_settings(engine, schema)
+    runtime = create_runtime(settings, handlers={"synthetic.billable": crash_after_provider_call})
+    creator = _creator(session)
+    connection = _x_connection(session, creator)
+    receipt = schedule_job(
+        session,
+        runtime.app,
+        creator_id=creator.id,
+        idempotency_key="billable:crash-window:01",
+        handler_name="synthetic.billable",
+        arguments={"post_id": "crash-window"},
+        scheduled_at=datetime.now(UTC),
+        required_x_connection_id=connection.id,
+    )
+    receipt_id, runner_id = receipt.id, receipt.runner_job_id
+    assert runner_id is not None
+    session.commit()
+    restarted_runtime = None
+    try:
+        with pytest.raises(SimulatedProcessCrash):
+            _execute_receipt(runtime, receipt_id, 0)
+        assert session.get(ScheduledJob, receipt_id).outcome is None
+        _mark_job_stalled(session, runner_id)
+
+        _recover_stalled_job(runtime, runner_id, str(receipt_id))
+        persisted = session.get(ScheduledJob, receipt_id)
+        runner_state = session.scalar(
+            text("SELECT status::text FROM procrastinate_jobs WHERE id=:id"),
+            {"id": runner_id},
+        )
+        ledger_count = session.scalar(
+            text("SELECT count(*) FROM api_usage_ledger WHERE idempotency_key=:key"),
+            {"key": f"scheduled-job:{receipt_id}"},
+        )
+        assert persisted is not None and persisted.outcome == "needs_reconciliation"
+        assert runner_state == "failed"
+        assert ledger_count == 1
+        assert provider_calls == 1
+
+        # A fresh runtime in this process represents restart recovery; a duplicate
+        # delivery short-circuits on the permanent receipt and cannot call the provider.
+        restarted_runtime = create_runtime(
+            settings, handlers={"synthetic.billable": crash_after_provider_call}
+        )
+        with pytest.raises(TerminalJobError, match="receipt_already_terminal"):
+            _execute_receipt(restarted_runtime, receipt_id, 0)
+        assert provider_calls == 1
+        assert (
+            session.scalar(
+                text("SELECT count(*) FROM api_usage_ledger WHERE idempotency_key=:key"),
+                {"key": f"scheduled-job:{receipt_id}"},
+            )
+            == 1
+        )
+    finally:
+        if restarted_runtime is not None:
+            restarted_runtime.close()
+        runtime.close()
+
+
 def _post(
     session: Session,
     creator_id: UUID,
@@ -349,7 +1150,7 @@ def test_migration_survives_clean_upgrade_downgrade_and_repeat_upgrade(
         connection.execute(text(f'SET search_path TO "{schema}", public'))
         connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0004_creator_report_api"
+            "0005_durable_jobs"
         )
 
 
