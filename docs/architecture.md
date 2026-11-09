@@ -100,6 +100,14 @@ An LLM is **not** the source of truth for performance metrics, rankings, X inter
 
 **Sequencing and issue ownership:** [COD-380](https://linear.app/codeddevs/issue/COD-380) owns the Intelligence implementation of the GroqCloud `openai/gpt-oss-120b` V1 synthesis adapter, depending on [COD-377](https://linear.app/codeddevs/issue/COD-377)'s typed report evidence contract. Report assembly may ship first using deterministic templates. V1 model and hosted location are selected; rights, actual account availability, quotas and cost controls remain implementation gates.
 
+### COD-366 Distribution Outlook walk-forward evaluation
+
+`intelligence/backtesting.py` replays immutable COD-354 `OutlookRequest` inputs in assessment-cutoff order and invokes the existing `build_distribution_outlook` for each cutoff. The target observation is held outside the request and must be measured after the historical assessment and publication; creator profiles/context and selected comparable publication times must be available by that assessment cutoff. Outcome values observed later are excluded by the existing baseline as-of rules. Duplicate exact outcome records are removed as a group, missing values remain missing, and scoring accepts only the requested exact metric definition and observation window.
+
+The report groups cases by COD-354 evidence strength and exposes denominators, exclusions, input selection basis and sparse-band limitations. It reports historical P25–P75 reference-range coverage (not probability calibration), held-out weighted-midrank distance from the historical 50th percentile, and below/within/above direction agreement relative to the pre-cutoff unweighted creator-history median where supported. A 3×IQR sensitivity view recomputes reference coverage after excluding historical outliers. Values are diagnostic summaries; no forecast, causal, statistical-significance or X-ranking claim is made. Synthetic tests verify isolation and reproducibility but cannot establish live performance. Results may be biased by incomplete creator histories, missing windows, selection, platform changes and unavailable private X signals.
+
+**COD-364 integration dependency:** When postmortems are implemented, they should consume the immutable original versioned outlook and match only version-verified published posts with equal-age, exact-definition/window observations. Unmatched assessment versions or unavailable observation windows remain unscored/inconclusive. COD-366 does not implement or change that postmortem contract, persistence, routes, report evidence, or COD-380 synthesis.
+
 ## Technology (approved)
 
 | Area | Selection |
