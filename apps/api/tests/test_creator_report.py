@@ -7,9 +7,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from bipme.intelligence.baselines import BaselineRequest, OutcomeObservation, build_creator_baseline
-from bipme.intelligence.content_patterns import PersonalPostProfile
+from bipme.intelligence.content_patterns import (
+    PersonalPostProfile,
+    compare_personal_content_patterns,
+)
 from bipme.intelligence.creator_goals import CreatorGoalsSnapshot
-from bipme.intelligence.creator_report import assemble_creator_report
+from bipme.intelligence.creator_report import (
+    PersonalMetricCohort,
+    assemble_creator_report,
+)
 from bipme.intelligence.post_profiles import PostProfileInput, extract_post_profile
 from bipme.intelligence.report_evidence import (
     CreatorReportEvidenceBundle,
@@ -185,11 +191,10 @@ def test_duplicate_outcome_excluded_from_strong_typical_weak_groups() -> None:
     report = assemble_creator_report(
         _bundle(), personal_baselines=(_baseline(),), personal_outcomes=duplicated
     )
-    cohort = report.personal_cohorts[0]
-    included = cohort.strong_post_ids + cohort.typical_post_ids + cohort.weak_post_ids
-    assert "post-0" not in included
-    assert len(included) == 9
-    assert cohort.excluded_count >= 2
+    # Ambiguous duplicates invalidate the source baseline rather than
+    # silently reusing its quantiles from a different observation set.
+    assert report.personal_cohorts == ()
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
 
 
 def test_future_and_cross_creator_outcomes_are_excluded() -> None:
@@ -205,7 +210,7 @@ def test_future_and_cross_creator_outcomes_are_excluded() -> None:
     included = cohort.strong_post_ids + cohort.typical_post_ids + cohort.weak_post_ids
     assert "future" not in included
     assert "another" not in included
-    assert cohort.excluded_count >= 2
+    assert len(included) == 10
 
 
 def _twenty_observations() -> tuple[OutcomeObservation, ...]:
@@ -312,4 +317,90 @@ def test_missing_descriptors_do_not_create_report_hypotheses() -> None:
         personal_outcomes=_twenty_observations(),
     )
     assert report.content_patterns == ()
+    assert report.experiments == ()
+
+
+def test_codex_baseline_definition_mismatch_fails_closed() -> None:
+    other_definition = tuple(
+        replace(item, metric_definition="replies per thousand impressions", value=1.0)
+        for item in _observations()
+    )
+    report = assemble_creator_report(
+        _bundle(),
+        personal_baselines=(_baseline(),),
+        personal_outcomes=other_definition,
+    )
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
+    assert report.personal_cohorts == ()
+
+
+def test_codex_future_definition_does_not_poison_eligible_report() -> None:
+    future = replace(
+        _observations()[0],
+        post_id="future-post",
+        metric_definition="impressions-normalized replies",
+        observed_at=NOW + timedelta(days=1),
+    )
+    original = assemble_creator_report(
+        _bundle(), personal_baselines=(_baseline(),), personal_outcomes=_observations()
+    )
+    extended = assemble_creator_report(
+        _bundle(),
+        personal_baselines=(_baseline(),),
+        personal_outcomes=_observations() + (future,),
+    )
+    assert original.personal_findings == extended.personal_findings
+    assert original.personal_cohorts == extended.personal_cohorts
+
+
+def test_codex_one_post_claim_does_not_inherit_moderate_strength() -> None:
+    original = _bundle()
+    single_post = replace(original.personal_evidence[0], post_ids=("post-9",))
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(single_post,)),
+        personal_baselines=(_baseline(),),
+        personal_outcomes=_observations(),
+    )
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
+    assert not any(
+        "At least 8 effective posts" in reason for reason in report.personal_findings[0].limitations
+    )
+
+
+def test_codex_missing_topology_is_not_counted_as_absence() -> None:
+    profiles = _twenty_profiles()
+    selected = []
+    for record in profiles[:16]:
+        topology = "original" if record.post_id.startswith("post-") else None
+        if int(record.post_id.split("-")[1]) >= 9:
+            topology = None
+        selected.append(replace(record, profile=replace(record.profile, topology=topology)))
+    cohort = PersonalMetricCohort(
+        metric="replies",
+        metric_definition="observed reply count",
+        window="age:24h",
+        evidence_strength="Moderate",
+        strong_post_ids=tuple(f"post-{i}" for i in range(8)),
+        typical_post_ids=(),
+        weak_post_ids=tuple(f"post-{i}" for i in range(8, 16)),
+        excluded_count=0,
+        limitations=(),
+    )
+    patterns = compare_personal_content_patterns("creator", NOW, (cohort,), tuple(selected))
+    assert not any(pattern.feature == "topology" for pattern in patterns)
+
+
+def test_codex_rejected_claim_cannot_reappear_as_experiment() -> None:
+    original = _bundle()
+    evidence = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{idx}" for idx in range(20)) + ("not-owned",),
+    )
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(evidence,)),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+        personal_profiles=_twenty_profiles(),
+    )
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
     assert report.experiments == ()
