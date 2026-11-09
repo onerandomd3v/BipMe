@@ -92,7 +92,10 @@ class EvidenceBandQuality:
     replay_count: int
     scored_count: int
     reference_range_coverage: float | None
+    percentile_scored_count: int
     median_absolute_percentile_error: float | None
+    percentile_error_sample_adequate: bool
+    direction_scored_count: int
     direction_accuracy: float | None
     sample_adequate: bool
     limitations: tuple[str, ...]
@@ -158,6 +161,8 @@ def _validate(case: OutlookBacktestCase, spec: BacktestSpec) -> None:
         raise ValueError("target observation publication time must match case")
     if target.observed_at <= cutoff:
         raise ValueError("held-out target observation must be recorded after assessment cutoff")
+    if target.observed_at < case.target_published_at:
+        raise ValueError("target observation cannot precede target publication")
     if case.target_post_id in {item.post_id for item in request.comparable_set.matches}:
         raise ValueError("held-out target cannot also be a comparable")
     publication_times = dict(case.comparable_publication_times)
@@ -172,10 +177,19 @@ def _validate(case: OutlookBacktestCase, spec: BacktestSpec) -> None:
         raise ValueError("a selected comparable was published after the assessment cutoff")
 
 
-def _deduplicated_request(request: OutlookRequest) -> tuple[OutlookRequest, int]:
-    """Remove every duplicate exact outcome key, rather than double-counting any copy."""
+def _deduplicated_request(
+    request: OutlookRequest,
+) -> tuple[OutlookRequest, int, set[tuple[str, str, str, str, str]]]:
+    """Deduplicate exact keys only among timestamp-eligible as-of observations."""
     grouped: dict[tuple[str, str, str, str, str], list[OutcomeObservation]] = defaultdict(list)
+    cutoff = request.assessment.as_of
     for item in request.outcomes:
+        if (
+            item.published_at > cutoff
+            or item.observed_at > cutoff
+            or item.observed_at < item.published_at
+        ):
+            continue
         grouped[
             (item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)
         ].append(item)
@@ -183,10 +197,21 @@ def _deduplicated_request(request: OutlookRequest) -> tuple[OutlookRequest, int]
     clean = tuple(
         item
         for item in request.outcomes
-        if (item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)
-        not in duplicates
+        if not (
+            (
+                item.published_at <= cutoff
+                and item.observed_at <= cutoff
+                and item.observed_at >= item.published_at
+            )
+            and (item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)
+            in duplicates
+        )
     )
-    return replace(request, outcomes=clean), sum(len(grouped[key]) for key in duplicates)
+    return (
+        replace(request, outcomes=clean),
+        sum(len(grouped[key]) for key in duplicates),
+        duplicates,
+    )
 
 
 def _eligible_history(
@@ -207,7 +232,13 @@ def _eligible_history(
         key = (item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)
         if key in duplicate_keys:
             continue
-        if item.published_at >= cutoff or item.observed_at > cutoff or item.value is None:
+        if (
+            item.published_at > cutoff
+            or item.observed_at > cutoff
+            or item.observed_at < item.published_at
+            or item.value is None
+            or item.value < 0
+        ):
             continue
         weight = selected[item.post_id]
         if weight > 0:
@@ -233,7 +264,13 @@ def _eligible_creator_history(
             spec.window,
         ):
             continue
-        if item.published_at >= cutoff or item.observed_at > cutoff or item.value is None:
+        if (
+            item.published_at > cutoff
+            or item.observed_at > cutoff
+            or item.observed_at < item.published_at
+            or item.value is None
+            or item.value < 0
+        ):
             continue
         output.append(replace(item, weight=1.0))
     return sorted(output, key=lambda item: (item.published_at, item.post_id))
@@ -419,16 +456,11 @@ def evaluate_distribution_outlooks(
         if case.target_observation.observed_at > spec.evaluation_as_of:
             exclusions["target_not_observed_by_evaluation_cutoff"] += 1
         request = case.outlook_request
-        grouped: dict[tuple[str, str, str, str, str], int] = Counter(
-            (item.creator_key, item.post_id, item.metric, item.metric_definition, item.window)
-            for item in request.outcomes
-        )
-        duplicate_keys = {key for key, count in grouped.items() if count > 1}
-        clean_request, duplicate_count = _deduplicated_request(request)
+        clean_request, duplicate_count, duplicate_keys = _deduplicated_request(request)
         exclusions["duplicate_outcome_record"] += duplicate_count
         exclusions["future_or_unobserved_comparable_outcome"] += sum(
             item.observed_at > request.assessment.as_of
-            or item.published_at >= request.assessment.as_of
+            or item.published_at > request.assessment.as_of
             for item in clean_request.outcomes
         )
         exclusions["incompatible_metric_or_window"] += sum(
@@ -446,6 +478,29 @@ def evaluate_distribution_outlooks(
             and (item.metric, item.metric_definition, item.window)
             == (spec.metric, spec.metric_definition, spec.window)
             and item.value is None
+            and item.published_at <= request.assessment.as_of
+            and item.observed_at <= request.assessment.as_of
+            and item.observed_at >= item.published_at
+            for item in clean_request.outcomes
+        )
+        exclusions["observation_before_publication"] += sum(
+            item.creator_key == spec.creator_key
+            and item.post_id in selected_ids
+            and (item.metric, item.metric_definition, item.window)
+            == (spec.metric, spec.metric_definition, spec.window)
+            and item.observed_at < item.published_at
+            for item in clean_request.outcomes
+        )
+        exclusions["negative_comparable_value"] += sum(
+            item.creator_key == spec.creator_key
+            and item.post_id in selected_ids
+            and (item.metric, item.metric_definition, item.window)
+            == (spec.metric, spec.metric_definition, spec.window)
+            and item.value is not None
+            and item.value < 0
+            and item.published_at <= request.assessment.as_of
+            and item.observed_at <= request.assessment.as_of
+            and item.observed_at >= item.published_at
             for item in clean_request.outcomes
         )
         replay = build_distribution_outlook(clean_request)
@@ -499,6 +554,7 @@ def evaluate_distribution_outlooks(
         ]
         directions = [item.direction_correct for item in rows if item.direction_correct is not None]
         adequate = len(scored) >= spec.minimum_band_samples
+        percentile_adequate = len(errors) >= spec.minimum_band_samples
         reasons: list[str] = []
         if not adequate:
             reasons.append(
@@ -506,6 +562,10 @@ def evaluate_distribution_outlooks(
             )
         if not errors:
             reasons.append("No compatible prior samples support percentile-error reporting.")
+        elif not percentile_adequate:
+            reasons.append(
+                f"Fewer than {spec.minimum_band_samples} percentile-scored cases; percentile error is sparse."
+            )
         band_reports.append(
             EvidenceBandQuality(
                 band,
@@ -514,7 +574,10 @@ def evaluate_distribution_outlooks(
                 sum(bool(item.reference_range_covered) for item in scored) / len(scored)
                 if scored
                 else None,
+                len(errors),
                 _median(errors),
+                percentile_adequate,
+                len(directions),
                 sum(bool(item) for item in directions) / len(directions) if directions else None,
                 adequate,
                 tuple(reasons),

@@ -165,26 +165,17 @@ def test_future_observation_does_not_change_replayed_range_or_scores() -> None:
     base = _case(0)
     cutoff = base.outlook_request.assessment.as_of
     future = _observation(
-        "history-0-not-observed-yet",
+        "history-0-9",
         100_000,
         cutoff - timedelta(days=2),
         cutoff + timedelta(hours=4),
-    )
-    future_match = ComparableMatch(
-        future.post_id, 0.8, RelevanceComponents(0.8, None, None, None, None), ("eligible",)
     )
     with_future = replace(
         base,
         outlook_request=replace(
             base.outlook_request,
-            comparable_set=replace(
-                base.outlook_request.comparable_set,
-                matches=base.outlook_request.comparable_set.matches + (future_match,),
-            ),
             outcomes=base.outlook_request.outcomes + (future,),
         ),
-        comparable_publication_times=base.comparable_publication_times
-        + ((future.post_id, future.published_at),),
     )
 
     original = evaluate_distribution_outlooks((base,), _spec())
@@ -194,6 +185,7 @@ def test_future_observation_does_not_change_replayed_range_or_scores() -> None:
     assert (
         replayed.cases[0].absolute_percentile_error == original.cases[0].absolute_percentile_error
     )
+    assert replayed.cases[0].prior_observation_count == original.cases[0].prior_observation_count
     assert (
         dict((item.name, item.count) for item in replayed.exclusions)[
             "future_or_unobserved_comparable_outcome"
@@ -352,6 +344,80 @@ def test_missing_target_value_is_not_scored_as_zero() -> None:
     assert report.cases[0].reference_range_covered is None
     assert report.cases[0].absolute_percentile_error is None
     assert dict((item.name, item.count) for item in report.exclusions)["missing_target_value"] == 1
+
+
+def test_percentile_error_has_its_own_denominator_and_adequacy() -> None:
+    report = evaluate_distribution_outlooks(
+        (_case(0, history_count=4, value=55), _case(1, history_count=4, value=None)),
+        replace(_spec(), minimum_band_samples=2),
+    )
+    low = report.evidence_bands[2]
+
+    assert low.replay_count == 2
+    assert low.scored_count == 0
+    assert low.percentile_scored_count == 1
+    assert low.median_absolute_percentile_error is not None
+    assert low.percentile_error_sample_adequate is False
+    assert low.direction_scored_count == 0
+
+
+def test_scoring_history_matches_baseline_timestamp_and_value_eligibility() -> None:
+    base = _case(0)
+    cutoff = base.outlook_request.assessment.as_of
+    negative = _observation(
+        "history-0-negative", -50, cutoff - timedelta(days=3), cutoff - timedelta(days=2)
+    )
+    impossible = _observation(
+        "history-0-impossible",
+        1_000_000,
+        cutoff - timedelta(days=2),
+        cutoff - timedelta(days=3),
+    )
+    additions = (negative, impossible)
+    matches = base.outlook_request.comparable_set.matches + tuple(
+        ComparableMatch(
+            item.post_id,
+            0.8,
+            RelevanceComponents(0.8, None, None, None, None),
+            ("eligible",),
+        )
+        for item in additions
+    )
+    request = replace(
+        base.outlook_request,
+        comparable_set=replace(base.outlook_request.comparable_set, matches=matches),
+        outcomes=base.outlook_request.outcomes + additions,
+    )
+    report = evaluate_distribution_outlooks(
+        (
+            replace(
+                base,
+                outlook_request=request,
+                comparable_publication_times=base.comparable_publication_times
+                + tuple((item.post_id, item.published_at) for item in additions),
+            ),
+        ),
+        _spec(),
+    )
+
+    assert report.cases[0].prior_observation_count == 10
+    exclusions = dict((item.name, item.count) for item in report.exclusions)
+    assert exclusions["negative_comparable_value"] == 1
+    assert exclusions["observation_before_publication"] == 1
+
+
+def test_target_observation_cannot_precede_publication() -> None:
+    base = _case(0)
+    impossible_target = replace(
+        base,
+        target_observation=replace(
+            base.target_observation,
+            observed_at=base.target_published_at - timedelta(minutes=1),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="cannot precede target publication"):
+        evaluate_distribution_outlooks((impossible_target,), _spec())
 
 
 def test_report_is_reproducible_chronological_and_groups_each_evidence_band() -> None:
