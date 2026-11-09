@@ -476,25 +476,61 @@ def test_codex_weak_associated_feature_not_recommended() -> None:
     assert report.experiments == ()
 
 
-def test_codex_single_exclusion_keeps_pattern_nonvacuous() -> None:
+@pytest.mark.parametrize("exclusion", ("duplicate", "future", "cross_creator"))
+def test_profile_exclusions_are_independent_and_keep_pattern_evidence_nonvacuous(
+    exclusion: str,
+) -> None:
     original = _bundle()
     evidence = replace(
         original.personal_evidence[0],
         post_ids=tuple(f"post-{idx}" for idx in range(20)),
     )
-    profiles = _twenty_profiles()
+    profiles = list(_twenty_profiles())
+    if exclusion == "duplicate":
+        profiles.append(profiles[17])
+    elif exclusion == "future":
+        profiles[17] = replace(
+            profiles[17],
+            profile=replace(profiles[17].profile, features_as_of=NOW + timedelta(days=1)),
+        )
+    else:
+        profiles[17] = replace(
+            profiles[17],
+            profile=replace(profiles[17].profile, creator_key="another-creator"),
+        )
     report = assemble_creator_report(
         replace(original, personal_evidence=(evidence,)),
         personal_baselines=(_twenty_baseline(),),
         personal_outcomes=_twenty_observations(),
-        personal_profiles=profiles + (profiles[17],),
+        personal_profiles=tuple(profiles),
     )
-    matches = [
+    build_patterns = [
         pattern
         for pattern in report.content_patterns
         if pattern.feature == "declared_topic" and pattern.feature_value == "build"
     ]
-    assert matches
-    assert "post-17" not in matches[0].strong_group_post_ids
-    assert report.experiments
-    assert "post-17" not in report.experiments[0].supporting_post_ids
+    assert build_patterns, f"{exclusion} exclusion must leave a measurable build contrast"
+    pattern = build_patterns[0]
+    assert (pattern.strong_count, pattern.strong_total) == (4, 4)
+    assert (pattern.weak_count, pattern.weak_total) == (1, 4)
+    assert pattern.strong_total + pattern.weak_total == 8
+    assert "post-17" not in pattern.strong_post_ids
+    assert "post-17" not in pattern.weak_post_ids
+    assert "post-17" not in pattern.strong_group_post_ids
+    assert "post-17" not in pattern.weak_group_post_ids
+
+    build_experiments = [
+        experiment
+        for experiment in report.experiments
+        if experiment.metric == pattern.metric
+        and experiment.metric_definition == pattern.metric_definition
+        and experiment.metric_window == pattern.window
+    ]
+    assert build_experiments, f"{exclusion} exclusion must retain source-backed experiment evidence"
+    experiment = build_experiments[0]
+    assert experiment.evidence_ids == (evidence.evidence_id,)
+    assert "post-17" not in experiment.supporting_post_ids
+    assert set(experiment.supporting_post_ids) == set(
+        pattern.strong_group_post_ids + pattern.weak_group_post_ids
+    )
+    assert set(experiment.supporting_post_ids).issubset(set(evidence.post_ids))
