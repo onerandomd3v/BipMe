@@ -1292,6 +1292,110 @@
         "title": "HistoricalRangeResponse",
         "type": "object"
       },
+      "HistoryImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "import_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "title": "Import Id",
+            "type": "string"
+          },
+          "max_posts": {
+            "default": 20,
+            "maximum": 3200.0,
+            "minimum": 1.0,
+            "title": "Max Posts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "import_id"
+        ],
+        "title": "HistoryImportRequest",
+        "type": "object"
+      },
+      "HistoryImportResponse": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "imported_posts": {
+            "title": "Imported Posts",
+            "type": "integer"
+          },
+          "next_page_available": {
+            "title": "Next Page Available",
+            "type": "boolean"
+          },
+          "pages_read": {
+            "title": "Pages Read",
+            "type": "integer"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "requested_posts": {
+            "title": "Requested Posts",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "import_id",
+          "status",
+          "requested_posts",
+          "pages_read",
+          "imported_posts",
+          "next_page_available",
+          "error_code",
+          "source",
+          "started_at",
+          "completed_at",
+          "provenance"
+        ],
+        "title": "HistoryImportResponse",
+        "type": "object"
+      },
       "MetricEvidenceResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2770,6 +2874,123 @@
         "summary": "Read one of the authenticated creator's immutable assessments",
         "tags": [
           "creator analysis"
+        ]
+      }
+    },
+    "/api/v1/creators/me/history/imports": {
+      "post": {
+        "operationId": "start_history_import_api_v1_creators_me_history_imports_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start History Import",
+        "tags": [
+          "creator-history"
+        ]
+      }
+    },
+    "/api/v1/creators/me/history/imports/{import_id}": {
+      "get": {
+        "operationId": "get_history_import_api_v1_creators_me_history_imports__import_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get History Import",
+        "tags": [
+          "creator-history"
         ]
       }
     },

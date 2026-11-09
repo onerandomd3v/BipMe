@@ -29,7 +29,7 @@ from bipme.persistence.usage import (
 )
 
 X_API_ORIGIN = "https://api.x.com"
-X_POST_FIELDS = "id,text,created_at,public_metrics,in_reply_to_user_id,referenced_tweets"
+X_POST_FIELDS = "id,text,created_at,public_metrics,conversation_id,in_reply_to_user_id,referenced_tweets,attachments"
 METRIC_DEFINITIONS = {
     "like_count": "X public_metrics.like_count as returned at observation time",
     "reply_count": "X public_metrics.reply_count as returned at observation time",
@@ -150,6 +150,11 @@ class XReadPost:
     published_at: datetime
     observed_at: datetime
     metrics: dict[str, XMetricValue]
+    topology: str = "original"
+    reply_to_external_post_id: str | None = None
+    quoted_external_post_id: str | None = None
+    thread_id: str | None = None
+    media_present: bool | None = None
     source: str = "x_creator_authorized_history"
     source_endpoint: str = "/2/users/{id}/tweets"
 
@@ -707,10 +712,43 @@ def _normalize_post(row: dict[str, Any], observed_at: datetime) -> XReadPost:
         else:
             value = raw_metrics[field]
         metrics[name] = XMetricValue(value, METRIC_DEFINITIONS[name], missing_reason)
+    references = row.get("referenced_tweets")
+    if not isinstance(references, list):
+        references = []
+    quoted_id = None
+    reply_to_post_id = None
+    topology = "original"
+    for reference in references:
+        if (
+            isinstance(reference, dict)
+            and reference.get("type") == "quoted"
+            and isinstance(reference.get("id"), str)
+        ):
+            topology = "quote"
+            quoted_id = reference["id"]
+        elif (
+            isinstance(reference, dict)
+            and reference.get("type") == "replied_to"
+            and isinstance(reference.get("id"), str)
+        ):
+            topology = "reply"
+            reply_to_post_id = reference["id"]
+    attachments = row.get("attachments")
+    media_present = None
+    if isinstance(attachments, dict) and isinstance(attachments.get("media_keys"), list):
+        media_present = bool(attachments["media_keys"])
+    thread_id = row.get("conversation_id")
+    if not isinstance(thread_id, str):
+        thread_id = None
     return XReadPost(
         external_post_id=post_id,
         text=text,
         published_at=published_at.astimezone(UTC),
         observed_at=observed_at.astimezone(UTC),
         metrics=metrics,
+        topology=topology,
+        reply_to_external_post_id=reply_to_post_id,
+        quoted_external_post_id=quoted_id,
+        thread_id=thread_id,
+        media_present=media_present,
     )
