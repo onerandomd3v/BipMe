@@ -79,6 +79,7 @@ def compare_personal_content_patterns(
         lookup.pop(post_id, None)
 
     features: dict[str, set[tuple[str, str]]] = {}
+    known_feature_names: dict[str, set[str]] = {}
     for post_id, profile in lookup.items():
         try:
             signals = describe_attention_features(profile, as_of=as_of).signals
@@ -97,6 +98,20 @@ def compare_personal_content_patterns(
             ):
                 approved.add((signal.name, signal.value.casefold()))
         features[post_id] = approved
+        known: set[str] = set()
+        if profile.content_format != "unknown":
+            known.add("content_format")
+        if profile.topology is not None:
+            known.add("topology")
+        if profile.thread_role is not None:
+            known.add("thread_role")
+        if profile.declared_topic is not None:
+            known.add("declared_topic")
+        if profile.declared_intent is not None:
+            known.add("declared_intent")
+        if profile.intent_signals is not None:
+            known.update(("question_marker", "reply_invitation"))
+        known_feature_names[post_id] = known
 
     results: list[ContentPatternContrast] = []
     for cohort in cohorts:
@@ -112,9 +127,17 @@ def compare_personal_content_patterns(
             continue
         candidates = sorted(set().union(*(features[pid] for pid in (*strong, *weak))))
         for name, value in candidates:
-            stronger = tuple(pid for pid in strong if (name, value) in features[pid])
-            weaker = tuple(pid for pid in weak if (name, value) in features[pid])
-            gap = len(stronger) / len(strong) - len(weaker) / len(weak)
+            known_strong = tuple(pid for pid in strong if name in known_feature_names[pid])
+            known_weak = tuple(pid for pid in weak if name in known_feature_names[pid])
+            if (
+                len(known_strong) < MIN_GROUP_POSTS
+                or len(known_weak) < MIN_GROUP_POSTS
+                or len(known_strong) + len(known_weak) < MIN_TOTAL_POSTS
+            ):
+                continue
+            stronger = tuple(pid for pid in known_strong if (name, value) in features[pid])
+            weaker = tuple(pid for pid in known_weak if (name, value) in features[pid])
+            gap = len(stronger) / len(known_strong) - len(weaker) / len(known_weak)
             if abs(gap) < MIN_PREVALENCE_GAP or min(len(stronger), len(weaker)) == 0:
                 continue
             results.append(
@@ -126,15 +149,19 @@ def compare_personal_content_patterns(
                     feature=name,
                     feature_value=value,
                     strong_count=len(stronger),
-                    strong_total=len(strong),
+                    strong_total=len(known_strong),
                     weak_count=len(weaker),
-                    weak_total=len(weak),
+                    weak_total=len(known_weak),
                     strong_post_ids=stronger,
                     weak_post_ids=weaker,
                     limitations=(
                         "Historical association only, not causal or predictive.",
                         "Strong/weak selection depends on measured outcomes and can be biased.",
                         "Declared topics and intents are creator labels, not verified audience behavior.",
+                        (
+                            f"Feature missing on {len(strong) - len(known_strong)} strong and "
+                            f"{len(weak) - len(known_weak)} weak posts; excluded from denominators."
+                        ),
                     ),
                 )
             )
