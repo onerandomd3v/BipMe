@@ -8,6 +8,8 @@ import pytest
 
 from bipme.intelligence.baselines import BaselineRequest, OutcomeObservation, build_creator_baseline
 from bipme.intelligence.creator_goals import CreatorGoalsSnapshot
+from bipme.intelligence.content_patterns import PersonalPostProfile
+from bipme.intelligence.post_profiles import PostProfileInput, extract_post_profile
 from bipme.intelligence.creator_report import assemble_creator_report
 from bipme.intelligence.report_evidence import (
     CreatorReportEvidenceBundle,
@@ -204,3 +206,110 @@ def test_future_and_cross_creator_outcomes_are_excluded() -> None:
     assert "future" not in included
     assert "another" not in included
     assert cohort.excluded_count >= 2
+
+
+def _twenty_observations() -> tuple[OutcomeObservation, ...]:
+    return tuple(
+        replace(record, post_id=f"post-{idx}", value=float(idx + 1))
+        for idx, record in enumerate((_observations()[0],) * 20)
+    )
+
+
+def _twenty_baseline():
+    return build_creator_baseline(
+        _twenty_observations(),
+        BaselineRequest(
+            creator_key="creator",
+            metric="replies",
+            metric_definition="observed reply count",
+            window="age:24h",
+            as_of=NOW,
+        ),
+    )
+
+
+def _twenty_profiles() -> tuple[PersonalPostProfile, ...]:
+    results: list[PersonalPostProfile] = []
+    for idx in range(20):
+        # This is synthetic creator-declared topic metadata, not text inference.
+        topic = "build" if idx in (0, 15, 16, 17, 18, 19) else "misc"
+        profile = extract_post_profile(
+            PostProfileInput(
+                text="A developer note",
+                observed_at=NOW - timedelta(days=4),
+                features_as_of=NOW - timedelta(days=3),
+                creator_key="creator",
+                media_types=(),
+                declared_topic=topic,
+            )
+        )
+        results.append(PersonalPostProfile(f"post-{idx}", profile))
+    return tuple(results)
+
+
+def test_goal_aligned_content_pattern_has_measured_support() -> None:
+    original = _bundle()
+    evidence = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{idx}" for idx in range(20)),
+    )
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(evidence,)),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+        personal_profiles=_twenty_profiles(),
+    )
+    matches = [
+        pattern
+        for pattern in report.content_patterns
+        if pattern.feature == "declared_topic" and pattern.feature_value == "build"
+    ]
+    assert matches and matches[0].strong_count >= 3
+    assert report.experiments
+    assert report.experiments[0].goal == "conversation"
+    assert report.experiments[0].evidence_ids == (evidence.evidence_id,)
+    assert "causal" in " ".join(report.experiments[0].limitations)
+    assert report.to_json() == report.to_json()
+
+
+def test_future_cross_creator_and_duplicate_profiles_are_not_compared() -> None:
+    records = _twenty_profiles()
+    future_profile = replace(records[19].profile, features_as_of=NOW + timedelta(days=1))
+    other_profile = replace(records[18].profile, creator_key="other")
+    bad = (
+        records[:18]
+        + (PersonalPostProfile("post-18", other_profile),)
+        + (PersonalPostProfile("post-19", future_profile),)
+        + (records[17],)
+    )
+    original = _bundle()
+    evidence = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{idx}" for idx in range(20)),
+    )
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(evidence,)),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+        personal_profiles=bad,
+    )
+    assert report.experiments == ()
+    assert all(
+        "post-17" not in (*pattern.strong_post_ids, *pattern.weak_post_ids)
+        for pattern in report.content_patterns
+    )
+
+
+def test_missing_descriptors_do_not_create_report_hypotheses() -> None:
+    original = _bundle()
+    evidence = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{idx}" for idx in range(20)),
+    )
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(evidence,)),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+    )
+    assert report.content_patterns == ()
+    assert report.experiments == ()
