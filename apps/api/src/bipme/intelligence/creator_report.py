@@ -13,9 +13,16 @@ from typing import Literal
 
 from bipme.intelligence.baselines import (
     BASELINE_VERSION,
+    BaselineRequest,
     CreatorBaseline,
     EvidenceStrength,
     OutcomeObservation,
+    build_creator_baseline,
+)
+from bipme.intelligence.content_patterns import (
+    ContentPatternContrast,
+    PersonalPostProfile,
+    compare_personal_content_patterns,
 )
 from bipme.intelligence.report_evidence import (
     REPORT_EVIDENCE_VERSION,
@@ -82,6 +89,7 @@ class CreatorIntelligenceReport:
     niche_findings: tuple[ReportFinding, ...]
     experiments: tuple[ReportExperiment, ...]
     personal_cohorts: tuple[PersonalMetricCohort, ...]
+    content_patterns: tuple[ContentPatternContrast, ...]
     limitations: tuple[str, ...]
 
     def to_json(self) -> str:
@@ -115,10 +123,72 @@ def _finding(
     )
 
 
+def _eligible_outcomes(
+    bundle: CreatorReportEvidenceBundle,
+    outcomes: tuple[OutcomeObservation, ...],
+) -> tuple[OutcomeObservation, ...]:
+    """Cut off future observations before any definition or support discovery."""
+    return tuple(
+        item
+        for item in outcomes
+        if item.creator_key == bundle.creator_key
+        and item.published_at <= bundle.as_of
+        and item.published_at <= item.observed_at <= bundle.as_of
+    )
+
+
+def _verified_baselines(
+    bundle: CreatorReportEvidenceBundle,
+    baselines: tuple[CreatorBaseline, ...],
+    outcomes: tuple[OutcomeObservation, ...],
+) -> tuple[tuple[CreatorBaseline, str], ...]:
+    """Reconcile untyped baseline provenance with exact-definition eligible data.
+
+    The v1 CreatorBaseline contract does not store metric_definition. Fail
+    closed unless it can be reproduced from one definition and the *same*
+    eligible post set, sample strength and thresholds. Segmented/shrunk
+    baselines that cannot be safely reconstructed are not reused. This conservative\n    restriction remains until baseline provenance is part of the canonical contract.
+    """
+    verified: list[tuple[CreatorBaseline, str]] = []
+    for baseline in baselines:
+        supported = set(baseline.supporting_post_ids)
+        matches = tuple(
+            item
+            for item in outcomes
+            if item.metric == baseline.metric
+            and item.window == baseline.window
+            and item.post_id in supported
+        )
+        definitions = {item.metric_definition for item in matches}
+        if len(definitions) != 1 or not matches:
+            continue
+        definition = next(iter(definitions))
+        candidate = build_creator_baseline(
+            matches,
+            BaselineRequest(
+                creator_key=bundle.creator_key,
+                metric=baseline.metric,
+                metric_definition=definition,
+                window=baseline.window,
+                as_of=bundle.as_of,
+            ),
+        )
+        if (
+            candidate.supporting_post_ids != baseline.supporting_post_ids
+            or candidate.evidence_strength != baseline.evidence_strength
+            or candidate.effective_sample_size != baseline.effective_sample_size
+            or candidate.statistics != baseline.statistics
+        ):
+            continue
+        verified.append((baseline, definition))
+    return tuple(verified)
+
+
 def _personal_metric_cohorts(
     bundle: CreatorReportEvidenceBundle,
     baselines: tuple[CreatorBaseline, ...],
     observations: tuple[OutcomeObservation, ...],
+    definitions_by_dimension: dict[tuple[str, str], str],
 ) -> tuple[PersonalMetricCohort, ...]:
     """Segment eligible, unique, same-creator measured outcomes; never cross niche pools.
 
@@ -129,16 +199,9 @@ def _personal_metric_cohorts(
     for baseline in baselines:
         if baseline.statistics is None or baseline.evidence_strength == "Insufficient":
             continue
-        definitions = {
-            record.metric_definition
-            for record in observations
-            if record.metric == baseline.metric
-            and record.window == baseline.window
-            and record.creator_key == bundle.creator_key
-        }
-        if len(definitions) != 1:
+        definition = definitions_by_dimension.get((baseline.metric, baseline.window))
+        if definition is None:
             continue
-        definition = next(iter(definitions))
         allowed = set(baseline.supporting_post_ids)
         eligible: dict[str, OutcomeObservation] = {}
         duplicates: set[str] = set()
@@ -222,6 +285,7 @@ def assemble_creator_report(
     *,
     personal_baselines: tuple[CreatorBaseline, ...] = (),
     personal_outcomes: tuple[OutcomeObservation, ...] = (),
+    personal_profiles: tuple[PersonalPostProfile, ...] = (),
 ) -> CreatorIntelligenceReport:
     """Assemble deterministic source-traceable findings from validated evidence.
 
@@ -238,31 +302,57 @@ def assemble_creator_report(
             raise ValueError("unsupported baseline version")
         if historical_baseline.as_of != bundle.as_of:
             raise ValueError("baseline cutoff differs from report cutoff")
-    baseline_by_dimension = {(b.metric, b.window): b for b in personal_baselines}
-    # A baseline omits metric_definition; never accept a claim merely by matching
-    # its metric name/window when the caller supplies a different definition.
-    known_definitions: dict[tuple[str, str], set[str]] = {}
-    for outcome in personal_outcomes:
-        if outcome.creator_key == bundle.creator_key:
-            known_definitions.setdefault((outcome.metric, outcome.window), set()).add(
-                outcome.metric_definition
-            )
+    eligible = _eligible_outcomes(bundle, personal_outcomes)
+    verified = _verified_baselines(bundle, personal_baselines, eligible)
+    baseline_by_dimension = {
+        (baseline.metric, baseline.window): (baseline, definition)
+        for baseline, definition in verified
+    }
+    definitions_by_dimension = {
+        dimension: definition for dimension, (_, definition) in baseline_by_dimension.items()
+    }
 
     personal: list[ReportFinding] = []
     for item in bundle.personal_evidence:
         strength: EvidenceStrength = "Insufficient"
         limits: tuple[str, ...] = ("No independently verified statistical support.",)
-        if item.metric is not None and item.metric_window is not None:
-            baseline = baseline_by_dimension.get((item.metric, item.metric_window))
-            definition_verified = item.metric_definition is not None and known_definitions.get(
-                (item.metric, item.metric_window)
-            ) == {item.metric_definition}
-            if baseline is not None and definition_verified:
-                if item.post_ids and set(item.post_ids).issubset(set(baseline.supporting_post_ids)):
-                    strength = baseline.evidence_strength
-                    limits = baseline.reasons
+        if (
+            item.metric is not None
+            and item.metric_definition is not None
+            and item.metric_window is not None
+        ):
+            verified_pair = baseline_by_dimension.get((item.metric, item.metric_window))
+            if verified_pair is not None and verified_pair[1] == item.metric_definition:
+                baseline = verified_pair[0]
+                support = set(baseline.supporting_post_ids)
+                if item.post_ids and set(item.post_ids).issubset(support):
+                    subset = tuple(
+                        record
+                        for record in eligible
+                        if record.metric == item.metric
+                        and record.metric_definition == item.metric_definition
+                        and record.window == item.metric_window
+                        and record.post_id in item.post_ids
+                    )
+                    finding_baseline = build_creator_baseline(
+                        subset,
+                        BaselineRequest(
+                            creator_key=bundle.creator_key,
+                            metric=item.metric,
+                            metric_definition=item.metric_definition,
+                            window=item.metric_window,
+                            as_of=bundle.as_of,
+                        ),
+                    )
+                    if set(finding_baseline.supporting_post_ids) == set(item.post_ids):
+                        strength = finding_baseline.evidence_strength
+                        limits = finding_baseline.reasons
+                    else:
+                        limits = ("Claim references unverified or duplicate observations.",)
                 else:
-                    limits = ("Evidence post IDs are not supported by the personal baseline.",)
+                    limits = ("Evidence post IDs are not supported by the verified baseline.",)
+            else:
+                limits = ("Baseline provenance or metric definition could not be verified.",)
         personal.append(_finding(item, strength=strength, limits=limits))
 
     latest_valid_niche = {
@@ -288,10 +378,76 @@ def assemble_creator_report(
     if any(item.evidence_strength == "Insufficient" for item in personal):
         limitations.append("Some personal claims lack adequate comparable-history support.")
 
-    cohorts = _personal_metric_cohorts(bundle, personal_baselines, personal_outcomes)
-    # Descriptors have not yet been joined to cohort contrasts; refrain from
-    # generating hypotheses solely from repeated post IDs.
-    experiments: tuple[ReportExperiment, ...] = ()
+    cohorts = _personal_metric_cohorts(
+        bundle, tuple(baseline for baseline, _ in verified), eligible, definitions_by_dimension
+    )
+    patterns = compare_personal_content_patterns(
+        bundle.creator_key, bundle.as_of, cohorts, personal_profiles
+    )
+    # These are explicitly testable *hypotheses*, not causal explanations:
+    # require creator-owned evidence spanning both comparison groups.
+    metric_goals = {
+        "replies": "conversation",
+        "impressions": "reach",
+        "profile_clicks": "qualified_interest",
+        "link_clicks": "qualified_interest",
+    }
+    experiments_list: list[ReportExperiment] = []
+    for pattern in patterns:
+        if len(experiments_list) >= 3 or pattern.strong_count < 3:
+            continue
+        # A test hypothesis must not encourage features associated mainly with
+        # the weaker group; cross-multiply to avoid rounding at the boundary.
+        if pattern.strong_count * pattern.weak_total <= pattern.weak_count * pattern.strong_total:
+            continue
+        goal = metric_goals.get(pattern.metric)
+        if goal is None or goal not in bundle.goals.priority_outcomes:
+            continue
+        # Evidence must cover *all* posts used in the prevalence denominators,
+        # including feature-negative comparisons, not just positive examples.
+        support = set((*pattern.strong_group_post_ids, *pattern.weak_group_post_ids))
+        evidence = next(
+            (
+                item
+                for item in bundle.personal_evidence
+                if item.kind == "observation"
+                and any(
+                    finding.evidence_ids == (item.evidence_id,)
+                    and finding.evidence_strength in ("High", "Moderate")
+                    for finding in personal
+                )
+                and item.metric == pattern.metric
+                and item.metric_definition == pattern.metric_definition
+                and item.metric_window == pattern.window
+                and support.issubset(set(item.post_ids))
+                and set(item.post_ids).issubset(
+                    set(
+                        baseline_by_dimension[(pattern.metric, pattern.window)][
+                            0
+                        ].supporting_post_ids
+                    )
+                )
+            ),
+            None,
+        )
+        if evidence is None:
+            continue
+        experiments_list.append(
+            ReportExperiment(
+                goal=goal,
+                hypothesis=(
+                    f"Test {pattern.feature}={pattern.feature_value} in new posts; "
+                    "compare age-aligned outcomes against a similar control."
+                ),
+                evidence_ids=(evidence.evidence_id,),
+                supporting_post_ids=tuple(sorted(support)),
+                metric=pattern.metric,
+                metric_definition=pattern.metric_definition,
+                metric_window=pattern.window,
+                limitations=pattern.limitations,
+            )
+        )
+    experiments = tuple(experiments_list)
 
     state: ReportState
     if not personal:
@@ -312,5 +468,6 @@ def assemble_creator_report(
         niche_findings=niche,
         experiments=experiments,
         personal_cohorts=cohorts,
+        content_patterns=patterns,
         limitations=tuple(dict.fromkeys(limitations)),
     )
