@@ -185,11 +185,10 @@ def test_duplicate_outcome_excluded_from_strong_typical_weak_groups() -> None:
     report = assemble_creator_report(
         _bundle(), personal_baselines=(_baseline(),), personal_outcomes=duplicated
     )
-    cohort = report.personal_cohorts[0]
-    included = cohort.strong_post_ids + cohort.typical_post_ids + cohort.weak_post_ids
-    assert "post-0" not in included
-    assert len(included) == 9
-    assert cohort.excluded_count >= 2
+    # Ambiguous duplicates invalidate the source baseline rather than
+    # silently reusing its quantiles from a different observation set.
+    assert report.personal_cohorts == ()
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
 
 
 def test_future_and_cross_creator_outcomes_are_excluded() -> None:
@@ -205,7 +204,7 @@ def test_future_and_cross_creator_outcomes_are_excluded() -> None:
     included = cohort.strong_post_ids + cohort.typical_post_ids + cohort.weak_post_ids
     assert "future" not in included
     assert "another" not in included
-    assert cohort.excluded_count >= 2
+    assert len(included) == 10
 
 
 def _twenty_observations() -> tuple[OutcomeObservation, ...]:
@@ -313,3 +312,53 @@ def test_missing_descriptors_do_not_create_report_hypotheses() -> None:
     )
     assert report.content_patterns == ()
     assert report.experiments == ()
+
+
+def test_codex_baseline_definition_mismatch_fails_closed() -> None:
+    other_definition = tuple(
+        replace(item, metric_definition="replies per thousand impressions", value=1.0)
+        for item in _observations()
+    )
+    report = assemble_creator_report(
+        _bundle(),
+        personal_baselines=(_baseline(),),
+        personal_outcomes=other_definition,
+    )
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
+    assert report.personal_cohorts == ()
+
+
+def test_codex_future_definition_does_not_poison_eligible_report() -> None:
+    future = replace(
+        _observations()[0],
+        post_id="future-post",
+        metric_definition="impressions-normalized replies",
+        observed_at=NOW + timedelta(days=1),
+    )
+    original = assemble_creator_report(
+        _bundle(), personal_baselines=(_baseline(),), personal_outcomes=_observations()
+    )
+    extended = assemble_creator_report(
+        _bundle(),
+        personal_baselines=(_baseline(),),
+        personal_outcomes=_observations() + (future,),
+    )
+    assert original.personal_findings == extended.personal_findings
+    assert original.personal_cohorts == extended.personal_cohorts
+
+
+def test_codex_one_post_claim_does_not_inherit_moderate_strength() -> None:
+    original = _bundle()
+    single_post = replace(
+        original.personal_evidence[0], post_ids=("post-9",)
+    )
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(single_post,)),
+        personal_baselines=(_baseline(),),
+        personal_outcomes=_observations(),
+    )
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
+    assert not any(
+        "At least 8 effective posts" in reason
+        for reason in report.personal_findings[0].limitations
+    )
