@@ -527,9 +527,12 @@ def test_concurrent_x_reservations_share_creator_lock_and_cannot_overspend(
     migrated_postgres: tuple[Engine, str],
 ) -> None:
     engine, schema = migrated_postgres
-    creator = _creator(session)
-    creator_id = creator.id
-    session.commit()
+    creator_id = uuid4()
+    seed_connection = engine.connect()
+    seed_connection.execute(text(f'SET search_path TO "{schema}", public'))
+    seed_connection.execute(Creator.__table__.insert().values(id=creator_id))
+    seed_connection.commit()
+    seed_connection.close()
     limits = XUsageLimits(*(Decimal("0.015") for _ in range(4)))
 
     def reserve(key: str) -> str:
