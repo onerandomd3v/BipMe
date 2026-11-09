@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react'
+import { ApiRequestError, apiClient } from './api/client'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
 type ViewState =
@@ -240,14 +241,12 @@ export function App() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/health', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('API health check failed')
-        return (await response.json()) as { status?: string }
+    apiClient
+      .health(controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted)
+          setHealth(data.status === 'ok' ? 'available' : 'unavailable')
       })
-      .then((data) =>
-        setHealth(data.status === 'ok' ? 'available' : 'unavailable'),
-      )
       .catch(() => {
         if (!controller.signal.aborted) setHealth('unavailable')
       })
@@ -256,19 +255,21 @@ export function App() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/auth/session', {
-      credentials: 'same-origin',
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (response.status === 401) return 'unauthenticated'
-        if (!response.ok) return 'unavailable'
-        const session = (await response.json()) as { authenticated?: boolean }
-        return session.authenticated === true ? 'authenticated' : 'unavailable'
+    apiClient
+      .session(controller.signal)
+      .then((session) => {
+        if (controller.signal.aborted) return
+        setSessionStatus(
+          session.authenticated ? 'authenticated' : 'unauthenticated',
+        )
       })
-      .then((status) => setSessionStatus(status))
-      .catch(() => {
-        if (!controller.signal.aborted) setSessionStatus('unavailable')
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        if (error instanceof ApiRequestError && error.status === 401) {
+          setSessionStatus('unauthenticated')
+          return
+        }
+        setSessionStatus('unavailable')
       })
     return () => controller.abort()
   }, [])

@@ -88,7 +88,11 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: ESLint
         run: pnpm lint
+      - name: Generated API contract
+        run: pnpm check:api
       - name: TypeScript
         run: pnpm typecheck
+      - name: Web tests
+        run: pnpm test
       - name: Build
         run: pnpm build
