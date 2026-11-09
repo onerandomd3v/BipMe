@@ -111,7 +111,9 @@ def test_windows_runner_selects_selector_policy(monkeypatch: pytest.MonkeyPatch)
 
     policies: list[object] = []
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(asyncio, "WindowsSelectorEventLoopPolicy", lambda: "selector")
+    monkeypatch.setattr(
+        asyncio, "WindowsSelectorEventLoopPolicy", lambda: "selector", raising=False
+    )
     monkeypatch.setattr(asyncio, "set_event_loop_policy", policies.append)
     configure_windows_event_loop()
     assert policies == ["selector"]
