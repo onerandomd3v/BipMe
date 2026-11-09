@@ -172,10 +172,26 @@ def _personal_metric_cohorts(
             continue
         stats = baseline.statistics
         low, high = stats.p25, stats.p75
-        strong = tuple(sorted(id for id, record in eligible.items() if record.value is not None and record.value > high))
-        weak = tuple(sorted(id for id, record in eligible.items() if record.value is not None and record.value < low))
+        strong = tuple(
+            sorted(
+                id
+                for id, record in eligible.items()
+                if record.value is not None and record.value > high
+            )
+        )
+        weak = tuple(
+            sorted(
+                id
+                for id, record in eligible.items()
+                if record.value is not None and record.value < low
+            )
+        )
         typical = tuple(
-            sorted(id for id, record in eligible.items() if record.value is not None and low <= record.value <= high)
+            sorted(
+                id
+                for id, record in eligible.items()
+                if record.value is not None and low <= record.value <= high
+            )
         )
         limits = [
             "Groups describe historical metric distributions, not content causes or expected lift.",
