@@ -163,6 +163,8 @@ def _validate(case: OutlookBacktestCase, spec: BacktestSpec) -> None:
     publication_times = dict(case.comparable_publication_times)
     if len(publication_times) != len(case.comparable_publication_times):
         raise ValueError("comparable publication times contain duplicate post IDs")
+    for post_id, published_at in case.comparable_publication_times:
+        _aware(published_at, f"comparable publication time for {post_id}")
     match_ids = {item.post_id for item in request.comparable_set.matches}
     if match_ids != set(publication_times):
         raise ValueError("publication times must cover exactly the selected comparables")

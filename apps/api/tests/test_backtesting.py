@@ -154,6 +154,8 @@ def test_walk_forward_reports_supported_reference_coverage_and_percentile_error(
     assert result.cases[0].absolute_percentile_error == pytest.approx(0.14, abs=0.02)
     assert result.cases[1].absolute_percentile_error > 40
     assert result.cases[0].direction_correct is False
+    assert result.selection_basis == "unknown"
+    assert any("selection bias" in note for note in result.limitations)
     assert result.evidence_bands[1].scored_count == 2
     assert result.evidence_bands[1].reference_range_coverage == pytest.approx(0.5)
     assert result.evidence_bands[1].direction_accuracy == 0.0
@@ -412,3 +414,13 @@ def test_future_creator_context_and_future_comparable_are_rejected() -> None:
     )
     with pytest.raises(ValueError, match="published after"):
         evaluate_distribution_outlooks((future_published,), _spec())
+
+    naive_publication_time = replace(
+        base,
+        comparable_publication_times=(
+            (base.comparable_publication_times[0][0], datetime(2026, 1, 1)),
+        )
+        + base.comparable_publication_times[1:],
+    )
+    with pytest.raises(ValueError, match="timezone-aware"):
+        evaluate_distribution_outlooks((naive_publication_time,), _spec())
