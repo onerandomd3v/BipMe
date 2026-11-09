@@ -389,6 +389,421 @@
         "title": "CreatorBaselineResponse",
         "type": "object"
       },
+      "CreatorProfileResponse": {
+        "properties": {
+          "creator_key": {
+            "format": "uuid",
+            "title": "Creator Key",
+            "type": "string"
+          },
+          "intended_audience": {
+            "title": "Intended Audience",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "niche": {
+            "title": "Niche",
+            "type": "string"
+          },
+          "preferred_styles": {
+            "items": {
+              "enum": [
+                "technical_explainer",
+                "personal_story",
+                "opinion",
+                "question",
+                "tutorial",
+                "other"
+              ],
+              "type": "string"
+            },
+            "title": "Preferred Styles",
+            "type": "array"
+          },
+          "priority_outcomes": {
+            "items": {
+              "enum": [
+                "reach",
+                "conversation",
+                "qualified_interest",
+                "authority"
+              ],
+              "type": "string"
+            },
+            "title": "Priority Outcomes",
+            "type": "array"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "creator_key",
+          "revision",
+          "version",
+          "recorded_at",
+          "niche",
+          "intended_audience",
+          "priority_outcomes",
+          "preferred_styles",
+          "language"
+        ],
+        "title": "CreatorProfileResponse",
+        "type": "object"
+      },
+      "CreatorProfileStateResponse": {
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreatorProfileResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "configured",
+              "not_configured"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "profile"
+        ],
+        "title": "CreatorProfileStateResponse",
+        "type": "object"
+      },
+      "CreatorProfileUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "intended_audience": {
+            "maxLength": 512,
+            "minLength": 2,
+            "title": "Intended Audience",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "niche": {
+            "maxLength": 255,
+            "minLength": 2,
+            "title": "Niche",
+            "type": "string"
+          },
+          "preferred_styles": {
+            "items": {
+              "enum": [
+                "technical_explainer",
+                "personal_story",
+                "opinion",
+                "question",
+                "tutorial",
+                "other"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "title": "Preferred Styles",
+            "type": "array"
+          },
+          "priority_outcomes": {
+            "items": {
+              "enum": [
+                "reach",
+                "conversation",
+                "qualified_interest",
+                "authority"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Priority Outcomes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "niche",
+          "intended_audience",
+          "priority_outcomes"
+        ],
+        "title": "CreatorProfileUpdate",
+        "type": "object"
+      },
+      "CreatorReportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "data_sources": {
+            "items": {
+              "const": "personal_history",
+              "type": "string"
+            },
+            "maxItems": 1,
+            "title": "Data Sources",
+            "type": "array"
+          }
+        },
+        "title": "CreatorReportRequest",
+        "type": "object"
+      },
+      "CreatorReportResponse": {
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "baseline_version": {
+            "title": "Baseline Version",
+            "type": "string"
+          },
+          "coverage": {
+            "enum": [
+              "personal_and_niche",
+              "personal_only_partial",
+              "insufficient_evidence"
+            ],
+            "title": "Coverage",
+            "type": "string"
+          },
+          "creator_key": {
+            "format": "uuid",
+            "title": "Creator Key",
+            "type": "string"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "evidence_version": {
+            "title": "Evidence Version",
+            "type": "string"
+          },
+          "freshness": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Freshness",
+            "type": "object"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "goals_revision": {
+            "title": "Goals Revision",
+            "type": "integer"
+          },
+          "goals_version": {
+            "title": "Goals Version",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "processing_permissions": {
+            "additionalProperties": true,
+            "title": "Processing Permissions",
+            "type": "object"
+          },
+          "processing_status": {
+            "const": "completed",
+            "default": "completed",
+            "title": "Processing Status",
+            "type": "string"
+          },
+          "report": {
+            "additionalProperties": true,
+            "title": "Report",
+            "type": "object"
+          },
+          "report_version": {
+            "title": "Report Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "creator_key",
+          "generated_at",
+          "as_of",
+          "goals_revision",
+          "goals_version",
+          "evidence_version",
+          "report_version",
+          "baseline_version",
+          "coverage",
+          "freshness",
+          "processing_permissions",
+          "limitations",
+          "evidence",
+          "report"
+        ],
+        "title": "CreatorReportResponse",
+        "type": "object"
+      },
+      "CreatorReportStateResponse": {
+        "properties": {
+          "latest_report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreatorReportResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "available",
+              "awaiting_profile",
+              "awaiting_import"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "latest_report"
+        ],
+        "title": "CreatorReportStateResponse",
+        "type": "object"
+      },
+      "DataPermissionResponse": {
+        "properties": {
+          "external_synthesis": {
+            "const": "disabled",
+            "default": "disabled",
+            "title": "External Synthesis",
+            "type": "string"
+          },
+          "niche_discovery": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Niche Discovery",
+            "type": "string"
+          },
+          "personal_history": {
+            "enum": [
+              "granted",
+              "revoked",
+              "not_granted"
+            ],
+            "title": "Personal History",
+            "type": "string"
+          },
+          "personal_history_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personal History Revision"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "x_history_processing": {
+            "enum": [
+              "blocked",
+              "enabled"
+            ],
+            "title": "X History Processing",
+            "type": "string"
+          }
+        },
+        "required": [
+          "personal_history",
+          "personal_history_revision",
+          "recorded_at",
+          "x_history_processing"
+        ],
+        "title": "DataPermissionResponse",
+        "type": "object"
+      },
+      "DataPermissionUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_personal_history": {
+            "title": "Allow Personal History",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "allow_personal_history"
+        ],
+        "title": "DataPermissionUpdate",
+        "type": "object"
+      },
       "DecisionObservationResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1989,6 +2404,164 @@
         ]
       }
     },
+    "/api/v1/creators/me/data-permissions": {
+      "get": {
+        "description": "Report the local history opt-in and fixed unavailable external sources.",
+        "operationId": "get_data_permissions_api_v1_creators_me_data_permissions_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataPermissionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Read source-specific deterministic-report processing permissions",
+        "tags": [
+          "creator report"
+        ]
+      },
+      "put": {
+        "description": "Record consent or revocation; revocation erases derived report snapshots.",
+        "operationId": "put_data_permissions_api_v1_creators_me_data_permissions_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataPermissionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataPermissionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Grant or revoke local deterministic processing of personal history",
+        "tags": [
+          "creator report"
+        ]
+      }
+    },
     "/api/v1/creators/me/draft-assessments": {
       "post": {
         "description": "Runs profile extraction, local embedding, same-creator comparable retrieval, historical outcome analysis and immutable Outlook persistence. Requires an Idempotency-Key and COD-346's active server-verified creator session.",
@@ -2197,6 +2770,596 @@
         "summary": "Read one of the authenticated creator's immutable assessments",
         "tags": [
           "creator analysis"
+        ]
+      }
+    },
+    "/api/v1/creators/me/profile": {
+      "delete": {
+        "description": "Erase API-owned profile, consent and report snapshots; import data stays importer-owned.",
+        "operationId": "delete_creator_profile_api_v1_creators_me_profile_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Delete creator profile, processing-permission history and derived reports",
+        "tags": [
+          "creator report"
+        ]
+      },
+      "get": {
+        "description": "Return the latest self-declared goals without inferring audience attributes.",
+        "operationId": "get_creator_profile_api_v1_creators_me_profile_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorProfileStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Read the authenticated creator's declared profile",
+        "tags": [
+          "creator report"
+        ]
+      },
+      "put": {
+        "description": "Persist creator-declared niche, audience, goals and style as a revision.",
+        "operationId": "put_creator_profile_api_v1_creators_me_profile_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatorProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Create a new immutable revision of the creator's declared profile",
+        "tags": [
+          "creator report"
+        ]
+      }
+    },
+    "/api/v1/creators/me/report": {
+      "post": {
+        "description": "Uses only selected, creator-authorized canonical history already stored by BipMe. Does not require a draft, call X, spend credits or call a synthesis provider. A new Idempotency-Key creates a new immutable snapshot; retry with the same key to retrieve the original result.",
+        "operationId": "generate_creator_report_api_v1_creators_me_report_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CreatorReportRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Generate or refresh the authenticated creator's deterministic initial report",
+        "tags": [
+          "creator report"
+        ]
+      }
+    },
+    "/api/v1/creators/me/report/latest": {
+      "get": {
+        "description": "Return the latest immutable report, or an explicit onboarding state.",
+        "operationId": "get_latest_creator_report_api_v1_creators_me_report_latest_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorReportStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Read the latest report and its coverage state",
+        "tags": [
+          "creator report"
+        ]
+      }
+    },
+    "/api/v1/creators/me/reports": {
+      "delete": {
+        "description": "Erase report/evidence snapshots without deleting imported source records.",
+        "operationId": "delete_creator_reports_api_v1_creators_me_reports_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Delete all report snapshots for the authenticated creator",
+        "tags": [
+          "creator report"
+        ]
+      }
+    },
+    "/api/v1/creators/me/reports/{report_id}": {
+      "get": {
+        "description": "Retrieve a report only when it belongs to the authenticated creator.",
+        "operationId": "get_creator_report_api_v1_creators_me_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Read an immutable creator-owned report snapshot",
+        "tags": [
+          "creator report"
         ]
       }
     }
