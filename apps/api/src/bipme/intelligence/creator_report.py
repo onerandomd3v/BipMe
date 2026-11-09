@@ -405,10 +405,22 @@ def assemble_creator_report(
                 item
                 for item in bundle.personal_evidence
                 if item.kind == "observation"
+                and any(
+                    finding.evidence_ids == (item.evidence_id,)
+                    and finding.evidence_strength in ("High", "Moderate")
+                    for finding in personal
+                )
                 and item.metric == pattern.metric
                 and item.metric_definition == pattern.metric_definition
                 and item.metric_window == pattern.window
                 and support.issubset(set(item.post_ids))
+                and set(item.post_ids).issubset(
+                    set(
+                        baseline_by_dimension[
+                            (pattern.metric, pattern.window)
+                        ][0].supporting_post_ids
+                    )
+                )
             ),
             None,
         )
