@@ -141,9 +141,7 @@ def compare_personal_content_patterns(
             weaker = tuple(pid for pid in known_weak if (name, value) in features[pid])
             # A 2/5 prevalence gap is compared with exact integer arithmetic;
             # equal mathematical gaps must not diverge due to float rounding.
-            numerator = abs(
-                len(stronger) * len(known_weak) - len(weaker) * len(known_strong)
-            )
+            numerator = abs(len(stronger) * len(known_weak) - len(weaker) * len(known_strong))
             denominator = len(known_strong) * len(known_weak)
             if numerator * 5 < denominator * 2 or min(len(stronger), len(weaker)) == 0:
                 continue
