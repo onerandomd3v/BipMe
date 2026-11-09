@@ -147,7 +147,7 @@ def _verified_baselines(
     The v1 CreatorBaseline contract does not store metric_definition. Fail
     closed unless it can be reproduced from one definition and the *same*
     eligible post set, sample strength and thresholds. Segmented/shrunk
-    baselines that cannot be safely reconstructed are not reused.
+    baselines that cannot be safely reconstructed are not reused. This conservative\n    restriction remains until baseline provenance is part of the canonical contract.
     """
     verified: list[tuple[CreatorBaseline, str]] = []
     for baseline in baselines:
