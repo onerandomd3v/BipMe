@@ -26,6 +26,14 @@ _OPINION_MARKER = re.compile(
     r"\b(?:i think|i believe|in my opinion|i would argue|should|must|is overrated|is underrated)\b",
     re.IGNORECASE,
 )
+_INFORMATIVE_CUE = re.compile(
+    r"\b(?:guide|how to|steps?|explained|because|for example|lesson|learned|tutorial|checklist)\b",
+    re.IGNORECASE,
+)
+_CURIOSITY_GAP_CUE = re.compile(
+    r"\b(?:secret|shocking|you won't believe|nobody talks about|no one talks about|one trick)\b",
+    re.IGNORECASE,
+)
 _CONTRAST_OPENING = re.compile(r"\b(?:but|however|instead|although|yet)\b", re.IGNORECASE)
 _IMPERATIVE_OPENING = re.compile(
     r"^(?:stop|start|try|build|learn|use|remember|imagine|consider|never|don't|do not)\b",
@@ -108,6 +116,8 @@ def describe_attention_features(
                 "storytelling_cues",
                 "opinion_marker",
                 "opening_structure",
+                "informative_framing_cues",
+                "curiosity_gap_cues",
             )
         )
     else:
@@ -117,6 +127,14 @@ def describe_attention_features(
         )
         story_count = len(_STORY_CUE.findall(text))
         signals.append(AttentionSignal("storytelling_cues", "lexical_heuristic", str(story_count)))
+        informative_count = len(_INFORMATIVE_CUE.findall(text))
+        signals.append(
+            AttentionSignal("informative_framing_cues", "lexical_heuristic", str(informative_count))
+        )
+        curiosity_count = len(_CURIOSITY_GAP_CUE.findall(text))
+        signals.append(
+            AttentionSignal("curiosity_gap_cues", "lexical_heuristic", str(curiosity_count))
+        )
         opinion_present = _OPINION_MARKER.search(text) is not None
         if opinion_present:
             signals.append(AttentionSignal("opinion_marker", "lexical_heuristic", "present"))

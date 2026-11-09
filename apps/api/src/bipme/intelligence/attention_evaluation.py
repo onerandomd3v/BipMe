@@ -159,19 +159,19 @@ def _feature_values(descriptor: AttentionDescriptor) -> tuple[tuple[str, str, st
         signal.name: (signal.origin, signal.value) for signal in descriptor.signals
     }
     known = {name for name in signals if name not in descriptor.unknowns}
-    known.update(
-        name
-        for name in (
-            "question_marker",
-            "reply_invitation",
-            "opinion_marker",
-        )
-        if name not in descriptor.unknowns
-    )
+    if "text_intent_signals" not in descriptor.unknowns:
+        known.update(("question_marker", "reply_invitation"))
+    if "opinion_marker" not in descriptor.unknowns:
+        known.add("opinion_marker")
     values: list[tuple[str, str, str]] = []
     for name in sorted(known):
         origin, value = signals.get(name, ("lexical_heuristic", "absent"))
-        if name in ("specificity_markers", "storytelling_cues"):
+        if name in (
+            "specificity_markers",
+            "storytelling_cues",
+            "informative_framing_cues",
+            "curiosity_gap_cues",
+        ):
             value = "0" if value == "0" else "1+"
         values.append((name, origin, value))
     return tuple(values)
@@ -372,7 +372,6 @@ def _walk_forward(
             for post in posts[:target_index]
             if post.published_at < target.published_at
             and post.outcome_observed_at <= target.published_at
-            and spec.goals.recorded_at <= post.published_at
         ]
         not_yet_observed = sum(
             post.published_at < target.published_at

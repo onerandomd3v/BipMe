@@ -105,7 +105,10 @@ def test_text_heuristics_are_versioned_and_explicitly_lexical() -> None:
 
 def test_question_story_opinion_specificity_and_hook_are_visible_separately() -> None:
     published = START
-    text = "But this changed things.\nWhen I built release 12, I learned something. I think this should change. Why?"
+    text = (
+        "But this changed things.\nWhen I built release 12, I learned something. "
+        "I think this should change. Why? Guide: how to do it. Nobody talks about this secret."
+    )
     profile = extract_post_profile(
         PostProfileInput(
             text=text,
@@ -121,6 +124,8 @@ def test_question_story_opinion_specificity_and_hook_are_visible_separately() ->
     signals = {signal.name: signal.value for signal in descriptor.signals}
     assert signals["specificity_markers"] == "1"
     assert int(signals["storytelling_cues"]) > 0
+    assert int(signals["informative_framing_cues"]) > 0
+    assert int(signals["curiosity_gap_cues"]) > 0
     assert signals["opinion_marker"] == "present"
     assert signals["opening_structure"] == "contrast"
     assert ("question_marker", "lexical_heuristic", "present") in {
@@ -183,6 +188,27 @@ def test_walk_forward_does_not_use_outcomes_unobserved_at_target_time() -> None:
         >= 1
     )
     assert all(post.profile.features_as_of <= post.published_at for post in posts)
+
+
+def test_walk_forward_can_use_pre_onboarding_history_for_a_post_goal_target() -> None:
+    posts = make_posts()
+    late_goal = goals(recorded_at=posts[-1].published_at)
+    result = evaluate_attention_features(
+        posts,
+        spec(goals=late_goal),
+    )
+    assert result.walk_forward.targets_without_enough_prior_history == 0
+    assert (
+        sum(
+            (
+                result.walk_forward.strong_targets,
+                result.walk_forward.typical_targets,
+                result.walk_forward.weak_targets,
+            )
+        )
+        == 1
+    )
+    assert dict(result.walk_forward.leakage_exclusions)["goals_after_target_publication"] == 23
 
 
 def test_missing_data_duplicates_outliers_and_selection_bias_are_visible() -> None:
