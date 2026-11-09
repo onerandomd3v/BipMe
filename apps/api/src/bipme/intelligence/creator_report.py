@@ -132,7 +132,8 @@ def _personal_metric_cohorts(
         definitions = {
             record.metric_definition
             for record in observations
-            if record.metric == baseline.metric and record.window == baseline.window
+            if record.metric == baseline.metric
+            and record.window == baseline.window
             and record.creator_key == bundle.creator_key
         }
         if len(definitions) != 1:
@@ -173,9 +174,9 @@ def _personal_metric_cohorts(
         low, high = stats.p25, stats.p75
         strong = tuple(sorted(id for id, record in eligible.items() if record.value > high))
         weak = tuple(sorted(id for id, record in eligible.items() if record.value < low))
-        typical = tuple(sorted(
-            id for id, record in eligible.items() if low <= record.value <= high
-        ))
+        typical = tuple(
+            sorted(id for id, record in eligible.items() if low <= record.value <= high)
+        )
         limits = [
             "Groups describe historical metric distributions, not content causes or expected lift.",
             "Quartile boundaries use the existing creator baseline, not niche data.",
@@ -237,11 +238,9 @@ def assemble_creator_report(
         limits: tuple[str, ...] = ("No independently verified statistical support.",)
         if item.metric is not None and item.metric_window is not None:
             baseline = baseline_by_dimension.get((item.metric, item.metric_window))
-            definition_verified = (
-                item.metric_definition is not None
-                and known_definitions.get((item.metric, item.metric_window))
-                == {item.metric_definition}
-            )
+            definition_verified = item.metric_definition is not None and known_definitions.get(
+                (item.metric, item.metric_window)
+            ) == {item.metric_definition}
             if baseline is not None and definition_verified:
                 if item.post_ids and set(item.post_ids).issubset(set(baseline.supporting_post_ids)):
                     strength = baseline.evidence_strength
