@@ -7,10 +7,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from bipme.intelligence.baselines import BaselineRequest, OutcomeObservation, build_creator_baseline
-from bipme.intelligence.creator_goals import CreatorGoalsSnapshot
 from bipme.intelligence.content_patterns import PersonalPostProfile
-from bipme.intelligence.post_profiles import PostProfileInput, extract_post_profile
+from bipme.intelligence.creator_goals import CreatorGoalsSnapshot
 from bipme.intelligence.creator_report import assemble_creator_report
+from bipme.intelligence.post_profiles import PostProfileInput, extract_post_profile
 from bipme.intelligence.report_evidence import (
     CreatorReportEvidenceBundle,
     ReportEvidence,
