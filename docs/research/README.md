@@ -4,6 +4,8 @@ These source specifications were produced in September 2026. They provide **deta
 
 Current archive format, data-rights and metric-coverage findings are recorded in [X creator archive feasibility — COD-369](X_ARCHIVE_FEASIBILITY.md). The official archive help page does not specify a versioned post schema; no current creator export has been inspected.
 
+Current one-account V1 integration readiness and outstanding acceptance dependencies are recorded in [COD-368 V1 acceptance readiness](COD-368_V1_ACCEPTANCE_READINESS.md). This report distinguishes synthetic contract coverage from real-account and end-to-end verification.
+
 1. [X Discovery & Distribution MVP](X_DISCOVERY_DISTRIBUTION_MVP.md) — original thesis and X-first scope.
 2. [X Distribution Intelligence Research Findings](X_DISTRIBUTION_INTELLIGENCE_RESEARCH_FINDINGS.md) — platform architecture, exposed data, limits and API/policy research.
 3. [X Distribution Outlook V1 Design](X_DISTRIBUTION_OUTLOOK_V1_DESIGN.md) — Post Profiles, comparable retrieval, baselines, prediction and evaluation.
