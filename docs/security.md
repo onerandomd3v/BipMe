@@ -1,6 +1,6 @@
 # BipMe — Security, privacy and API cost controls
 
-**Current state:** This is a **requirements and implementation checklist**, not a claim of completed OAuth security controls. Real X connection and cost-management logic have not been implemented.
+**Current state (9 Nov 2026):** COD-346 implements private server-side sessions, mockable PKCE, read-only scope validation, encrypted token persistence, refresh and disconnect. X OAuth remains disabled by default; no live X authorization or API calls have been made. Account-specific X access, numeric user ID and processing-rights decisions remain external gates.
 
 ## Threats worth handling immediately
 
@@ -10,7 +10,7 @@
 - X data being retained or sent to AI providers beyond allowed processing purposes.
 - Logs, fixtures, screenshots or CI artifacts exposing tokens or creator-private metrics.
 
-## Account and session design (planned)
+## Account and session design
 
 - Official X OAuth **Authorization Code Flow with PKCE**, using a random one-time verifier and state, validated server-side.
 - Request least-privilege scopes: `tweet.read`, `users.read`, and `offline.access` only when needed to refresh. Do not request write/DM scopes for this initial phase.
@@ -18,6 +18,14 @@
 - Maintain an application session **server side** and send an HttpOnly, Secure (HTTPS), appropriately SameSite-scoped session cookie. Protect mutating routes against CSRF.
 - Encrypt X access and refresh tokens at rest, avoid printing tokens in logs/traces, rotate keys where feasible and handle revocation/disconnect.
 - Store all secrets outside Git; `.env.example` contains placeholders or local-only database examples. Never check in a real `.env`.
+
+### COD-346 implementation boundary
+
+- `POST /api/auth/private/session` verifies a server-provisioned high-entropy `BIPME_PRIVATE_LOGIN_SECRET` for the single configured `BIPME_CREATOR_ID`. This private BipMe identity path supports archive-only use without X OAuth and does not create public signup or creator records. The browser receives only a random session cookie; the database stores its SHA-256 digest, creator, method, expiry and revocation time.
+- Session cookies are HttpOnly and SameSite=Lax, use `__Host-` naming with Secure/Path=/ in production, and fail closed if production cookie security or creator configuration is absent. Set `BIPME_AUTH_COOKIE_SECURE=false` only for local loopback HTTP development. Session lifetime is bounded by configuration. `GET /api/auth/session` returns a session-derived CSRF token, and unsafe operations require it in `X-CSRF-Token`; logout revokes the database session and clears its cookie.
+- X authorization is opt-in and requires `BIPME_X_OAUTH_ENABLED=true`, a confidential client ID/secret, exact callback URI, app origin, immutable numeric account allowlist, and token-encryption key ring. `.env.example` keeps OAuth disabled. The authorization start stores hashed state/browser nonce and encrypted PKCE verifier in `oauth_authorization_transactions`; state is browser-bound, expires after ten minutes, and is marked consumed before the callback processes consent or exchanges a code. The callback validates the exact callback URI, requires the read-only scope set, resolves the account through the provider and rejects an ID outside the immutable allowlist.
+- X access/refresh tokens are encrypted using the `cryptography` Fernet implementation, tagged with the existing `BIPME-ENC` marker and a server-only key version. `BIPME_TOKEN_ENCRYPTION_KEYS` is a JSON map of key version to Fernet key; retain old keys while encrypted rows remain, set the new active version, and call the internal rewrap operation before retiring old keys. Refresh rotates encrypted values; disconnect attempts provider revocation and always clears local ciphertext.
+- All X network operations sit behind the replaceable `XOAuthProvider` and are mocked in CI. Do not enable OAuth or use real X credentials until COD-344 verifies account-specific configuration, numeric user ID, permissions and applicable rights. The code implements the contract; it does not establish those external gates.
 
 ## Creator-supplied archive threat model and rights gate (planned, COD-369/370)
 
@@ -67,7 +75,7 @@ The pure COD-380 synthesis service is disabled by default and is not yet connect
 - Use official X APIs only; no unsupported scraping to bypass limits.
 - Normalize external payloads into minimal canonical data structures; do not retain full raw responses by default.
 - Keep historical content, creator metrics and tokens separated according to their sensitivity.
-- The COD-345 connection table exposes only opaque encrypted-token byte columns and a key-version marker. ORM and database checks require a `BIPME-ENC` v1 envelope marker, so ordinary plaintext values are rejected; OAuth/integration code must still encrypt tokens before persistence, never log them, and clear encrypted token bytes on revocation. The marker is a format guard, not encryption. Encryption, key management and OAuth are not implemented by the schema migration itself.
+- The COD-345 connection table exposes only opaque encrypted-token byte columns and a key-version marker. ORM and database checks require a `BIPME-ENC` v1 envelope marker, so ordinary plaintext values are rejected. COD-346 encrypts before persistence, keeps keys server-side, avoids token responses/logs and clears encrypted token bytes on disconnect; the marker itself remains a format guard, not encryption.
 - Canonical posts do not store copied X response payloads or raw post text. Post Profiles are descriptive derived fields; embeddings are versioned derivatives and must be removed or regenerated when their source post is deleted or changed. API usage metadata must be allowlisted/sanitized and must not contain tokens, authorization headers or unnecessary content.
 - Use a locally run pretrained embedding model as the initial approach; verify model license and developer data-processing rights before adding third-party inference.
 - Do not train or fine-tune an ML model on X-derived data without confirming this is permitted by applicable X terms.
@@ -77,7 +85,7 @@ The pure COD-380 synthesis service is disabled by default and is not yet connect
 ## COD-358 creator-analysis API boundary
 
 - The baseline, draft-assessment and assessment-read routes use a `creator/me` boundary and accept no creator ID from the client. Every persistence query scopes by the server-verified creator UUID, including assessment lookup and historical post/outcome retrieval.
-- COD-346's OAuth/session dependency is not yet implemented. Until it supplies a verified, active creator identity, the production dependency returns `503 authentication_not_configured`; it does not accept a cookie, header, query parameter or environment-selected creator as a temporary bypass. API tests inject synthetic identities through FastAPI dependency overrides only.
+- COD-346's session dependency accepts only a live, unexpired, unrevoked server-side session for the configured creator; it does not accept a client-supplied creator ID or an environment-selected identity as an authorization shortcut. Missing production configuration returns `503 authentication_not_configured`. OAuth remains optional for private archive-only sessions.
 - Analysis persists a versioned response snapshot and fingerprint but not the draft's raw text. The fingerprint is deterministic and binds canonicalized text plus descriptive/metric-selection inputs. The optional accepted hypothesis is creator-supplied at assessment creation; the database enforces snapshot immutability.
 - Embedding or database failures map to safe structured errors. Request bodies, stored content, access tokens and internal exception text are not returned in errors. Metric outcomes are read only after retrieval and never influence candidate selection/ranking.
 
@@ -102,6 +110,7 @@ Sources: [X timeline reference](https://docs.x.com/x-api/posts/timelines/introdu
 - Public [X pay-per-use pricing](https://docs.x.com/x-api/getting-started/pricing) reviewed 7 Nov 2026: standard Post reads **$0.005 per returned Post**, user reads **$0.010 per user**, and eligible **owned-account timeline reads $0.001 per returned resource** when the requested user ID matches the authenticated user *and that user owns the developer app*. Confirm BipMe's eligibility in the console, never assume it because the creator is authorized. Costs/credits can change.
 - **Proposed initial spending configuration (awaiting user approval and implementation):** app-level total experiment allowance **USD 5**, single import allowance **USD 1**, initial import **up to 25 posts**. These are conservative *engineering defaults to discuss*, not a guarantee of billing protection, an actual console spending limit or approval to purchase credits.
 - Before any billable request, confirm the console's **billing-cycle spending cap** is explicitly configured and **auto-recharge is OFF**; use the console's actual rates to configure a numeric per-operation maximum. Console spending limit and internal application limits are complementary; neither is currently verified.
+- The OAuth `/2/users/me` identity check is also treated as a billable X request. It is disabled unless an operator configures a verified per-request estimate and UTC daily ceiling. BipMe reserves that estimate in `api_usage_ledger` before the network call; exhausted or unavailable accounting fails closed. The record remains pending until reconciled with the account usage report.
 - Future X adapter (`COD-347`) must reserve budget *before* issuing calls, count **worst-case billed resources** including other requested user objects, and reconcile actual usage with X's console/usage endpoint. Unknown costs, exhausted balance or uncertain deduplication → fail closed. Persist operation, endpoint, requested cap, returned resource count, billable estimate, observed timestamp and reconciliation status.
 - X documents same-day UTC resource deduplication as a **soft guarantee**. Do not rely on deduplication to prevent costs. Per-post monitoring must also obey limits and store actual observation times.
 - Estimate-only examples, **not charges incurred**: 25 post reads at standard price ≈ **$0.125**, or **$0.025** if the owned-read rate truly applies, excluding other resources and API requests. No resource was fetched to establish the exact cost for this account.

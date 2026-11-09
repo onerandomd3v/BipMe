@@ -19,6 +19,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     UniqueConstraint,
@@ -139,6 +140,81 @@ class XAccountConnection(TimestampMixin, Base):
     access_token_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     token_rotated_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class CreatorSession(Base):
+    """Opaque, revocable server-side session for the one configured BipMe creator."""
+
+    __tablename__ = "creator_sessions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["x_identity_id", "creator_id"],
+            ["creator_platform_identities.id", "creator_platform_identities.creator_id"],
+            ondelete="RESTRICT",
+            name="fk_creator_session_x_identity_owner",
+        ),
+        UniqueConstraint("token_hash", name="creator_session_token_hash_unique"),
+        CheckConstraint("length(token_hash) = 64", name="session_token_hash_length"),
+        CheckConstraint(
+            "auth_method IN ('private_secret', 'x_oauth')", name="session_auth_method_valid"
+        ),
+        CheckConstraint("expires_at > created_at", name="session_expiry_after_creation"),
+        CheckConstraint(
+            "(auth_method = 'private_secret' AND x_identity_id IS NULL) OR "
+            "(auth_method = 'x_oauth' AND x_identity_id IS NOT NULL)",
+            name="session_auth_method_identity_consistent",
+        ),
+        Index("ix_creator_sessions_creator_expiry", "creator_id", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("creators.id", ondelete="RESTRICT"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    auth_method: Mapped[str] = mapped_column(String(24), nullable=False)
+    x_identity_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class OAuthAuthorizationTransaction(Base):
+    """Short-lived single-use PKCE transaction; secrets are stored encrypted or hashed."""
+
+    __tablename__ = "oauth_authorization_transactions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["creator_id"], ["creators.id"], ondelete="CASCADE", name="fk_oauth_tx_creator"
+        ),
+        UniqueConstraint("state_hash", name="oauth_transaction_state_hash_unique"),
+        CheckConstraint("length(state_hash) = 64", name="oauth_state_hash_length"),
+        CheckConstraint("length(browser_nonce_hash) = 64", name="oauth_browser_nonce_hash_length"),
+        CheckConstraint(
+            "length(trim(encryption_key_version)) > 0", name="oauth_key_version_not_blank"
+        ),
+        CheckConstraint("expires_at > created_at", name="oauth_expiry_after_creation"),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at", name="oauth_consumed_after_creation"
+        ),
+        CheckConstraint(
+            "substring(encrypted_verifier from 1 for 10) = decode('4249504d452d454e4301', 'hex')",
+            name="oauth_verifier_envelope_marker",
+        ),
+        Index("ix_oauth_transactions_expiry", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    state_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    browser_nonce_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_verifier: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    encryption_key_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    return_path: Mapped[str] = mapped_column(String(2048), nullable=False)
+    redirect_uri: Mapped[str] = mapped_column(String(2048), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 
 
 class DraftAssessment(Base):

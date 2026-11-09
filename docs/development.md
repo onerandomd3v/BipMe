@@ -1,6 +1,6 @@
 # BipMe — Development guide
 
-**Status:** X authentication, live data ingestion and background jobs remain planned. Deterministic intelligence services, canonical persistence, and private baseline/draft-analysis API contracts are implemented; the analysis routes still fail closed until COD-346 sessions exist.
+**Status:** Deterministic intelligence, canonical persistence, COD-358 analysis routes and COD-346 private session/auth contracts are implemented. Private sessions and the current creator endpoints remain fail-closed until the configured creator, database and private login secret are provisioned. X OAuth is opt-in and remains disabled until COD-344's account-specific access and rights gates are verified.
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ The `--wait` flag waits for the configured PostgreSQL health check to pass befor
 
 The local service exposes PostgreSQL on `127.0.0.1:5432` with **development-only** credentials in `compose.yaml`. Never reuse them outside local development. The volume persists between restarts.
 
-The scaffold's Alembic configuration reads `BIPME_DATABASE_URL` **from the process environment**. Merely copying `.env.example` does **not** currently auto-load it.
+The scaffold's Alembic configuration reads `BIPME_DATABASE_URL` **from the process environment**. Merely copying `.env.example` does **not** currently auto-load it. Authentication secrets and creator IDs are also read from the process environment; keep real values out of Git.
 
 Linux/macOS Bash:
 
@@ -45,7 +45,9 @@ uv run alembic upgrade head
 uv run uvicorn bipme.api.app:app --reload
 ```
 
-Check `http://127.0.0.1:8000/api/health`. Migration `0001_enable_vector` creates the pgvector extension; `0002_canonical_persistence` creates the V1 canonical creator/post, profile, embedding, outcome, connection, usage and immutable assessment records. COD-358 exposes `GET /api/v1/creators/me/baseline`, `POST /api/v1/creators/me/draft-assessments`, and `GET /api/v1/creators/me/draft-assessments/{assessment_id}`. They remain fail-closed with `authentication_not_configured` until COD-346's server-verified session dependency is implemented.
+Check `http://127.0.0.1:8000/api/health`. Migration `0001_enable_vector` creates the pgvector extension; `0002_canonical_persistence` creates canonical creator/post records; `0003_private_auth_sessions` adds revocable sessions and short-lived OAuth transactions. COD-346 provides `POST /api/auth/private/session`, `GET /api/auth/session`, `POST /api/auth/logout`, `GET /api/auth/x/authorize`, `GET /api/auth/x/callback`, and authenticated X status/refresh/disconnect routes. Protected endpoints require a configured existing `BIPME_CREATOR_ID`; private sign-in additionally requires a high-entropy `BIPME_PRIVATE_LOGIN_SECRET` (at least 32 bytes). For local OAuth callback cookies, use the same loopback host in `BIPME_APP_ORIGIN` and the registered callback URI. X OAuth stays disabled unless explicitly enabled after COD-344's access and rights checks.
+
+X OAuth also requires operator-supplied `BIPME_X_IDENTITY_READ_ESTIMATED_COST_USD` and `BIPME_X_DAILY_COST_LIMIT_USD` values from verified current pricing. The callback reserves the configured worst-case identity lookup cost in `api_usage_ledger` before calling X and fails closed at the UTC daily ceiling. Reservations stay pending until reconciled against X account usage. Keep OAuth disabled until COD-344's account-specific access/rights gates and current pricing are confirmed.
 
 The PostgreSQL-backed API CI job starts `pgvector/pgvector:pg17` and sets `BIPME_TEST_DATABASE_URL`; migration integration tests create an isolated schema, apply the full chain, downgrade to `0001_enable_vector`, verify the extension remains, then upgrade again. To run those tests locally, start the Compose database and run:
 

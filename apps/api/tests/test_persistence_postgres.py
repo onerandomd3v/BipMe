@@ -76,7 +76,7 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
         command.upgrade(config, "head")
         connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0002_canonical_persistence"
+            "0003_private_auth_sessions"
         )
         command.downgrade(config, "0001_enable_vector")
         connection.commit()
@@ -91,6 +91,8 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
             "creators",
             "creator_platform_identities",
             "x_account_connections",
+            "creator_sessions",
+            "oauth_authorization_transactions",
             "draft_assessments",
             "canonical_posts",
             "post_profiles",
@@ -227,7 +229,7 @@ def test_migration_survives_clean_upgrade_downgrade_and_repeat_upgrade(
         connection.execute(text(f'SET search_path TO "{schema}", public'))
         connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0002_canonical_persistence"
+            "0003_private_auth_sessions"
         )
 
 
