@@ -10,9 +10,11 @@ import httpx
 import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import CheckConstraint, create_engine, event, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import bipme.integrations.x_read as x_read_module
 from bipme.auth.crypto import TokenCipher
 from bipme.integrations.x_read import (
     HttpXReadProvider,
@@ -37,8 +39,9 @@ FERNET_KEY = Fernet.generate_key().decode("ascii")
 
 
 class FakeReadProvider:
-    def __init__(self, pages: list[XPage | Exception]) -> None:
+    def __init__(self, pages: list[XPage | Exception], *, max_request_attempts: int = 3) -> None:
         self.pages = pages
+        self.max_request_attempts = max_request_attempts
         self.calls: list[tuple[str, str, int, str | None]] = []
 
     def creator_posts_page(self, *, access_token, user_id, max_results, pagination_token):
@@ -189,6 +192,80 @@ def test_owner_history_paginates_normalizes_metrics_and_records_each_reservation
     assert reconciled.actual_cost == Decimal("0.02000000")
     assert reconciled.reconciliation_state == "reconciled"
     assert all("synthetic post" not in str(row.request_metadata) for row in rows)
+
+
+def test_reservation_uses_provider_retry_bound_not_reader_defaults(runtime):
+    factory, cipher = runtime
+    provider = FakeReadProvider([_page([_post("p1")])], max_request_attempts=4)
+    settings = XReadSettings(
+        enabled=True,
+        allowed_user_id="987654321",
+        account_entitlement_verified=True,
+        data_rights_verified=True,
+        max_retries=0,
+        max_results=10,
+        max_pages=3,
+    )
+    with factory() as db:
+        result = _reader(provider, cipher, settings=settings).read(
+            db, creator_id=CREATOR_ID, import_id="retry-bound", max_posts=10, now=NOW
+        )
+        row = db.scalar(select(APIUsageLedger))
+    assert result.status == "complete"
+    assert row is not None
+    assert row.estimated_cost == Decimal("0.08400000")
+
+
+def test_locked_connection_reload_uses_rotated_credentials(runtime, monkeypatch):
+    factory, cipher = runtime
+    provider = FakeReadProvider([_page([_post("p1")])])
+    reserve = x_read_module.reserve_x_usage
+
+    def reserve_then_rotate(db, **kwargs):
+        result = reserve(db, **kwargs)
+        with factory() as other:
+            connection = other.scalar(select(XAccountConnection))
+            assert connection is not None
+            encrypted = cipher.encrypt("rotated-access-token")
+            connection.encrypted_access_token = encrypted.envelope
+            connection.key_version = encrypted.key_version
+            other.commit()
+        return result
+
+    monkeypatch.setattr(x_read_module, "reserve_x_usage", reserve_then_rotate)
+    with factory() as db:
+        result = _reader(provider, cipher).read(
+            db, creator_id=CREATOR_ID, import_id="refresh-race", max_posts=10, now=NOW
+        )
+    assert result.status == "complete"
+    assert provider.calls[0][0] == "rotated-access-token"
+
+
+def test_later_connection_query_failure_preserves_completed_pages(runtime, monkeypatch):
+    factory, cipher = runtime
+    provider = FakeReadProvider([_page([_post("p1")], "next"), _page([_post("unused")])])
+    with factory() as db:
+        original_scalar = db.scalar
+        connection_lookups = 0
+
+        def fail_second_connection_lookup(statement, *args, **kwargs):
+            nonlocal connection_lookups
+            descriptions = getattr(statement, "column_descriptions", [])
+            if descriptions and descriptions[0].get("entity") is XAccountConnection:
+                connection_lookups += 1
+                if connection_lookups == 3:
+                    raise SQLAlchemyError("synthetic database outage")
+            return original_scalar(statement, *args, **kwargs)
+
+        monkeypatch.setattr(db, "scalar", fail_second_connection_lookup)
+        result = _reader(provider, cipher).read(
+            db, creator_id=CREATOR_ID, import_id="db-outage", max_posts=10, now=NOW
+        )
+    assert result.status == "partial"
+    assert result.result_count == 1
+    assert result.posts[0].external_post_id == "p1"
+    assert result.unavailable_reason == "usage_controls_unavailable"
+    assert len(provider.calls) == 1
 
 
 def test_cost_exhaustion_and_stale_or_unknown_pricing_fail_before_provider(runtime):

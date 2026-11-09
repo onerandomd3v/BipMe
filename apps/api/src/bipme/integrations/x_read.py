@@ -176,6 +176,9 @@ class XPage:
 class XReadProvider(Protocol):
     """Mockable owner timeline provider; deliberately exposes no arbitrary URL method."""
 
+    @property
+    def max_request_attempts(self) -> int: ...
+
     def creator_posts_page(
         self,
         *,
@@ -219,6 +222,11 @@ class HttpXReadProvider:
         )
         self._sleep = sleeper
         self._slots = threading.BoundedSemaphore(settings.max_concurrent_requests)
+
+    @property
+    def max_request_attempts(self) -> int:
+        """Worst-case billable calls the transport may make for one page."""
+        return self._settings.max_retries + 1
 
     def creator_posts_page(
         self,
@@ -453,9 +461,16 @@ class XCreatorHistoryReader:
             try:
                 # Reserve the whole bounded retry envelope before the provider can issue
                 # the first request. Retries may each be billable even when the page is not.
-                estimate = self._pricing.estimate(requested, now=request_time) * Decimal(
-                    self._settings.max_retries + 1
-                )
+                attempts = self._provider.max_request_attempts
+                if (
+                    not isinstance(attempts, int)
+                    or isinstance(attempts, bool)
+                    or not 1 <= attempts <= 4
+                ):
+                    return self._finish(
+                        collected, pages_read, pagination_token, "usage_controls_unavailable"
+                    )
+                estimate = self._pricing.estimate(requested, now=request_time) * Decimal(attempts)
                 key = f"x-history:{import_hash}:{page_number}"
                 reservation = reserve_x_usage(
                     db,
@@ -482,16 +497,28 @@ class XCreatorHistoryReader:
                 return self._finish(collected, pages_read, pagination_token, exc.code)
             if reservation.already_reserved:
                 return self._finish(collected, pages_read, pagination_token, "duplicate_job")
-            locked_connection = db.scalar(
-                select(XAccountConnection)
-                .where(
-                    XAccountConnection.id == connection_id,
-                    XAccountConnection.creator_id == creator_id,
-                    XAccountConnection.platform == "x",
-                    XAccountConnection.state == "connected",
+            try:
+                locked_connection = db.scalar(
+                    select(XAccountConnection)
+                    .execution_options(populate_existing=True)
+                    .where(
+                        XAccountConnection.id == connection_id,
+                        XAccountConnection.creator_id == creator_id,
+                        XAccountConnection.platform == "x",
+                        XAccountConnection.state == "connected",
+                    )
+                    .with_for_update()
                 )
-                .with_for_update()
-            )
+                locked_identity = (
+                    None
+                    if locked_connection is None
+                    else db.get(CreatorPlatformIdentity, locked_connection.creator_identity_id)
+                )
+            except SQLAlchemyError:
+                db.rollback()
+                return self._finish(
+                    collected, pages_read, pagination_token, "usage_controls_unavailable"
+                )
             if (
                 locked_connection is None
                 or locked_connection.access_token_expires_at is not None
@@ -509,7 +536,6 @@ class XCreatorHistoryReader:
                 return self._finish(
                     collected, pages_read, pagination_token, "connection_unavailable"
                 )
-            locked_identity = db.get(CreatorPlatformIdentity, locked_connection.creator_identity_id)
             if (
                 locked_identity is None
                 or locked_identity.creator_id != creator_id
