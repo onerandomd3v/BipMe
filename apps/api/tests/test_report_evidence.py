@@ -2,7 +2,7 @@
 
 import json
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -13,7 +13,7 @@ from bipme.intelligence.report_evidence import (
     ReportSource,
 )
 
-NOW = datetime(2026, 11, 9, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 9, tzinfo=UTC)
 
 
 def goals() -> CreatorGoalsSnapshot:
