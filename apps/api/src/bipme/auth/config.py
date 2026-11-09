@@ -6,6 +6,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -28,6 +29,19 @@ def _configured_creator_id(value: str | None) -> UUID | None:
         return UUID(value)
     except (ValueError, AttributeError):
         return None
+
+
+def _configured_positive_cost(value: str | None) -> Decimal | None:
+    if not value:
+        return None
+    try:
+        cost = Decimal(value)
+    except InvalidOperation:
+        return None
+    exponent = cost.as_tuple().exponent
+    if not cost.is_finite() or cost <= 0 or not isinstance(exponent, int) or exponent < -8:
+        return None
+    return cost
 
 
 def _safe_origin(value: str | None, *, production: bool) -> str | None:
@@ -94,6 +108,8 @@ class AuthSettings:
     x_client_secret: str | None
     x_redirect_uri: str | None
     x_allowed_user_id: str | None
+    x_identity_read_estimated_cost: Decimal | None
+    x_daily_cost_limit: Decimal | None
     token_encryption_keys: Mapping[str, str]
     active_token_key_version: str | None
 
@@ -150,6 +166,10 @@ class AuthSettings:
         client_id = os.getenv("BIPME_X_CLIENT_ID") or None
         client_secret = os.getenv("BIPME_X_CLIENT_SECRET") or None
         active_key_version = os.getenv("BIPME_ACTIVE_TOKEN_KEY_VERSION") or None
+        identity_read_cost = _configured_positive_cost(
+            os.getenv("BIPME_X_IDENTITY_READ_ESTIMATED_COST_USD")
+        )
+        daily_cost_limit = _configured_positive_cost(os.getenv("BIPME_X_DAILY_COST_LIMIT_USD"))
 
         oauth_ready = bool(
             requested_oauth
@@ -160,6 +180,9 @@ class AuthSettings:
             and allowed_id
             and active_key_version
             and active_key_version in keys
+            and identity_read_cost
+            and daily_cost_limit
+            and identity_read_cost <= daily_cost_limit
             and _configured_creator_id(os.getenv("BIPME_CREATOR_ID"))
             and (not production or cookie_secure)
         )
@@ -184,6 +207,8 @@ class AuthSettings:
             x_client_secret=client_secret,
             x_redirect_uri=redirect_uri,
             x_allowed_user_id=allowed_id,
+            x_identity_read_estimated_cost=identity_read_cost,
+            x_daily_cost_limit=daily_cost_limit,
             token_encryption_keys=keys,
             active_token_key_version=active_key_version,
         )

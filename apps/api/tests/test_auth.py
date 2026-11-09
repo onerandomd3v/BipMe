@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from urllib.parse import parse_qs, urlencode, urlsplit
 from uuid import UUID
 
@@ -30,6 +31,7 @@ from bipme.integrations.x_oauth import (
 )
 from bipme.persistence.base import Base, EncryptedTokenEnvelope
 from bipme.persistence.models import (
+    APIUsageLedger,
     Creator,
     CreatorPlatformIdentity,
     CreatorSession,
@@ -59,6 +61,7 @@ class FakeXOAuthProvider:
             scopes=READ_ONLY_X_SCOPES,
         )
         self.exchange_calls: list[tuple[str, str, str]] = []
+        self.identity_calls = 0
         self.refresh_calls: list[str] = []
         self.revocations: list[tuple[str, str]] = []
         self.refresh_error: XOAuthProviderError | None = None
@@ -81,6 +84,7 @@ class FakeXOAuthProvider:
         return self.tokens
 
     def current_user(self, _access_token: str) -> XUser:
+        self.identity_calls += 1
         return XUser(self.user_id, self.username)
 
     def refresh(self, refresh_token: str) -> XOAuthTokens:
@@ -106,6 +110,8 @@ def auth_runtime(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("BIPME_X_CLIENT_SECRET", "synthetic-client-secret")
     monkeypatch.setenv("BIPME_X_ALLOWED_USER_ID", "987654321")
     monkeypatch.setenv("BIPME_X_REDIRECT_URI", "http://127.0.0.1:8000/api/auth/x/callback")
+    monkeypatch.setenv("BIPME_X_IDENTITY_READ_ESTIMATED_COST_USD", "0.01")
+    monkeypatch.setenv("BIPME_X_DAILY_COST_LIMIT_USD", "0.01")
     monkeypatch.setenv("BIPME_TOKEN_ENCRYPTION_KEYS", json.dumps({"v1": FERNET_KEY}))
     monkeypatch.setenv("BIPME_ACTIVE_TOKEN_KEY_VERSION", "v1")
 
@@ -130,6 +136,7 @@ def auth_runtime(monkeypatch: pytest.MonkeyPatch):
         dbapi_connection.execute("PRAGMA foreign_keys=ON")
 
     relevant_tables = [
+        APIUsageLedger.__table__,
         Creator.__table__,
         CreatorPlatformIdentity.__table__,
         XAccountConnection.__table__,
@@ -214,6 +221,7 @@ def test_successful_pkce_allowlisted_x_login_sets_server_session(auth_runtime) -
         connection = db.scalar(select(XAccountConnection))
         session_record = db.scalar(select(CreatorSession))
         transaction = db.scalar(select(OAuthAuthorizationTransaction))
+        usage = db.scalar(select(APIUsageLedger))
         assert connection is not None
         assert connection.state == "connected"
         assert connection.encrypted_access_token is not None
@@ -226,6 +234,11 @@ def test_successful_pkce_allowlisted_x_login_sets_server_session(auth_runtime) -
         assert session_record.auth_method == "x_oauth"
         assert session_record.token_hash not in response.headers["set-cookie"]
         assert transaction is not None and transaction.consumed_at is not None
+        assert usage is not None
+        assert usage.operation == "oauth_identity_lookup"
+        assert usage.usage_units == 1
+        assert usage.estimated_cost == Decimal("0.01")
+        assert usage.reconciliation_state == "pending"
 
     session_response = client.get("/api/auth/session")
     assert session_response.status_code == 200
@@ -284,6 +297,37 @@ def test_wrong_account_is_rejected_and_received_tokens_are_revoked(auth_runtime)
         assert db.scalar(select(CreatorPlatformIdentity)) is None
         assert db.scalar(select(XAccountConnection)) is None
         assert db.scalar(select(CreatorSession)) is None
+
+
+def test_identity_read_is_blocked_when_daily_cost_reservation_would_exceed_limit(
+    auth_runtime,
+) -> None:
+    client, factory, provider, _cipher, _engine = auth_runtime
+    with factory() as db:
+        db.add(
+            APIUsageLedger(
+                creator_id=CREATOR_ID,
+                provider="x",
+                operation="previous_reserved_read",
+                idempotency_key="previous-x-read",
+                request_metadata={"endpoint": "/2/users/me"},
+                requested_at=datetime.now(UTC),
+                estimated_cost=Decimal("0.01"),
+                currency="USD",
+                reconciliation_state="pending",
+            )
+        )
+        db.commit()
+
+    query = start_authorization(client)
+    response = complete_authorization(client, query)
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "x_daily_cost_limit_reached"
+    assert provider.identity_calls == 0
+    assert provider.revocations == [
+        ("synthetic-access-token", "access_token"),
+        ("synthetic-refresh-token", "refresh_token"),
+    ]
 
 
 def test_denied_consent_consumes_state_without_exchanging_code(auth_runtime) -> None:

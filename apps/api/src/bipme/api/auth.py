@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Annotated
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID, uuid4
@@ -14,7 +15,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,7 @@ from bipme.integrations.x_oauth import (
     XOAuthTokens,
 )
 from bipme.persistence.models import (
+    APIUsageLedger,
     Creator,
     CreatorPlatformIdentity,
     CreatorSession,
@@ -169,6 +171,70 @@ def _revoke_best_effort(provider: XOAuthProvider, token: str | None, hint: str) 
         provider.revoke(token, token_type_hint=hint)
     except XOAuthProviderError:
         pass
+
+
+def _reserve_x_identity_read(
+    db: Session, *, creator_id: UUID, settings: AuthSettings, now: datetime
+) -> UUID:
+    """Reserve the configured worst-case identity-read cost before contacting X."""
+    estimate = settings.x_identity_read_estimated_cost
+    daily_limit = settings.x_daily_cost_limit
+    creator = db.scalar(select(Creator).where(Creator.id == creator_id).with_for_update())
+    if creator is None or estimate is None or daily_limit is None:
+        raise ApiError(503, "x_usage_controls_unavailable", "X usage controls are unavailable.")
+
+    day_start = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    reserved_today = db.scalar(
+        select(func.coalesce(func.sum(APIUsageLedger.estimated_cost), 0)).where(
+            APIUsageLedger.creator_id == creator_id,
+            APIUsageLedger.provider == "x",
+            APIUsageLedger.requested_at >= day_start,
+        )
+    )
+    if Decimal(reserved_today or 0) + estimate > daily_limit:
+        raise ApiError(
+            429, "x_daily_cost_limit_reached", "The configured X daily cost limit was reached."
+        )
+
+    reservation_id = uuid4()
+    db.add(
+        APIUsageLedger(
+            id=reservation_id,
+            creator_id=creator_id,
+            provider="x",
+            operation="oauth_identity_lookup",
+            idempotency_key=f"x-oauth-identity:{reservation_id}",
+            request_metadata={
+                "method": "GET",
+                "endpoint": "/2/users/me",
+                "budget_period": "utc_day",
+                "daily_cost_limit_usd": str(daily_limit),
+                "estimated_cost_usd": str(estimate),
+            },
+            requested_at=now,
+            estimated_cost=estimate,
+            currency="USD",
+            reconciliation_state="pending",
+        )
+    )
+    db.commit()
+    return reservation_id
+
+
+def _complete_x_identity_read(
+    db: Session, *, reservation_id: UUID, completed_at: datetime, succeeded: bool
+) -> None:
+    reservation = db.get(APIUsageLedger, reservation_id)
+    if reservation is None:
+        raise ApiError(503, "x_usage_controls_unavailable", "X usage accounting is unavailable.")
+    reservation.completed_at = completed_at
+    reservation.usage_units = 1
+    reservation.request_metadata = {
+        **reservation.request_metadata,
+        "response_received": succeeded,
+    }
+    # Estimated costs remain pending until reconciled against X's account usage report.
+    db.commit()
 
 
 @router.post(
@@ -467,6 +533,7 @@ def complete_x_authorization(
 ) -> Response:
     """Consume the callback state before any provider exchange, then allowlist X's user ID."""
     _creator_id_text, allowed_user_id, redirect_uri, app_origin = _require_oauth_settings(settings)
+    assert settings.creator_id is not None
     now = datetime.now(UTC)
     try:
         transaction = _consume_oauth_transaction(
@@ -502,7 +569,25 @@ def complete_x_authorization(
             raise ApiError(
                 403, "x_scope_not_allowed", "X did not grant the required read-only access."
             )
-        user = provider.current_user(tokens.access_token)
+        usage_reservation_id = _reserve_x_identity_read(
+            db, creator_id=settings.creator_id, settings=settings, now=now
+        )
+        try:
+            user = provider.current_user(tokens.access_token)
+        except XOAuthProviderError:
+            _complete_x_identity_read(
+                db,
+                reservation_id=usage_reservation_id,
+                completed_at=datetime.now(UTC),
+                succeeded=False,
+            )
+            raise
+        _complete_x_identity_read(
+            db,
+            reservation_id=usage_reservation_id,
+            completed_at=datetime.now(UTC),
+            succeeded=True,
+        )
         if user.user_id != allowed_user_id:
             raise ApiError(403, "x_account_not_allowed", "This X account is not authorized.")
         if settings.creator_id is None or db.get(Creator, settings.creator_id) is None:
