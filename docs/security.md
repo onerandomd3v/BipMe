@@ -137,6 +137,13 @@ Search docs list OAuth 2.0 Bearer authorization; X describes app-only bearer aut
 
 For bounded example budgets and source-field details see [COD-375 research findings](research/X_DISCOVERY_DISTRIBUTION_MVP.md). The examples are estimates at the published rates, assume no daily deduplication discount, and are not charges or an approval to buy credits. The live console review on 9 Nov 2026 confirmed the displayed USD 5 cycle cap, USD 0 balance/free credits/current spend, and auto-recharge unavailable because no payment method is configured. Do not make requests while the balance is zero; do not buy credits or alter billing as part of this research.
 
+### COD-378 report processing boundary
+
+- The report API requires an authenticated private creator session and CSRF validation for mutations. Creator identity is derived only from that session; profile, permission, report, evidence and deletion queries are scoped to that ID.
+- A signed-in creator can grant or revoke local deterministic processing of their personal history. Consent alone does not satisfy platform rights: X-history processing also requires the server-only `BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED=true` gate and a valid `BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT` timestamp, both blocked by default until COD-344 confirms the specific use. The report route reads only canonical, owner-scoped X records already stored; it does not call X, perform scraping or invoke a model.
+- Niche discovery is always reported unavailable on this route until COD-375/COD-376 establishes and implements its separate rights, fields and budget boundary. Optional synthesis remains disabled; no X-derived content is transferred to GroqCloud.
+- Reports persist a minimized evidence/provenance snapshot rather than raw post text. Revoking local history-processing consent deletes derived report snapshots immediately. `DELETE /reports` and `DELETE /profile` erase report-owned data; canonical post/archive deletion remains the responsibility of the COD-370/COD-348 ingestion owner and must be coordinated with that path before production data use.
+
 ### Current console observations (authenticated read-only review, 9 Nov 2026)
 
 - The authenticated console identifies the **BipME by CodedDevs** app as active and linked to **Default Project (Pay Per Use)**. This is a current plan observation, not proof of a particular endpoint's access or an approved use case.
