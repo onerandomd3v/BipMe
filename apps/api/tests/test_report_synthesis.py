@@ -8,7 +8,11 @@ import httpx
 import pytest
 
 from bipme.intelligence.creator_goals import CreatorGoalsSnapshot
-from bipme.intelligence.creator_report import ReportExperiment, assemble_creator_report
+from bipme.intelligence.creator_report import (
+    ReportExperiment,
+    ReportFinding,
+    assemble_creator_report,
+)
 from bipme.intelligence.report_evidence import (
     CreatorReportEvidenceBundle,
     ReportEvidence,
@@ -237,6 +241,95 @@ def test_valid_personal_and_niche_claims_keep_their_original_pools() -> None:
     assert result.narrative.niche_claims[0].pool == "niche"
 
 
+def test_combined_niche_claim_aggregates_citations_and_uncertainty() -> None:
+    observed_at = NOW - timedelta(hours=2)
+    text = "Niche discussion centered on question framing."
+    niche_sources = (
+        _source("niche", "niche-source-a"),
+        _source("niche", "niche-source-b"),
+    )
+    niche_evidence = (
+        ReportEvidence(
+            evidence_id="niche-evidence-a",
+            pool="niche",
+            kind="observation",
+            statement=text,
+            source_ids=("niche-source-a",),
+            post_ids=("niche-post-a",),
+            observed_at=observed_at,
+            published_at=observed_at - timedelta(days=1),
+        ),
+        ReportEvidence(
+            evidence_id="niche-evidence-b",
+            pool="niche",
+            kind="observation",
+            statement=text,
+            source_ids=("niche-source-b",),
+            post_ids=("niche-post-b",),
+            observed_at=observed_at,
+            published_at=observed_at - timedelta(days=1),
+        ),
+    )
+    bundle = replace(_bundle(), niche_sources=niche_sources, niche_evidence=niche_evidence)
+    report = assemble_creator_report(bundle)
+    finding_a = ReportFinding(
+        section="niche_observations",
+        summary=text,
+        evidence_ids=("niche-evidence-a",),
+        source_ids=("niche-source-a",),
+        supporting_post_ids=("niche-post-a",),
+        evidence_strength="Moderate",
+        limitations=("Limitation from source A.",),
+        kind="observation",
+        freshness="current",
+    )
+    finding_b = ReportFinding(
+        section="niche_observations",
+        summary=text,
+        evidence_ids=("niche-evidence-b",),
+        source_ids=("niche-source-b",),
+        supporting_post_ids=("niche-post-b",),
+        evidence_strength="Low",
+        limitations=("Limitation from source B.",),
+        kind="observation",
+        freshness="historical",
+    )
+    report = replace(
+        report,
+        state="personal_and_niche",
+        niche_findings=(finding_a, finding_b),
+    )
+    response = json.dumps(
+        {
+            "personal_claims": [],
+            "niche_claims": [
+                {
+                    "kind": "observation",
+                    "text": text,
+                    "evidence_ids": ["niche-evidence-a", "niche-evidence-b"],
+                    "post_ids": ["niche-post-a", "niche-post-b"],
+                }
+            ],
+            "opportunities": [],
+        }
+    )
+    provider = FakeProvider(response)
+
+    result = _synthesizer(provider).synthesize(
+        bundle,
+        report,
+        _permissions(("personal-source", "niche-source-a", "niche-source-b")),
+    )
+
+    assert result.mode == "llm_synthesized"
+    assert result.narrative is not None
+    claim = result.narrative.niche_claims[0]
+    assert claim.post_ids == ("niche-post-a", "niche-post-b")
+    assert claim.evidence_strength == "Low"
+    assert claim.freshness == "historical"
+    assert claim.limitations == ("Limitation from source A.", "Limitation from source B.")
+
+
 def test_reported_inference_can_be_supported_by_observation_evidence() -> None:
     bundle, report = _report()
     report = replace(
@@ -273,6 +366,7 @@ def test_reported_inference_can_be_supported_by_observation_evidence() -> None:
         {**_claim(), "text": "This pattern caused more replies."},
         {**_claim(), "text": "This will boost replies."},
         {**_claim(), "text": "Question framing increases replies."},
+        {**_claim(), "text": "Question framing appeared in posts with no replies."},
     ],
 )
 def test_unsupported_claims_use_the_exact_deterministic_report(
