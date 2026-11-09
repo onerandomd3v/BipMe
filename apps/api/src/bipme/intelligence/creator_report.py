@@ -398,19 +398,14 @@ def assemble_creator_report(
             continue
         # A test hypothesis must not encourage features associated mainly with
         # the weaker group; cross-multiply to avoid rounding at the boundary.
-        if (
-            pattern.strong_count * pattern.weak_total
-            <= pattern.weak_count * pattern.strong_total
-        ):
+        if pattern.strong_count * pattern.weak_total <= pattern.weak_count * pattern.strong_total:
             continue
         goal = metric_goals.get(pattern.metric)
         if goal is None or goal not in bundle.goals.priority_outcomes:
             continue
         # Evidence must cover *all* posts used in the prevalence denominators,
         # including feature-negative comparisons, not just positive examples.
-        support = set(
-            (*pattern.strong_group_post_ids, *pattern.weak_group_post_ids)
-        )
+        support = set((*pattern.strong_group_post_ids, *pattern.weak_group_post_ids))
         evidence = next(
             (
                 item
