@@ -237,11 +237,12 @@ def test_missing_data_duplicates_outliers_and_selection_bias_are_visible() -> No
     assert any("selection bias" in item for item in result.limitations)
     assert any("Outlier sensitivity" in item for item in result.limitations)
     assert feature(result, "storytelling_cues").outlier_excluded_gap is not None
-    assert any(
-        item.known_count < 8
+    known_marker_posts = sum(
+        item.known_count
         for item in feature(result, "question_marker").groups
-        if item.group == "weak"
+        if item.category == "absent"
     )
+    assert known_marker_posts == result.eligible_post_count - 1
 
 
 def test_small_and_non_discriminating_samples_abstain() -> None:

@@ -49,6 +49,8 @@ class AttentionEvaluationPost:
 
 @dataclass(frozen=True)
 class AttentionEvaluationSpec:
+    """Cutoff, metric and sampling declarations for one evaluation run."""
+
     goals: CreatorGoalsSnapshot
     as_of: datetime
     metric: str
@@ -61,6 +63,8 @@ class AttentionEvaluationSpec:
 
 @dataclass(frozen=True)
 class GroupPrevalence:
+    """Known-data denominator and prevalence for one category/outcome band."""
+
     group: OutcomeBand
     category: str
     present_count: int
@@ -70,6 +74,8 @@ class GroupPrevalence:
 
 @dataclass(frozen=True)
 class FeatureEvaluation:
+    """Descriptive association and outlier sensitivity for one feature."""
+
     feature: str
     origin: str
     groups: tuple[GroupPrevalence, ...]
@@ -93,6 +99,8 @@ class FeatureAblation:
 
 @dataclass(frozen=True)
 class WalkForwardSummary:
+    """Held-out feature summaries and exclusions from chronological replay."""
+
     target_count: int
     targets_without_enough_prior_history: int
     strong_targets: int
@@ -106,6 +114,8 @@ class WalkForwardSummary:
 
 @dataclass(frozen=True)
 class AttentionEvaluation:
+    """Versioned output, diagnostics and limitations for a synthetic-first run."""
+
     version: str
     attention_features_version: str
     post_profile_version: str
@@ -134,11 +144,13 @@ class AttentionEvaluation:
 
 
 def _aware(value: datetime, name: str) -> None:
+    """Reject missing timezone information before chronological comparisons."""
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware")
 
 
 def _validate(spec: AttentionEvaluationSpec) -> None:
+    """Validate the evaluation cutoff, metric identity and creator-goal snapshot."""
     _aware(spec.as_of, "as_of")
     if not all(value.strip() for value in (spec.metric, spec.metric_definition, spec.window)):
         raise ValueError("metric, metric_definition and window are required")
@@ -150,6 +162,7 @@ def _validate(spec: AttentionEvaluationSpec) -> None:
 
 
 def _descriptor(post: AttentionEvaluationPost, cutoff: datetime) -> AttentionDescriptor:
+    """Extract a cutoff-safe versioned descriptor from one evaluation post."""
     return describe_attention_features(post.profile, as_of=cutoff, text=post.text)
 
 
@@ -178,6 +191,7 @@ def _feature_values(descriptor: AttentionDescriptor) -> tuple[tuple[str, str, st
 
 
 def _classify(value: float, p25: float, p75: float) -> OutcomeBand:
+    """Assign one outcome to creator-relative strong, typical or weak bands."""
     if value > p75:
         return "strong"
     if value < p25:
@@ -191,6 +205,7 @@ def _prevalence(
     category: str,
     group: OutcomeBand,
 ) -> tuple[int, int, float | None]:
+    """Calculate a feature category's prevalence over known rows in one band."""
     known = [
         values for band, values in rows if band == group and any(x[0] == feature for x in values)
     ]
@@ -205,6 +220,7 @@ def _summaries(
     *,
     minimum_group_posts: int,
 ) -> tuple[FeatureEvaluation, ...]:
+    """Summarize category prevalence and denominator adequacy for each feature."""
     names = sorted({name for _, values in rows for name, _, _ in values})
     output: list[FeatureEvaluation] = []
     for feature in names:
@@ -264,6 +280,7 @@ def _summaries(
 
 
 def _ablations(features: tuple[FeatureEvaluation, ...]) -> tuple[FeatureAblation, ...]:
+    """Count descriptive feature associations before and after each drop-one test."""
     associations = sum(
         1
         for item in features
@@ -295,6 +312,7 @@ def _ablations(features: tuple[FeatureEvaluation, ...]) -> tuple[FeatureAblation
 def _eligible_records(
     posts: tuple[AttentionEvaluationPost, ...], spec: AttentionEvaluationSpec
 ) -> tuple[tuple[AttentionEvaluationPost, ...], int, int, tuple[tuple[str, int], ...]]:
+    """Exclude malformed, duplicate, future, mismatched and missing-outcome rows."""
     reasons: Counter[str] = Counter()
     first_by_id: dict[str, AttentionEvaluationPost] = {}
     duplicates: set[str] = set()
@@ -358,6 +376,7 @@ def _eligible_records(
 def _walk_forward(
     posts: tuple[AttentionEvaluationPost, ...], spec: AttentionEvaluationSpec
 ) -> WalkForwardSummary:
+    """Replay targets in publication order using only outcomes known at each cutoff."""
     test_rows: list[tuple[OutcomeBand, tuple[tuple[str, str, str], ...]]] = []
     insufficient = 0
     exclusions: Counter[str] = Counter()
