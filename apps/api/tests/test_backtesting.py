@@ -153,12 +153,37 @@ def test_walk_forward_reports_supported_reference_coverage_and_percentile_error(
     assert result.cases[1].reference_range_covered is False
     assert result.cases[0].absolute_percentile_error == pytest.approx(0.14, abs=0.02)
     assert result.cases[1].absolute_percentile_error > 40
-    assert result.cases[0].direction_correct is False
+    assert result.cases[0].predicted_direction == "within"
+    assert result.cases[0].direction_correct is None
     assert result.selection_basis == "unknown"
     assert any("selection bias" in note for note in result.limitations)
     assert result.evidence_bands[1].scored_count == 2
     assert result.evidence_bands[1].reference_range_coverage == pytest.approx(0.5)
-    assert result.evidence_bands[1].direction_accuracy == 0.0
+    assert result.evidence_bands[1].direction_scored_count == 0
+    assert result.evidence_bands[1].direction_accuracy is None
+
+
+def test_direction_accuracy_scores_only_a_range_separated_from_creator_median() -> None:
+    base = _case(
+        0,
+        value=55,
+        extra_outcomes=tuple(
+            _observation(
+                f"broad-history-{i}",
+                float(i),
+                datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=i),
+                datetime(2026, 1, 2, tzinfo=UTC) + timedelta(hours=i),
+            )
+            for i in range(10)
+        ),
+    )
+    result = evaluate_distribution_outlooks((base,), _spec())
+
+    assert result.cases[0].predicted_direction == "above"
+    assert result.cases[0].observed_direction == "above"
+    assert result.cases[0].direction_correct is True
+    assert result.evidence_bands[1].direction_scored_count == 1
+    assert result.evidence_bands[1].direction_accuracy == 1.0
 
 
 def test_future_observation_does_not_change_replayed_range_or_scores() -> None:

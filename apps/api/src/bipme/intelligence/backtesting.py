@@ -386,10 +386,18 @@ def _score_case(
             if target.value < benchmark
             else "within"
         )
-        direction, actual_direction, direction_correct = predicted, observed, predicted == observed
+        direction, actual_direction = predicted, observed
+        if predicted != "within":
+            direction_correct = predicted == observed
+        else:
+            limitations.append(
+                "Reference range contains the creator median; no directional accuracy is scored."
+            )
     if percentile_error is None:
         limitations.append("Percentile error is unavailable without 3 compatible prior outcomes.")
-    if direction_correct is None:
+    if direction_correct is None and not any(
+        "no directional accuracy" in item for item in limitations
+    ):
         limitations.append(
             "Directional comparison is unavailable without a supported range and prior baseline."
         )
