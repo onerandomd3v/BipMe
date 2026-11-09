@@ -120,10 +120,10 @@ def assemble_creator_report(
         raise ValueError("unsupported report evidence schema")
     if len(personal_baselines) != len({(b.metric, b.window) for b in personal_baselines}):
         raise ValueError("ambiguous duplicate personal baseline metric/window")
-    for baseline in personal_baselines:
-        if baseline.version != BASELINE_VERSION:
+    for historical_baseline in personal_baselines:
+        if historical_baseline.version != BASELINE_VERSION:
             raise ValueError("unsupported baseline version")
-        if baseline.as_of != bundle.as_of:
+        if historical_baseline.as_of != bundle.as_of:
             raise ValueError("baseline cutoff differs from report cutoff")
     baseline_by_dimension = {(b.metric, b.window): b for b in personal_baselines}
 
