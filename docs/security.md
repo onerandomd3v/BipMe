@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 8907)
-Total output lines: 185
-
 # BipMe — Security, privacy and API cost controls
 
 **Current state (9 Nov 2026):** COD-346 implements private server-side sessions, mockable PKCE, read-only scope validation, encrypted token persistence, refresh and disconnect. X OAuth remains disabled by default; no live X authorization or API calls have been made. Account-specific X access, numeric user ID and processing-rights decisions remain external gates.
@@ -87,7 +84,30 @@ The pure COD-380 synthesis service is disabled by default and is not yet connect
 
 - The baseline, draft-assessment and assessment-read routes use a `creator/me` boundary and accept no creator ID from the client. Every persistence query scopes by the server-verified creator UUID, including assessment lookup and historical post/outcome retrieval.
 - COD-346's session dependency accepts only a live, unexpired, unrevoked server-side session for the configured creator; it does not accept a client-supplied creator ID or an environment-selected identity as an authorization shortcut. Missing production configuration returns `503 authentication_not_configured`. OAuth remains optional for private archive-only sessions.
-- Analysis persists a versioned response snapshot and fingerprint but not the draft's raw text. The fingerprint is deterministic and binds canonicalized text plus descriptive/metric-selection inputs. The …907 tokens truncated… per-operation maximum. Console spending limit and internal application limits are complementary; neither is currently verified.
+- Analysis persists a versioned response snapshot and fingerprint but not the draft's raw text. The fingerprint is deterministic and binds canonicalized text plus descriptive/metric-selection inputs. The optional accepted hypothesis is creator-supplied at assessment creation; the database enforces snapshot immutability.
+- Embedding or database failures map to safe structured errors. Request bodies, stored content, access tokens and internal exception text are not returned in errors. Metric outcomes are read only after retrieval and never influence candidate selection/ranking.
+
+## COD-344 — X access and feasibility gate (research checked 7 Nov 2026)
+
+**Status: Official endpoint documentation reviewed; owner-provided console screenshots confirm OAuth Web App settings and a USD 5 billing-cycle cap, but actual API entitlements, numeric user ID, approved data-processing use cases, and live response fields remain unverified. No live X API calls were made.** Do not consider COD-344 passed or start real ingestion based on this section alone.
+
+### Official API capabilities, subject to developer-app access
+
+| Capability | Documented endpoint / field | Remaining verification |
+| --- | --- | --- |
+| Creator identity | OAuth 2.0 PKCE plus user read permission; verify account ID server-side | Confirm OAuth 2.0 enabled, `Web App` confidential client selected, registered redirect URI and allowed user ID |
+| Historical posts | `GET /2/users/{id}/tweets`; latest 3,200 post ceiling, filtering/pagination | Confirm this app can invoke the endpoint; bound page size and actual returned record count |
+| Historical public outcomes | `public_metrics`: impressions, likes, replies, reposts, quotes, bookmarks | Verify each field in the response from the approved account; missing/unavailable fields stay unknown |
+| Creator-only outcomes | `non_public_metrics` for clicks and other private fields using user-context auth | Available only for posts less than 30 days old; confirm actual entitlements before relying on fields |
+| Refresh tokens | OAuth scope `offline.access` | Request only when needed for monitored post snapshots; confirm X app scopes and session lifecycle |
+
+Sources: [X timeline reference](https://docs.x.com/x-api/posts/timelines/introduction), [X metric definitions](https://docs.x.com/x-api/fundamentals/metrics), [OAuth PKCE documentation](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code). API documentation is not proof of account-specific permissions or real responses.
+
+### Pricing assumptions and proposed hard limits — not enabled yet
+
+- Public [X pay-per-use pricing](https://docs.x.com/x-api/getting-started/pricing) rechecked 9 Nov 2026: standard Post reads **$0.005 per returned Post**, user reads **$0.010 per returned User**, and eligible **owned-account reads $0.001 per returned resource** when the requested user ID matches the authenticated user *and that user owns the developer app*. Confirm BipMe's eligibility and active rates in the console, never assume it because the creator is authorized. The published pay-per-use plan lists a 3-million Post-read monthly cap; prices/credits can change. Search count endpoints have separate per-request prices; see COD-375 research before adding them.
+- **Proposed initial spending configuration (awaiting user approval and implementation):** app-level total experiment allowance **USD 5**, single import allowance **USD 1**, initial import **up to 25 posts**. These are conservative *engineering defaults to discuss*, not a guarantee of billing protection, an actual console spending limit or approval to purchase credits.
+- Before any billable request, confirm the console's **billing-cycle spending cap** is explicitly configured and **auto-recharge is OFF**; use the console's actual rates to configure a numeric per-operation maximum. Console spending limit and internal application limits are complementary; neither is currently verified.
 - The OAuth `/2/users/me` identity check is also treated as a billable X request. It is disabled unless an operator configures a verified per-request estimate and UTC daily ceiling. BipMe reserves that estimate in `api_usage_ledger` before the network call; exhausted or unavailable accounting fails closed. The record remains pending until reconciled with the account usage report.
 - Future X adapter (`COD-347`) must reserve budget *before* issuing calls, count **worst-case billed resources** including other requested user objects, and reconcile actual usage with X's console/usage endpoint. Unknown costs, exhausted balance or uncertain deduplication → fail closed. Persist operation, endpoint, requested cap, returned resource count, billable estimate, observed timestamp and reconciliation status.
 - X documents same-day UTC resource deduplication as a **soft guarantee**. Do not rely on deduplication to prevent costs. Per-post monitoring must also obey limits and store actual observation times.
