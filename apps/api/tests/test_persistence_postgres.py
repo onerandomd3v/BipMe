@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -48,6 +49,7 @@ from bipme.persistence.models import (
     PostProfileRecord,
     XAccountConnection,
 )
+from bipme.persistence.usage import UsageBudgetError, XUsageLimits, reserve_x_usage
 from bipme.persistence.vector_candidates import PostgresVectorCandidateSource
 
 API_DIR = Path(__file__).parents[1]
@@ -518,6 +520,51 @@ def test_api_usage_ledger_enforces_idempotency_and_usage_bounds(session: Session
                 )
             )
             session.flush()
+
+
+def test_concurrent_x_reservations_share_creator_lock_and_cannot_overspend(
+    session: Session,
+    migrated_postgres: tuple[Engine, str],
+) -> None:
+    engine, schema = migrated_postgres
+    creator = _creator(session)
+    creator_id = creator.id
+    session.commit()
+    limits = XUsageLimits(*(Decimal("0.015") for _ in range(4)))
+
+    def reserve(key: str) -> str:
+        connection = engine.connect()
+        connection.execute(text(f'SET search_path TO "{schema}", public'))
+        connection.commit()
+        concurrent_session = Session(bind=connection)
+        try:
+            reserve_x_usage(
+                concurrent_session,
+                creator_id=creator_id,
+                operation="creator_history_posts_read",
+                idempotency_key=key,
+                estimated_cost=Decimal("0.010"),
+                limits=limits,
+                now=NOW,
+            )
+            return "reserved"
+        except UsageBudgetError as exc:
+            return exc.code
+        finally:
+            concurrent_session.close()
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(reserve, ("parallel-a", "parallel-b")))
+    assert sorted(results) == ["budget_exhausted", "reserved"]
+    rows = session.scalars(
+        select(APIUsageLedger).where(
+            APIUsageLedger.creator_id == creator_id,
+            APIUsageLedger.operation == "creator_history_posts_read",
+        )
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].estimated_cost == Decimal("0.01000000")
 
 
 def test_assessment_snapshot_is_immutable_and_publication_link_is_single_creator_scoped(

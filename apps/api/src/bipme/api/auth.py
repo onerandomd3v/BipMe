@@ -7,7 +7,6 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import Annotated
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID, uuid4
@@ -15,7 +14,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -43,6 +42,7 @@ from bipme.persistence.models import (
     OAuthAuthorizationTransaction,
     XAccountConnection,
 )
+from bipme.persistence.usage import UsageBudgetError, XUsageLimits, reserve_x_usage
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 OAUTH_TRANSACTION_TTL = 600
@@ -179,46 +179,34 @@ def _reserve_x_identity_read(
     """Reserve the configured worst-case identity-read cost before contacting X."""
     estimate = settings.x_identity_read_estimated_cost
     daily_limit = settings.x_daily_cost_limit
-    creator = db.scalar(select(Creator).where(Creator.id == creator_id).with_for_update())
-    if creator is None or estimate is None or daily_limit is None:
+    if estimate is None or daily_limit is None:
         raise ApiError(503, "x_usage_controls_unavailable", "X usage controls are unavailable.")
-
-    day_start = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-    reserved_today = db.scalar(
-        select(func.coalesce(func.sum(APIUsageLedger.estimated_cost), 0)).where(
-            APIUsageLedger.creator_id == creator_id,
-            APIUsageLedger.provider == "x",
-            APIUsageLedger.requested_at >= day_start,
-        )
-    )
-    if Decimal(reserved_today or 0) + estimate > daily_limit:
-        raise ApiError(
-            429, "x_daily_cost_limit_reached", "The configured X daily cost limit was reached."
-        )
-
     reservation_id = uuid4()
-    db.add(
-        APIUsageLedger(
-            id=reservation_id,
+    try:
+        reservation = reserve_x_usage(
+            db,
             creator_id=creator_id,
-            provider="x",
             operation="oauth_identity_lookup",
             idempotency_key=f"x-oauth-identity:{reservation_id}",
+            estimated_cost=estimate,
+            # COD-346 only has an approved daily limit; the shared helper applies
+            # any configured total/operation/import limits without inventing them here.
+            limits=XUsageLimits(None, daily_limit, None, None),
+            now=now,
             request_metadata={
                 "method": "GET",
                 "endpoint": "/2/users/me",
-                "budget_period": "utc_day",
-                "daily_cost_limit_usd": str(daily_limit),
-                "estimated_cost_usd": str(estimate),
             },
-            requested_at=now,
-            estimated_cost=estimate,
-            currency="USD",
-            reconciliation_state="pending",
         )
-    )
-    db.commit()
-    return reservation_id
+        return reservation.ledger_id
+    except UsageBudgetError as exc:
+        if exc.code == "budget_exhausted":
+            raise ApiError(
+                429, "x_daily_cost_limit_reached", "The configured X daily cost limit was reached."
+            ) from None
+        raise ApiError(
+            503, "x_usage_controls_unavailable", "X usage controls are unavailable."
+        ) from None
 
 
 def _complete_x_identity_read(

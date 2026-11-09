@@ -49,6 +49,8 @@ Check `http://127.0.0.1:8000/api/health`. Migration `0001_enable_vector` creates
 
 X OAuth also requires operator-supplied `BIPME_X_IDENTITY_READ_ESTIMATED_COST_USD` and `BIPME_X_DAILY_COST_LIMIT_USD` values from verified current pricing. The callback reserves the configured worst-case identity lookup cost in `api_usage_ledger` before calling X and fails closed at the UTC daily ceiling. Reservations stay pending until reconciled against X account usage. Keep OAuth disabled until COD-344's account-specific access/rights gates and current pricing are confirmed.
 
+COD-347 adds a mockable creator-history read adapter over that same `api_usage_ledger`. It reserves the maximum configured page/retry envelope before each HTTP request, then records response count separately from the still-estimated cost until usage reconciliation. Total, daily, operation and import ceilings and a current, source-referenced price must be supplied explicitly; the adapter defaults disabled and has no live API route. The only implemented endpoint is the creator-owned timeline; niche discovery remains unavailable pending COD-375/COD-344. Do not enable real reads until account access, usage rights, billable fields/pricing and limits have been verified.
+
 The PostgreSQL-backed API CI job starts `pgvector/pgvector:pg17` and sets `BIPME_TEST_DATABASE_URL`; migration integration tests create an isolated schema, apply the full chain, downgrade to `0001_enable_vector`, verify the extension remains, then upgrade again. To run those tests locally, start the Compose database and run:
 
 ```bash

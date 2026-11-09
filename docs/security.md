@@ -38,17 +38,13 @@ The original X API-first authentication model is **not** authorization to accept
 - **Cross-creator comparison:** No scraping, shared niche corpus, republishing or inference on third-party X posts until permissions and applicable rights are verified. Separate personal and permissioned niche pools, restrict disclosure of other contributors' raw content, provide withdrawal/deletion and avoid irreversible training on data that must be removed.
 - **Monitoring:** Optional official API polling must enforce explicit consent, immutable account authorization, actual observation timestamps, per-operation quotas and total hard spend ceiling; archive import must not silently trigger paid refresh.
 
-## X API budget safeguards (planned)
+## X API budget safeguards (COD-347 implementation)
 
-Implement and test safeguards **before** a live import:
-
-1. Explicit total spend ceiling and per-import cap, controlled by configuration.
-2. A small initial history page/sample; progressive import only with observed benefit.
-3. Endpoint/operation-level counters, response counts, estimated cost, reset/period and creator ID.
-4. Rate-limit handling with bounded retries and backoff; prevent duplicate scheduled work.
-5. A fail-closed rule when cost cannot be estimated confidently or budget is depleted.
-6. No broad follower graph crawling, unnecessary recent searches or repeated high-cost requests.
-7. Clear distinction between public and creator-authorized private metrics, including temporal availability.
+- `APIUsageLedger` is the shared durable ledger for OAuth identity reads and timeline reads. Reservations lock the creator row, check existing reservations and all applicable ceilings, and commit before any provider request. PostgreSQL `FOR UPDATE` serializes concurrent operations across X integrations; duplicate idempotency keys do not authorize a second request.
+- The read adapter accepts explicit total, UTC-daily, per-operation and per-import USD ceilings plus an operator-supplied request/result price with source and validity timestamps. Missing, malformed or stale pricing, unavailable ledger storage, invalid limits and exhausted budgets fail closed. No price is embedded as a default. The adapter reserves the full configured result cap across its maximum bounded retry count before a page request; actual usage remains separately labeled and pending until a provider/account usage report is reconciled.
+- Creator-history reads use only the allowlisted `GET /2/users/{id}/tweets` path, require an active creator-owned X connection and read scopes, bound pages/results/timeouts/concurrency/retries, and return normalized fields with source and observation timestamps. Missing public metrics remain explicitly missing. A failure after valid pages returns a partial result with a safe reason; 401 clears local tokens and marks reauthorization required. Niche search has a separate unavailable boundary and cannot be enabled until COD-375/COD-344 confirm rights and account entitlement.
+- Settings and pricing are explicit constructor inputs; the adapter itself defaults disabled and is not wired to a production API route. COD-344's account access, rights, and actual prices remain unverified, so this code does not establish production readiness. Do not enable OAuth, creator-history ingestion, or niche search until those external gates are verified and approved.
+- Ledger metadata stores bounded endpoint/operation, page limits, opaque hashed import identity, pricing reference and reservation estimate only. Never add bearer tokens, authorization headers, raw responses, post text or arbitrary provider error bodies to logs or ledger metadata.
 
 Do **not** hardcode old X prices or assume a discounted owned-read tier is generally available. The authenticated developer console and live official documentation are authoritative at integration time.
 
