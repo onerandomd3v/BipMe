@@ -154,6 +154,7 @@ class CreatorIntelligenceReport:
     synthesis_mode: Literal["deterministic_fallback"] = "deterministic_fallback"
 
     def to_json(self) -> str:
+        """Serialize the immutable report with stable key and tuple ordering."""
         return json.dumps(
             asdict(self),
             default=lambda value: (
@@ -166,6 +167,7 @@ class CreatorIntelligenceReport:
 
 
 def _unsupported(value: object) -> object:
+    """Reject values outside the report's JSON-compatible data contract."""
     raise TypeError(f"unsupported value: {type(value).__name__}")
 
 
@@ -177,6 +179,7 @@ def _finding(
     sources: dict[str, ReportSource],
     freshness: Freshness,
 ) -> ReportFinding:
+    """Create a report finding while retaining source versions and provenance."""
     source_versions = tuple(
         sorted((source_id, sources[source_id].source_version) for source_id in record.source_ids)
     )
@@ -200,6 +203,7 @@ def _finding(
 
 
 def _authorized_sources(bundle: CreatorReportEvidenceBundle) -> dict[str, ReportSource]:
+    """Return only permission attestations available by the report cutoff."""
     return {
         source.source_id: source
         for source in (*bundle.personal_sources, *bundle.niche_sources)
@@ -210,6 +214,7 @@ def _authorized_sources(bundle: CreatorReportEvidenceBundle) -> dict[str, Report
 def _authorized_evidence(
     records: tuple[ReportEvidence, ...], sources: dict[str, ReportSource]
 ) -> tuple[ReportEvidence, ...]:
+    """Keep claims whose complete source set passed authorization gating."""
     return tuple(
         record for record in records if all(source_id in sources for source_id in record.source_ids)
     )
@@ -449,6 +454,7 @@ def _cohort_findings(
     observations: tuple[OutcomeObservation, ...],
     sources: dict[str, ReportSource],
 ) -> tuple[ReportFinding, ...]:
+    """Summarize verified metric cohorts with their exact denominators and IDs."""
     findings: list[ReportFinding] = []
     for cohort in cohorts:
         statistics = cohort.statistics
@@ -503,6 +509,7 @@ def _pattern_findings(
     patterns: tuple[ContentPatternContrast, ...],
     cohorts: tuple[PersonalMetricCohort, ...],
 ) -> tuple[ReportFinding, ...]:
+    """Render content contrasts as bounded historical associations."""
     findings: list[ReportFinding] = []
     cohort_by_dimension = {
         (cohort.metric, cohort.metric_definition, cohort.window): cohort for cohort in cohorts
@@ -552,6 +559,7 @@ def _pattern_findings(
 
 
 def _profile_feature_value(profile: PersonalPostProfile, descriptor: str) -> str | None:
+    """Read a supported creator descriptor, preserving unknown as missing."""
     value = {
         "topic": profile.profile.declared_topic,
         "content_format": (
@@ -569,6 +577,7 @@ def _complete_personal_feature_coverage(
     creator_key: str,
     as_of: datetime,
 ) -> dict[str, str] | None:
+    """Return complete supported profile metadata for every eligible post."""
     relevant = tuple(record for record in profiles if record.post_id in cohort.eligible_post_ids)
     if len(relevant) != len(cohort.eligible_post_ids):
         return None
@@ -624,6 +633,7 @@ def _one_evidence_covers_pattern(
     baseline_by_dimension: dict[tuple[str, str], tuple[CreatorBaseline, str]],
     personal_findings: tuple[ReportFinding, ...],
 ) -> ReportEvidence | None:
+    """Find one strong claim that covers a full verified comparison denominator."""
     required = set(pattern.strong_group_post_ids + pattern.weak_group_post_ids)
     verified = baseline_by_dimension.get((pattern.metric, pattern.window))
     if verified is None or verified[1] != pattern.metric_definition:

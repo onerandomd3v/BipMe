@@ -224,6 +224,7 @@ class CreatorReportEvidenceBundle:
 
     @property
     def coverage(self) -> ReportCoverage:
+        """Classify permissioned personal and fresh niche observation coverage."""
         sources = {
             source.source_id: source for source in (*self.personal_sources, *self.niche_sources)
         }
@@ -258,4 +259,5 @@ class CreatorReportEvidenceBundle:
 
 
 def _unsupported(value: object) -> object:
+    """Reject values outside the bundle's JSON-compatible data contract."""
     raise TypeError(f"unsupported JSON value: {type(value).__name__}")
