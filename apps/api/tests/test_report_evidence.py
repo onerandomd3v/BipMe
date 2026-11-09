@@ -34,6 +34,8 @@ def source(pool: str, source_id: str) -> ReportSource:
         source_version="synthetic-v1",
         authorization_basis="synthetic_test_fixture",
         coverage_note="Synthetic, not representative",
+        authorization_verified=True,
+        authorization_verified_at=NOW - timedelta(hours=1),
     )
 
 
@@ -69,7 +71,7 @@ def test_partial_and_full_coverage_and_serialization() -> None:
     partial = bundle()
     assert partial.coverage == "personal_only_partial"
     payload = json.loads(partial.to_json())
-    assert payload["version"] == "creator-report-evidence-v1"
+    assert payload["version"] == "creator-report-evidence-v2"
     assert payload["goals"]["niche"] == "software engineering"
     assert payload["personal_evidence"][0]["metric_window"] == "age:24h"
     assert partial.to_json() == partial.to_json()
@@ -125,3 +127,47 @@ def test_rejects_naive_cutoffs_and_future_goals() -> None:
         replace(bundle(), as_of=NOW.replace(tzinfo=None))
     with pytest.raises(ValueError, match="after the report cutoff"):
         replace(bundle(), goals=replace(goals(), recorded_at=NOW + timedelta(days=1)))
+
+
+def test_verified_permission_requires_an_as_of_attestation() -> None:
+    with pytest.raises(ValueError, match="requires authorization_verified_at"):
+        replace(
+            source("niche", "niche-1"),
+            authorization_verified=True,
+            authorization_verified_at=None,
+        )
+    future_permission = replace(
+        source("niche", "niche-1"),
+        authorization_verified_at=NOW + timedelta(seconds=1),
+    )
+    with pytest.raises(ValueError, match="authorization was verified after"):
+        replace(bundle(), niche_sources=(future_permission,))
+
+
+def test_unverified_sources_do_not_count_as_report_coverage() -> None:
+    original = bundle()
+    unverified = replace(
+        original.personal_sources[0],
+        authorization_verified=False,
+        authorization_verified_at=None,
+    )
+    assert replace(original, personal_sources=(unverified,)).coverage == "insufficient_evidence"
+
+
+def test_future_evidence_and_unsupported_niche_descriptors_are_rejected() -> None:
+    with pytest.raises(ValueError, match="after the report cutoff"):
+        replace(
+            bundle(),
+            personal_evidence=(
+                replace(
+                    evidence("personal", "e-future", "owned-1"),
+                    observed_at=NOW + timedelta(seconds=1),
+                ),
+            ),
+        )
+    with pytest.raises(ValueError, match="unsupported niche descriptor"):
+        replace(
+            evidence("niche", "e-bad", "niche-1"),
+            descriptor_name="followers",  # type: ignore[arg-type]
+            descriptor_value="any",
+        )
