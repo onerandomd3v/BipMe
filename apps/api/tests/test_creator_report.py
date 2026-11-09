@@ -7,9 +7,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from bipme.intelligence.baselines import BaselineRequest, OutcomeObservation, build_creator_baseline
-from bipme.intelligence.content_patterns import PersonalPostProfile
+from bipme.intelligence.content_patterns import (
+    PersonalPostProfile,
+    compare_personal_content_patterns,
+)
 from bipme.intelligence.creator_goals import CreatorGoalsSnapshot
-from bipme.intelligence.creator_report import assemble_creator_report
+from bipme.intelligence.creator_report import (
+    PersonalMetricCohort,
+    assemble_creator_report,
+)
 from bipme.intelligence.post_profiles import PostProfileInput, extract_post_profile
 from bipme.intelligence.report_evidence import (
     CreatorReportEvidenceBundle,
@@ -359,3 +365,46 @@ def test_codex_one_post_claim_does_not_inherit_moderate_strength() -> None:
     assert not any(
         "At least 8 effective posts" in reason for reason in report.personal_findings[0].limitations
     )
+
+
+def test_codex_missing_topology_is_not_counted_as_absence() -> None:
+    profiles = _twenty_profiles()
+    selected = []
+    for record in profiles[:16]:
+        topology = "original" if record.post_id.startswith("post-") else None
+        if int(record.post_id.split("-")[1]) >= 9:
+            topology = None
+        selected.append(
+            replace(record, profile=replace(record.profile, topology=topology))
+        )
+    cohort = PersonalMetricCohort(
+        metric="replies",
+        metric_definition="observed reply count",
+        window="age:24h",
+        evidence_strength="Moderate",
+        strong_post_ids=tuple(f"post-{i}" for i in range(8)),
+        typical_post_ids=(),
+        weak_post_ids=tuple(f"post-{i}" for i in range(8, 16)),
+        excluded_count=0,
+        limitations=(),
+    )
+    patterns = compare_personal_content_patterns(
+        "creator", NOW, (cohort,), tuple(selected)
+    )
+    assert not any(pattern.feature == "topology" for pattern in patterns)
+
+
+def test_codex_rejected_claim_cannot_reappear_as_experiment() -> None:
+    original = _bundle()
+    evidence = replace(
+        original.personal_evidence[0],
+        post_ids=tuple(f"post-{idx}" for idx in range(20)) + ("not-owned",),
+    )
+    report = assemble_creator_report(
+        replace(original, personal_evidence=(evidence,)),
+        personal_baselines=(_twenty_baseline(),),
+        personal_outcomes=_twenty_observations(),
+        personal_profiles=_twenty_profiles(),
+    )
+    assert report.personal_findings[0].evidence_strength == "Insufficient"
+    assert report.experiments == ()
