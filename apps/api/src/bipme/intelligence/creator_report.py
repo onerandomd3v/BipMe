@@ -17,6 +17,11 @@ from bipme.intelligence.baselines import (
     EvidenceStrength,
     OutcomeObservation,
 )
+from bipme.intelligence.content_patterns import (
+    ContentPatternContrast,
+    PersonalPostProfile,
+    compare_personal_content_patterns,
+)
 from bipme.intelligence.report_evidence import (
     REPORT_EVIDENCE_VERSION,
     CreatorReportEvidenceBundle,
@@ -82,6 +87,7 @@ class CreatorIntelligenceReport:
     niche_findings: tuple[ReportFinding, ...]
     experiments: tuple[ReportExperiment, ...]
     personal_cohorts: tuple[PersonalMetricCohort, ...]
+    content_patterns: tuple[ContentPatternContrast, ...]
     limitations: tuple[str, ...]
 
     def to_json(self) -> str:
@@ -222,6 +228,7 @@ def assemble_creator_report(
     *,
     personal_baselines: tuple[CreatorBaseline, ...] = (),
     personal_outcomes: tuple[OutcomeObservation, ...] = (),
+    personal_profiles: tuple[PersonalPostProfile, ...] = (),
 ) -> CreatorIntelligenceReport:
     """Assemble deterministic source-traceable findings from validated evidence.
 
@@ -289,9 +296,55 @@ def assemble_creator_report(
         limitations.append("Some personal claims lack adequate comparable-history support.")
 
     cohorts = _personal_metric_cohorts(bundle, personal_baselines, personal_outcomes)
-    # Descriptors have not yet been joined to cohort contrasts; refrain from
-    # generating hypotheses solely from repeated post IDs.
-    experiments: tuple[ReportExperiment, ...] = ()
+    patterns = compare_personal_content_patterns(
+        bundle.creator_key, bundle.as_of, cohorts, personal_profiles
+    )
+    # These are explicitly testable *hypotheses*, not causal explanations:
+    # require creator-owned evidence spanning both comparison groups.
+    metric_goals = {
+        "replies": "conversation",
+        "impressions": "reach",
+        "profile_clicks": "qualified_interest",
+        "link_clicks": "qualified_interest",
+    }
+    experiments_list: list[ReportExperiment] = []
+    for pattern in patterns:
+        if len(experiments_list) >= 3 or pattern.strong_count < 3:
+            continue
+        goal = metric_goals.get(pattern.metric)
+        if goal is None or goal not in bundle.goals.priority_outcomes:
+            continue
+        support = set((*pattern.strong_post_ids, *pattern.weak_post_ids))
+        evidence = next(
+            (
+                item
+                for item in bundle.personal_evidence
+                if item.kind == "observation"
+                and item.metric == pattern.metric
+                and item.metric_definition == pattern.metric_definition
+                and item.metric_window == pattern.window
+                and support.issubset(set(item.post_ids))
+            ),
+            None,
+        )
+        if evidence is None:
+            continue
+        experiments_list.append(
+            ReportExperiment(
+                goal=goal,
+                hypothesis=(
+                    f"Test {pattern.feature}={pattern.feature_value} in new posts; "
+                    "compare age-aligned outcomes against a similar control."
+                ),
+                evidence_ids=(evidence.evidence_id,),
+                supporting_post_ids=tuple(sorted(support)),
+                metric=pattern.metric,
+                metric_definition=pattern.metric_definition,
+                metric_window=pattern.window,
+                limitations=pattern.limitations,
+            )
+        )
+    experiments = tuple(experiments_list)
 
     state: ReportState
     if not personal:
@@ -312,5 +365,6 @@ def assemble_creator_report(
         niche_findings=niche,
         experiments=experiments,
         personal_cohorts=cohorts,
+        content_patterns=patterns,
         limitations=tuple(dict.fromkeys(limitations)),
     )
