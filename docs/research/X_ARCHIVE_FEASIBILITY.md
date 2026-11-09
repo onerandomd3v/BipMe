@@ -1,7 +1,7 @@
 # X creator archive feasibility — COD-369
 
-**Reviewed:** 9 November 2026  
-**Decision:** **Conditional Go** for COD-370's isolated, synthetic-tested parser work. **No real archive ingestion, embedding inference, external-model transfer, or production retention is cleared by this research.**  
+**Reviewed:** 9 November 2026
+**Decision:** **Conditional Go** for COD-370's isolated, synthetic-tested parser work. **No real archive ingestion, embedding inference, external-model transfer, or production retention is cleared by this research.**
 **Sample status:** No current creator export was supplied or inspected. The utility and tests use synthetic data only.
 
 ## Finding
