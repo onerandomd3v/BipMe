@@ -121,17 +121,6 @@ def _finding(
     )
 
 
-def _goal_metric(goal: str, metric: str) -> bool:
-    """Conservative label mapping; metrics are not interchangeable."""
-    accepted = {
-        "conversation": {"replies"},
-        "reach": {"impressions"},
-        "qualified_interest": {"link_clicks", "profile_clicks"},
-        "authority": set(),
-    }
-    return metric in accepted.get(goal, set())
-
-
 def _personal_metric_cohorts(
     bundle: CreatorReportEvidenceBundle,
     baselines: tuple[CreatorBaseline, ...],
@@ -290,45 +279,10 @@ def assemble_creator_report(
     if any(item.evidence_strength == "Insufficient" for item in personal):
         limitations.append("Some personal claims lack adequate comparable-history support.")
 
-    experiments: list[ReportExperiment] = []
-    # Only repeated personal observations supported by an existing statistical
-    # baseline may justify a testable, optional hypothesis.
-    for item in bundle.personal_evidence:
-        if len(experiments) >= 3 or item.kind != "observation" or len(item.post_ids) < 3:
-            continue
-        if item.metric is None or item.metric_definition is None or item.metric_window is None:
-            continue
-        baseline = baseline_by_dimension.get((item.metric, item.metric_window))
-        if baseline is None or baseline.evidence_strength not in ("High", "Moderate"):
-            continue
-        if known_definitions.get((item.metric, item.metric_window)) != {item.metric_definition}:
-            continue
-        if not set(item.post_ids).issubset(set(baseline.supporting_post_ids)):
-            continue
-        goal = next(
-            (goal for goal in bundle.goals.priority_outcomes if _goal_metric(goal, item.metric)),
-            None,
-        )
-        if goal is None:
-            continue
-        experiments.append(
-            ReportExperiment(
-                goal=goal,
-                hypothesis=(
-                    f"Test whether a repeatable approach associated with {item.metric} "
-                    f"in the {item.metric_window} historical window is useful again."
-                ),
-                evidence_ids=(item.evidence_id,),
-                supporting_post_ids=item.post_ids,
-                metric=item.metric,
-                metric_definition=item.metric_definition,
-                metric_window=item.metric_window,
-                limitations=(
-                    "Observed associations are not causal; no future lift is guaranteed.",
-                    "Compare against age-aligned observations and record the test outcome.",
-                ),
-            )
-        )
+    cohorts = _personal_metric_cohorts(bundle, personal_baselines, personal_outcomes)
+    # Descriptors have not yet been joined to cohort contrasts; refrain from
+    # generating hypotheses solely from repeated post IDs.
+    experiments: tuple[ReportExperiment, ...] = ()
 
     state: ReportState
     if not personal:
@@ -347,7 +301,7 @@ def assemble_creator_report(
         state=state,
         personal_findings=tuple(personal),
         niche_findings=niche,
-        experiments=tuple(experiments),
+        experiments=experiments,
         personal_cohorts=cohorts,
         limitations=tuple(dict.fromkeys(limitations)),
     )
