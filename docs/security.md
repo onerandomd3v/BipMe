@@ -120,6 +120,13 @@ Sources: [X timeline reference](https://docs.x.com/x-api/posts/timelines/introdu
 - **Creator-baseline analysis is also a data-use gate**: before running aggregation, creator-profile analytics, or any local embedding inference on real X posts, confirm the actual approved app use case and applicable X terms allow that specific processing. Authentication and possession of an account archive alone do not establish these rights. If approval is required, seek it before processing.
 - **Retention period is not finalized**. Decide the minimum justified duration and deletion cadence, subject to X policy, before storing real creator data. Avoid treating an arbitrary number of days as an approved rule.
 
+### COD-378 report processing boundary
+
+- The report API requires an authenticated private creator session and CSRF validation for mutations. Creator identity is derived only from that session; profile, permission, report, evidence and deletion queries are scoped to that ID.
+- A signed-in creator can grant or revoke local deterministic processing of their personal history. Consent alone does not satisfy platform rights: X-history processing also requires the server-only `BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED=true` gate and a valid `BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT` timestamp, both blocked by default until COD-344 confirms the specific use. The report route reads only canonical, owner-scoped X records already stored; it does not call X, perform scraping or invoke a model.
+- Niche discovery is always reported unavailable on this route until COD-375/COD-376 establishes and implements its separate rights, fields and budget boundary. Optional synthesis remains disabled; no X-derived content is transferred to GroqCloud.
+- Reports persist a minimized evidence/provenance snapshot rather than raw post text. Revoking local history-processing consent deletes derived report snapshots immediately. `DELETE /reports` and `DELETE /profile` erase report-owned data; canonical post/archive deletion remains the responsibility of the COD-370/COD-348 ingestion owner and must be coordinated with that path before production data use.
+
 ### Confirmed console configuration (owner-provided evidence, 7 Nov 2026)
 
 - X developer app: BipME by CodedDevs; connected test-account **handle** `@onerandomd3v` (the immutable numeric X user ID is still unverified).

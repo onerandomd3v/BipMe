@@ -1,4 +1,4 @@
-"""PostgreSQL integration coverage for COD-345 models and real Alembic migrations."""
+"""PostgreSQL integration coverage for persistence models and Alembic migrations."""
 
 from __future__ import annotations
 
@@ -42,7 +42,10 @@ from bipme.persistence.models import (
     APIUsageLedger,
     CanonicalPost,
     Creator,
+    CreatorGoalRevision,
     CreatorPlatformIdentity,
+    CreatorProcessingPermission,
+    CreatorReportSnapshot,
     DraftAssessment,
     OutcomeObservationRecord,
     PostEmbedding,
@@ -78,7 +81,7 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
         command.upgrade(config, "head")
         connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0003_private_auth_sessions"
+            "0004_creator_report_api"
         )
         command.downgrade(config, "0001_enable_vector")
         connection.commit()
@@ -101,6 +104,9 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
             "post_embeddings",
             "outcome_observations",
             "api_usage_ledger",
+            "creator_goal_revisions",
+            "creator_processing_permissions",
+            "creator_report_snapshots",
         }
         assert expected <= tables
         indexes = {index["name"] for index in inspect(connection).get_indexes("post_embeddings")}
@@ -138,6 +144,93 @@ def _creator(session: Session) -> Creator:
     session.add(creator)
     session.flush()
     return creator
+
+
+def test_report_first_snapshots_persist_owner_scoped_versions_and_idempotency(
+    session: Session,
+) -> None:
+    creator = _creator(session)
+    goals = CreatorGoalRevision(
+        id=uuid4(),
+        creator_id=creator.id,
+        revision=1,
+        goals_version="creator-goals-v1",
+        recorded_at=NOW,
+        niche="synthetic software education",
+        intended_audience="synthetic early-career developers",
+        priority_outcomes=["conversation"],
+        preferred_styles=["technical_explainer"],
+        language="English",
+    )
+    permission = CreatorProcessingPermission(
+        id=uuid4(),
+        creator_id=creator.id,
+        revision=1,
+        source_kind="personal_history",
+        allowed=True,
+        policy_version="creator-history-processing-v1",
+        recorded_at=NOW,
+    )
+    session.add_all((goals, permission))
+    session.flush()
+    report = CreatorReportSnapshot(
+        id=uuid4(),
+        creator_id=creator.id,
+        goals_revision_id=goals.id,
+        idempotency_key="synthetic-report-001",
+        request_fingerprint="a" * 64,
+        generated_at=NOW,
+        as_of=NOW,
+        goals_revision=goals.revision,
+        goals_version=goals.goals_version,
+        evidence_version="creator-report-evidence-v2",
+        report_version="creator-intelligence-report-v2",
+        baseline_version="creator-baseline-v1",
+        report_state="insufficient_evidence",
+        report_snapshot={"state": "insufficient_evidence"},
+        evidence_snapshot={"bundle": {"version": "creator-report-evidence-v2"}},
+        permission_snapshot={"personal_history": {"status": "not_selected"}},
+        freshness_snapshot={"personal_history": "unknown", "niche_discovery": "unavailable"},
+    )
+    session.add(report)
+    session.flush()
+
+    assert (
+        session.scalar(
+            select(CreatorReportSnapshot).where(
+                CreatorReportSnapshot.id == report.id,
+                CreatorReportSnapshot.creator_id == creator.id,
+            )
+        )
+        is not None
+    )
+    with pytest.raises(IntegrityError):
+        with session.begin_nested():
+            session.add(
+                CreatorReportSnapshot(
+                    id=uuid4(),
+                    creator_id=creator.id,
+                    goals_revision_id=goals.id,
+                    idempotency_key="synthetic-report-001",
+                    request_fingerprint="b" * 64,
+                    generated_at=NOW + timedelta(seconds=1),
+                    as_of=NOW + timedelta(seconds=1),
+                    goals_revision=goals.revision,
+                    goals_version=goals.goals_version,
+                    evidence_version="creator-report-evidence-v2",
+                    report_version="creator-intelligence-report-v2",
+                    baseline_version="creator-baseline-v1",
+                    report_state="insufficient_evidence",
+                    report_snapshot={"state": "insufficient_evidence"},
+                    evidence_snapshot={"bundle": {"version": "creator-report-evidence-v2"}},
+                    permission_snapshot={"personal_history": {"status": "not_selected"}},
+                    freshness_snapshot={
+                        "personal_history": "unknown",
+                        "niche_discovery": "unavailable",
+                    },
+                )
+            )
+            session.flush()
 
 
 def _post(
@@ -231,7 +324,7 @@ def test_migration_survives_clean_upgrade_downgrade_and_repeat_upgrade(
         connection.execute(text(f'SET search_path TO "{schema}", public'))
         connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0003_private_auth_sessions"
+            "0004_creator_report_api"
         )
 
 
