@@ -471,7 +471,7 @@ def _matched_history(
     }
     candidates: list[OutcomeObservation] = []
     reasons: list[str] = []
-    duplicate_keys: Counter[tuple[str, str, str, str, datetime]] = Counter()
+    eligible_history: list[OutcomeObservation] = []
     for item in request.historical_outcomes:
         if (item.metric, item.metric_definition, item.window) != (
             metric.metric,
@@ -479,16 +479,26 @@ def _matched_history(
             metric.window,
         ):
             continue
+        if item.post_id not in allowed_ids:
+            continue
         if item.creator_key != assessment.creator_key:
             reasons.append("Cross-creator historical observations were excluded.")
-            continue
-        if item.post_id not in allowed_ids:
             continue
         if item.published_at >= assessment.assessed_at or item.observed_at > assessment.assessed_at:
             reasons.append("Historical observations unavailable at assessment time were excluded.")
             continue
         if item.observed_at < item.published_at:
             reasons.append("Historical observations before publication were excluded.")
+            continue
+        eligible_history.append(item)
+
+    duplicate_counts = Counter(item.post_id for item in eligible_history)
+    duplicate_ids = {post_id for post_id, count in duplicate_counts.items() if count > 1}
+    if duplicate_ids:
+        reasons.append("Duplicate historical observations were excluded.")
+
+    for item in eligible_history:
+        if item.post_id in duplicate_ids:
             continue
         if item.value is None or item.value < 0:
             reasons.append("Missing or invalid historical metric values were excluded.")
@@ -498,18 +508,8 @@ def _matched_history(
                 "Historical observation age differs from the published observation; no time alignment was inferred."
             )
             continue
-        duplicate_keys[
-            (item.post_id, item.metric, item.metric_definition, item.window, item.observed_at)
-        ] += 1
         candidates.append(item)
 
-    duplicate_ids = {
-        post_id
-        for post_id, metric_name, definition, window, observed_at in duplicate_keys
-        if duplicate_keys[(post_id, metric_name, definition, window, observed_at)] > 1
-    }
-    if duplicate_ids:
-        reasons.append("Duplicate historical observations were excluded.")
     output = tuple(
         replace(item, weight=relevant[item.post_id])
         for item in sorted(candidates, key=lambda row: row.post_id)

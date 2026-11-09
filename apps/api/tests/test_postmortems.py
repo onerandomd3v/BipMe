@@ -372,7 +372,7 @@ def test_cross_creator_publication_and_history_cannot_be_scored() -> None:
 
 def test_cross_creator_historical_observation_is_excluded_from_same_creator_comparison() -> None:
     foreign = _outcome(
-        "foreign-history",
+        "history-0",
         100_000.0,
         AS_OF - timedelta(days=20),
         creator_key="creator-2",
@@ -384,7 +384,7 @@ def test_cross_creator_historical_observation_is_excluded_from_same_creator_comp
     assert result.version_state == "verified"
     assert comparison.status == "scored"
     assert len(comparison.comparison_post_ids) == 10
-    assert "foreign-history" not in comparison.comparison_post_ids
+    assert all(item.creator_key == CREATOR for item in comparison.comparison_observations)
     assert any("cross-creator" in item.casefold() for item in comparison.limitations)
 
 
@@ -405,14 +405,21 @@ def test_outlook_assessment_identity_must_match_at_input_construction() -> None:
 
 def test_duplicate_historical_observations_are_excluded_and_reported() -> None:
     request = _request()
+    original = request.historical_outcomes[0]
+    duplicate = replace(
+        original,
+        published_at=original.published_at - timedelta(days=1),
+        observed_at=original.observed_at - timedelta(days=1),
+    )
     duplicated = replace(
         request,
-        historical_outcomes=request.historical_outcomes + (request.historical_outcomes[0],),
+        historical_outcomes=request.historical_outcomes + (duplicate,),
     )
 
     result = build_postmortem(duplicated)
 
     assert result.metric_comparisons[0].matched_sample_count == 9
+    assert "history-0" not in result.metric_comparisons[0].comparison_post_ids
     assert any(
         "duplicate" in reason.casefold() for reason in result.metric_comparisons[0].limitations
     )
