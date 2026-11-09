@@ -143,9 +143,7 @@ class CreatorReportEvidenceBundle:
                 if evidence.evidence_id in evidence_ids:
                     raise ValueError("duplicate evidence ID")
                 evidence_ids.add(evidence.evidence_id)
-                if any(
-                    source_ids.get(source_id) != pool for source_id in evidence.source_ids
-                ):
+                if any(source_ids.get(source_id) != pool for source_id in evidence.source_ids):
                     raise ValueError("evidence references missing or cross-pool source")
         for limitation in self.limitations:
             _nonempty(limitation, "limitation")
@@ -164,9 +162,9 @@ class CreatorReportEvidenceBundle:
             asdict(self),
             sort_keys=True,
             separators=(",", ":"),
-            default=lambda value: value.isoformat()
-            if isinstance(value, datetime)
-            else _unsupported(value),
+            default=lambda value: (
+                value.isoformat() if isinstance(value, datetime) else _unsupported(value)
+            ),
             allow_nan=False,
         )
 
