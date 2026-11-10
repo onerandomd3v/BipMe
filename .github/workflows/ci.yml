@@ -76,7 +76,7 @@ jobs:
           "${compose[@]}" restart worker
           test "$("${compose[@]}" ps --format '{{.State}}' worker)" = running
           "${compose[@]}" stop -t 120 worker
-          test "$("${compose[@]}" ps --format '{{.State}}' worker)" = exited
+          test "$("${compose[@]}" ps --all --format '{{.State}}' worker)" = exited
           curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null
           "${compose[@]}" start worker
           test "$("${compose[@]}" ps --format '{{.State}}' worker)" = running

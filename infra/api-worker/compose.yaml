@@ -1,4 +1,4 @@
-name: bipme
+name: bipme-api-worker
 
 x-metric-snapshot-settings: &metric-snapshot-settings
   BIPME_TOKEN_ENCRYPTION_KEYS: ${BIPME_TOKEN_ENCRYPTION_KEYS:-}
