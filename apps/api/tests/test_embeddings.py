@@ -248,6 +248,16 @@ def test_remote_maps_network_failure_without_leaking_text_or_token():
     assert error.value.__cause__ is None
 
 
+def test_remote_maps_malformed_json_without_leaking_response_text():
+    with pytest.raises(RemoteEmbeddingError) as error:
+        _remote(
+            lambda request: httpx.Response(200, text="synthetic-secret private creator response")
+        ).encode(["synthetic"], role="query")
+    assert "synthetic-secret" not in str(error.value)
+    assert "private creator response" not in str(error.value)
+    assert error.value.__cause__ is None
+
+
 def test_remote_rejects_oversized_response_without_parsing_it():
     with pytest.raises(RemoteEmbeddingError, match="response is too large"):
         _remote(lambda request: httpx.Response(200, content=b" " * (256 * 1024 + 1))).encode(
@@ -289,10 +299,20 @@ def test_remote_requires_https_and_bounds_requests():
         with pytest.raises(ValueError, match="HTTPS"):
             RemoteTextEmbedder(identity(), endpoint=endpoint, token="x")
     encoder = RemoteTextEmbedder(
-        identity(), endpoint="https://private.example", token="x", max_batch_size=1
+        identity(),
+        endpoint="https://private.example",
+        token="x",
+        max_batch_size=1,
+        max_concurrency=1,
     )
     with pytest.raises(ValueError, match="bounds"):
         encoder.encode(["one", "two"], role="passage")
+    assert encoder._slots.acquire(blocking=False)
+    try:
+        with pytest.raises(RemoteEmbeddingError, match="concurrency limit"):
+            encoder.encode(["synthetic"], role="passage")
+    finally:
+        encoder._slots.release()
     for bounds in ({"max_batch_size": 9}, {"max_text_chars": 10001}):
         with pytest.raises(ValueError, match="bounds"):
             RemoteTextEmbedder(identity(), endpoint="https://private.example", token="x", **bounds)

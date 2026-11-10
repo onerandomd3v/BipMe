@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,8 +20,9 @@ SPEC.loader.exec_module(service)
 
 
 class FakeModel:
-    def __init__(self, values: Any = None) -> None:
+    def __init__(self, values: Any = None, dimension: int = 384) -> None:
         self.values = values
+        self.dimension = dimension
         self.calls: list[tuple[list[str], dict[str, Any]]] = []
 
     def encode(self, texts: list[str], **kwargs: Any) -> Any:
@@ -28,6 +30,9 @@ class FakeModel:
         if self.values is not None:
             return self.values
         return [[1.0] + [0.0] * 383 for _ in texts]
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self.dimension
 
 
 @pytest.fixture
@@ -49,6 +54,24 @@ def test_health_reports_the_pinned_model_identity(app_client) -> None:
         "revision": "fd1525a9fd15316a2d503bf26ab031a61d056e98",
         "dimensions": 384,
     }
+
+
+@pytest.mark.parametrize("dimension,valid", [(384, True), (512, False)])
+def test_model_loader_enforces_the_embedding_dimension(
+    monkeypatch: pytest.MonkeyPatch, dimension: int, valid: bool
+) -> None:
+    fake_model = FakeModel(dimension=dimension)
+    monkeypatch.setattr(service, "loaded_model", None)
+    monkeypatch.setattr(
+        service,
+        "import_module",
+        lambda name: SimpleNamespace(SentenceTransformer=lambda *args, **kwargs: fake_model),
+    )
+    if valid:
+        assert service.model() is fake_model
+    else:
+        with pytest.raises(RuntimeError, match="dimension mismatch"):
+            service.model()
 
 
 def test_embed_requires_bearer_token_and_does_not_leak_it(app_client) -> None:

@@ -115,9 +115,12 @@ def model() -> Any:
     with model_lock:
         if loaded_model is None:
             sentence_transformers = import_module("sentence_transformers")
-            loaded_model = sentence_transformers.SentenceTransformer(
+            candidate = sentence_transformers.SentenceTransformer(
                 MODEL, revision=REVISION, device="cuda", trust_remote_code=False
             )
+            if candidate.get_sentence_embedding_dimension() != 384:
+                raise RuntimeError("configured model dimension mismatch")
+            loaded_model = candidate
         return loaded_model
 
 
