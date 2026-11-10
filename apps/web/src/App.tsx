@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -12,6 +13,8 @@ import {
   type ViewState,
 } from './components/StateNotice'
 import { ApiRequestError, apiClient } from './api/client'
+import { CreatorDashboard } from './CreatorDashboard'
+import type { DraftAnalysisContext } from './dashboardModel'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
 type ApiHealth = 'checking' | 'available' | 'unavailable'
@@ -168,10 +171,24 @@ export function App() {
   const [health, setHealth] = useState<ApiHealth>('checking')
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('checking')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [draftContext, setDraftContext] = useState<DraftAnalysisContext | null>(
+    null,
+  )
   const triggerRef = useRef<HTMLButtonElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
   const wasDrawerOpen = useRef(false)
   const page = pages.find((item) => item.id === view) ?? pages[0]
+  const handleSessionExpired = useCallback(() => {
+    setSessionStatus('unauthenticated')
+    setDraftContext(null)
+  }, [])
+
+  useEffect(() => {
+    return apiClient.subscribeSessionInvalidation(() => {
+      setSessionStatus('unauthenticated')
+      setDraftContext(null)
+    })
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -453,6 +470,14 @@ export function App() {
               sessionStatus={sessionStatus}
               onSessionStatus={setSessionStatus}
             />
+          ) : view === 'dashboard' && sessionStatus === 'authenticated' ? (
+            <CreatorDashboard
+              onAnalyzeDraft={(context) => {
+                setDraftContext(context)
+                navigate('draft')
+              }}
+              onSessionExpired={handleSessionExpired}
+            />
           ) : (
             <section
               className="workspace-card"
@@ -486,6 +511,14 @@ export function App() {
                 BipMe will show observed creator data only after access and
                 evidence are available.
               </p>
+              {view === 'draft' && draftContext && (
+                <p className="workspace-card__note" role="status">
+                  Draft analysis context is available from report{' '}
+                  {draftContext.reportId}; this route does not persist private
+                  evidence and will safely require a fresh handoff after a
+                  refresh.
+                </p>
+              )}
             </section>
           )}
 

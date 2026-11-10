@@ -114,12 +114,13 @@ def runtime():
     engine.dispose()
 
 
-def _post(post_id: str, *, metrics: dict | None = None) -> dict:
+def _post(post_id: str, *, metrics: dict | None = None, **extra: object) -> dict:
     return {
         "id": post_id,
         "text": f"synthetic post {post_id}",
         "created_at": "2026-11-01T10:00:00Z",
         **({"public_metrics": metrics} if metrics is not None else {}),
+        **extra,
     }
 
 
@@ -192,6 +193,30 @@ def test_owner_history_paginates_normalizes_metrics_and_records_each_reservation
     assert reconciled.actual_cost == Decimal("0.02000000")
     assert reconciled.reconciliation_state == "reconciled"
     assert all("synthetic post" not in str(row.request_metadata) for row in rows)
+
+
+def test_reader_excludes_retweets_but_preserves_replies_and_quotes(runtime):
+    factory, cipher = runtime
+    provider = FakeReadProvider(
+        [
+            _page(
+                [
+                    _post("retweet", referenced_tweets=[{"type": "retweeted", "id": "other"}]),
+                    _post("reply", referenced_tweets=[{"type": "replied_to", "id": "parent"}]),
+                    _post("quote", referenced_tweets=[{"type": "quoted", "id": "quoted"}]),
+                ]
+            )
+        ]
+    )
+    with factory() as db:
+        result = _reader(provider, cipher).read(
+            db, creator_id=CREATOR_ID, import_id="retweet-filter", max_posts=10, now=NOW
+        )
+    assert [post.external_post_id for post in result.posts] == ["reply", "quote"]
+    assert result.posts[0].topology == "reply"
+    assert result.posts[0].reply_to_external_post_id == "parent"
+    assert result.posts[1].topology == "quote"
+    assert result.posts[1].quoted_external_post_id == "quoted"
 
 
 def test_reservation_uses_provider_retry_bound_not_reader_defaults(runtime):
@@ -448,6 +473,7 @@ def test_http_provider_is_get_only_allowlisted_and_retries_429_with_bound():
     assert all(request.url.host == "api.x.com" for request in requests)
     assert requests[0].url.path == "/2/users/987654321/tweets"
     assert requests[0].url.params.get("max_results") == "10"
+    assert requests[0].url.params.get("exclude") == "retweets"
     assert sleeps == [1]
     with pytest.raises(XReadUnavailable, match="request_invalid"):
         provider.creator_posts_page(
@@ -511,3 +537,18 @@ def test_http_provider_bounds_timeout_retry():
     assert result.posts == ()
     assert calls == 2
     assert sleeps == [0.1]
+
+
+def test_http_provider_closes_owned_client():
+    provider = HttpXReadProvider(settings=XReadSettings(enabled=True, max_results=10))
+    closed = False
+    original_close = provider._http.close
+
+    def close() -> None:
+        nonlocal closed
+        closed = True
+        original_close()
+
+    provider._http.close = close
+    provider.close()
+    assert closed
