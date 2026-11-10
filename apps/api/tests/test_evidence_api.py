@@ -67,6 +67,7 @@ def runtime(migrated_postgres, monkeypatch):
                     text=f"synthetic {i}",
                     source="creator_provided_archive" if i == 3 else "x_creator_authorized_history",
                     source_observed_at=NOW - timedelta(hours=2),
+                    updated_at=NOW - timedelta(hours=3),
                     provenance={"secret": "must-not-disclose", "url": "https://evil.test"},
                 )
             )
