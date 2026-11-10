@@ -33,6 +33,7 @@ from bipme.integrations.x_publication import (
     XPublishedPostVerifier,
     build_x_publication_verifier,
 )
+from bipme.jobs.metric_snapshots import MetricSnapshotScheduler, build_metric_snapshot_scheduler
 from bipme.persistence.models import (
     CanonicalPost,
     CreatorPlatformIdentity,
@@ -81,6 +82,16 @@ def get_x_publication_verifier(
         yield verifier
     finally:
         verifier.close()
+
+
+def get_metric_snapshot_scheduler() -> Iterator[MetricSnapshotScheduler | None]:
+    """Build the optional durable snapshot scheduler; disabled configurations fail closed."""
+    scheduler = build_metric_snapshot_scheduler()
+    try:
+        yield scheduler
+    finally:
+        if scheduler is not None:
+            scheduler.close()
 
 
 def parse_x_post_id(value: str) -> str:
@@ -220,6 +231,7 @@ def link_publication(
     creator: Annotated[AuthenticatedCreator, Depends(get_authenticated_creator)],
     db: Annotated[Session, Depends(get_db_session)],
     verifier: Annotated[XPublishedPostVerifier, Depends(get_x_publication_verifier)],
+    scheduler: Annotated[MetricSnapshotScheduler | None, Depends(get_metric_snapshot_scheduler)],
     now: Annotated[datetime, Depends(get_current_time)],
 ) -> PublicationLinkResponse:
     """Verify and attach one creator-owned publication without changing the Outlook."""
@@ -408,6 +420,22 @@ def link_publication(
                 "version_match_state": state,
             },
         }
+        if scheduler is not None:
+            try:
+                scheduler.schedule(
+                    db,
+                    creator_id=creator.creator_id,
+                    post_id=existing.id,
+                    required_x_connection_id=locked_connection.id,
+                    now=now.astimezone(UTC),
+                )
+            except Exception:
+                db.rollback()
+                raise ApiError(
+                    503,
+                    "observation_scheduling_unavailable",
+                    "The publication could not be scheduled for observation.",
+                ) from None
         try:
             db.commit()
         except IntegrityError:

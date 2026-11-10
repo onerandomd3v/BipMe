@@ -375,6 +375,22 @@ Keep X-specific authentication, API field mapping, pagination, cost policy and m
 - Record actual request usage/cost estimates and enforce hard ceilings before first live import.
 - Handle revocation, rate limits, pagination, partial/missing metrics and retries honestly.
 
+### COD-363 budgeted post-publication snapshots
+
+COD-361 publication links can submit candidate `age_aligned` observation jobs through the
+COD-362 PostgreSQL/Procrastinate receipt queue. The candidate windows are 5m, 15m, 30m,
+1h, 2h, 6h, 12h and 24h; windows that are no longer actionable are recorded as cancelled
+receipts rather than receiving fabricated metric timestamps. Each worker execution locks and
+revalidates the creator-owned canonical post and connected X identity, reserves a bounded
+retry envelope in the shared usage ledger, and calls only the read-only `/2/tweets/{id}`
+adapter. Provider responses are normalized to append-only outcome rows with the original
+publication time, actual observation time, exact metric definition/unit, `age_aligned` window
+key and source provenance. Sanitized evidence is cached by the ledger receipt so a crash after
+a billable response can finish persistence without a second request; an unresolved reservation
+ends in `needs_reconciliation` rather than being silently retried. Monitoring remains disabled
+unless entitlement, data-rights, pricing, account allowlist, connection and global/per-post
+limits are explicitly configured.
+
 ## Current implemented contract
 
 - `GET /api/health` → `{"status":"ok"}` (liveness only, not a database-readiness check).

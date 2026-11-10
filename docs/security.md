@@ -187,6 +187,18 @@ COD-344 may be marked **Done** after the owner has confirmed the relevant develo
 - **Before monitoring:** idempotent jobs, missing-window handling, no fabricated observation timestamps, explicit cost model.
 - **Before any external deployment:** HTTPS, secure secret management, least privilege, access control, and relevant X requirements.
 
+COD-363 implements the monitoring gate with the existing COD-347 ledger and COD-362 durable
+worker: every candidate window is receipt-idempotent, every provider call is preceded by a
+creator-scoped reservation, and the reservation estimate covers the adapter's bounded retry
+envelope. A separate per-post ceiling is checked under the same creator lock as global/daily/
+operation ceilings. Connection state, token expiry, read scopes and the allowlisted numeric X
+identity are revalidated immediately before the request. A provider response is committed as
+sanitized ledger evidence before observation rows are written; crashes or ambiguous responses
+therefore stop in reconciliation instead of issuing a potentially billable duplicate. Missing
+fields remain explicit `missing`/`invalid` rows, while windows skipped because they are no longer
+actionable remain cancelled receipts and never receive synthetic observation times. The adapter
+has no publish/write operation and all tests use synthetic providers.
+
 ## References
 
 - [Architecture](architecture.md), [Product](product.md), [Development](development.md)

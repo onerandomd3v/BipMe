@@ -36,7 +36,19 @@ class RetryableHandlerError(Exception):
 
 
 class TerminalJobError(Exception):
-    """Sanitized signal that a non-success receipt must fail in runner state."""
+    """Sanitized signal that a receipt must finish in an explicit terminal state."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        outcome: str = "failed",
+    ) -> None:
+        super().__init__(code)
+        if outcome not in {"failed", "cancelled", "needs_reconciliation", "revoked"}:
+            raise ValueError("invalid_terminal_outcome")
+        self.code = code
+        self.outcome = outcome
 
 
 @dataclass(frozen=True)
@@ -167,6 +179,9 @@ def _execute_receipt(runtime: JobRuntime, receipt_id: UUID, previous_attempts: i
                 raise RetryableHandlerError("safe_retry") from None
             _finish_receipt(execution_db, receipt, "failed", "retry_limit_exhausted")
             raise TerminalJobError("retry_limit_exhausted") from None
+        except TerminalJobError as exc:
+            _finish_receipt(execution_db, receipt, exc.outcome, exc.code)
+            raise
         except Exception:
             _finish_receipt(
                 execution_db, receipt, "needs_reconciliation", "handler_outcome_uncertain"
