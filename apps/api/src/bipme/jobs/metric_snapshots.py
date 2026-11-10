@@ -10,9 +10,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from procrastinate import App
-from procrastinate.psycopg_connector import PsycopgConnector
 from sqlalchemy import select
-from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from bipme.auth.config import AuthSettings
@@ -25,7 +23,13 @@ from bipme.integrations.x_metric_snapshots import (
     XMetricSnapshotSettings,
     XMetricSnapshotUnavailable,
 )
-from bipme.jobs.runtime import RetryableHandlerError, TerminalJobError
+from bipme.jobs.runtime import (
+    JobRuntime,
+    JobRuntimeSettings,
+    RetryableHandlerError,
+    TerminalJobError,
+    create_runtime,
+)
 from bipme.jobs.service import schedule_job
 from bipme.persistence.models import (
     APIUsageLedger,
@@ -68,11 +72,16 @@ class MetricSnapshotScheduler:
 
     app: App
     reader: XMetricSnapshotReader
+    runtime: JobRuntime | None = None
 
     def close(self) -> None:
         close = getattr(self.reader.provider, "close", None)
-        if callable(close):
-            close()
+        try:
+            if callable(close):
+                close()
+        finally:
+            if self.runtime is not None:
+                self.runtime.close()
 
     def schedule(
         self,
@@ -268,8 +277,10 @@ def handle_metric_snapshot(
         if exc.code in {"budget_exhausted", "external_gate_unverified", "post_unavailable"}:
             raise TerminalJobError(exc.code, outcome="cancelled") from None
         if exc.code == "post_not_found":
-            post.availability = "unavailable"
-            raise TerminalJobError(exc.code, outcome="cancelled") from None
+            # A provider 404 is not proof that the canonical post was deleted.
+            # The handler transaction rolls back on terminal errors, so never
+            # mutate availability without an explicit reconciliation transaction.
+            raise TerminalJobError(exc.code, outcome="needs_reconciliation") from None
         raise TerminalJobError(exc.code) from None
     _persist_observations(db, receipt, post, window_key, due, evidence)
 
@@ -354,13 +365,15 @@ def build_metric_snapshot_scheduler() -> MetricSnapshotScheduler | None:
     settings = XMetricSnapshotSettings.from_environment()
     if not auth.token_encryption_ready or not settings.enabled:
         return None
-    psycopg_url = make_url(database_url).set(drivername="postgresql")
-    app = App(
-        connector=PsycopgConnector(conninfo=psycopg_url.render_as_string(hide_password=False))
-    )
     reader = XMetricSnapshotReader(
         provider=HttpXPostMetricsProvider(),
         cipher=TokenCipher(auth.token_encryption_keys, auth.active_token_key_version or ""),
         settings=settings,
     )
-    return MetricSnapshotScheduler(app=app, reader=reader)
+    # Use the same runtime factory as the worker. It registers TASK_NAME on
+    # this producer App, so schedule_job can defer a real dispatch receipt.
+    runtime = create_runtime(
+        JobRuntimeSettings(database_url=database_url),
+        handlers={HANDLER_NAME: make_handler(reader)},
+    )
+    return MetricSnapshotScheduler(app=runtime.app, reader=reader, runtime=runtime)
