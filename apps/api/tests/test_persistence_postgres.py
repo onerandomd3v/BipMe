@@ -2305,11 +2305,13 @@ def test_publication_verification_survives_attachment_rollback_without_second_pa
 
 
 def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
-    migrated_postgres: tuple[Engine, str], session: Session
+    migrated_postgres: tuple[Engine, str], session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A linked post gets durable candidate receipts and exact partial observations."""
     from cryptography.fernet import Fernet
+    from types import SimpleNamespace
 
+    from bipme.auth.config import AuthSettings
     from bipme.auth.crypto import TokenCipher
     from bipme.integrations.x_metric_snapshots import (
         XMetricSnapshot,
@@ -2318,7 +2320,12 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
         XMetricSnapshotUnavailable,
         XSnapshotMetric,
     )
-    from bipme.jobs.metric_snapshots import MetricSnapshotScheduler, _persist_observations
+    from bipme.jobs import metric_snapshots
+    from bipme.jobs.metric_snapshots import (
+        _persist_observations,
+        build_metric_snapshot_scheduler,
+        handle_metric_snapshot,
+    )
 
     creator = _creator(session)
     external_user_id = str(creator.id.int)[:18]
@@ -2339,7 +2346,8 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
         platform="x",
         external_creator_id=external_user_id,
     )
-    cipher = TokenCipher({"v1": Fernet.generate_key().decode()}, "v1")
+    encryption_key = Fernet.generate_key().decode()
+    cipher = TokenCipher({"v1": encryption_key}, "v1")
     encrypted = cipher.encrypt("synthetic-token")
     connection = XAccountConnection(
         id=uuid4(),
@@ -2398,13 +2406,32 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
         pricing_source="synthetic:test",
     )
     reader = XMetricSnapshotReader(provider=Provider(), cipher=cipher, settings=settings)
-    app = App(connector=SyncPsycopgConnector())
-
-    @app.task(name=TASK_NAME, queue="bipme")
-    def dispatch(receipt_id: str) -> None:
-        del receipt_id
-
-    scheduler = MetricSnapshotScheduler(app=app, reader=reader)
+    # Use the actual producer builder instead of a manually registered dummy task.
+    engine, schema = migrated_postgres
+    database_url = engine.url.update_query_dict(
+        {"options": f"-csearch_path={schema},public"}
+    )
+    monkeypatch.setenv(
+        "BIPME_DATABASE_URL", database_url.render_as_string(hide_password=False)
+    )
+    monkeypatch.setattr(
+        AuthSettings,
+        "from_environment",
+        classmethod(
+            lambda _cls: SimpleNamespace(
+                token_encryption_ready=True,
+                token_encryption_keys={"v1": encryption_key},
+                active_token_key_version="v1",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        XMetricSnapshotSettings, "from_environment", classmethod(lambda _cls: settings)
+    )
+    monkeypatch.setattr(metric_snapshots, "HttpXPostMetricsProvider", Provider)
+    scheduler = build_metric_snapshot_scheduler()
+    assert scheduler is not None
+    assert TASK_NAME in scheduler.app.tasks
     first = scheduler.schedule(
         session,
         creator_id=creator.id,
@@ -2421,6 +2448,12 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
     )
     assert len(first) == len(second) == 8
     assert len({job.id for job in first}) == 8
+    assert all(job.runner_job_id is not None for job in first)
+    assert session.scalar(
+        text("SELECT task_name FROM procrastinate_jobs WHERE id = :runner"),
+        {"runner": first[0].runner_job_id},
+    ) == TASK_NAME
+    scheduler.close()
 
     evidence = reader.observe(
         session,
@@ -2486,6 +2519,59 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
     assert failed_ledger is not None and failed_ledger.completed_at is not None
     assert failed_ledger.request_metadata["response_received"] is False
 
+    # A competing transaction deletes the canonical post just after the
+    # ledger reservation commits. The provider must not be called.
+    from bipme.integrations import x_metric_snapshots as snapshot_module
+
+    provider_calls = []
+
+    class ForbiddenProvider(Provider):
+        def post_metrics(self, *, access_token: str, post_id: str) -> XMetricSnapshot:
+            provider_calls.append(post_id)
+            raise AssertionError("Deleted post must never reach external X")
+
+    real_reserve = snapshot_module.reserve_x_usage
+
+    def delete_after_reservation(db: Session, **kwargs):
+        reserved = real_reserve(db, **kwargs)
+        with engine.begin() as competing:
+            competing.execute(text(f'SET LOCAL search_path TO "{schema}", public'))
+            competing.execute(
+                text(
+                    "UPDATE canonical_posts SET availability = 'deleted', "
+                    "deleted_at = :deleted_at WHERE id = :id"
+                ),
+                {"id": post.id, "deleted_at": NOW + timedelta(minutes=15)},
+            )
+        return reserved
+
+    blocked_reader = XMetricSnapshotReader(
+        provider=ForbiddenProvider(), cipher=cipher, settings=settings
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(snapshot_module, "reserve_x_usage", delete_after_reservation)
+        with pytest.raises(XMetricSnapshotUnavailable, match="post_unavailable"):
+            blocked_reader.observe(
+                session,
+                creator_id=creator.id,
+                post=post,
+                window_key="age:15m",
+                scheduled_at=NOW + timedelta(minutes=15),
+                now=NOW + timedelta(minutes=15),
+            )
+    assert provider_calls == []
+    with engine.begin() as restoring:
+        restoring.execute(text(f'SET LOCAL search_path TO "{schema}", public'))
+        restoring.execute(
+            text(
+                "UPDATE canonical_posts SET availability = 'available', "
+                "deleted_at = NULL WHERE id = :id"
+            ),
+            {"id": post.id},
+        )
+    session.expire_all()
+    assert session.get(CanonicalPost, post.id).availability == "available"
+
     connection.state = "revoked"
     connection.encrypted_access_token = None
     connection.encrypted_refresh_token = None
@@ -2501,3 +2587,24 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
             scheduled_at=NOW + timedelta(hours=1),
             now=NOW + timedelta(minutes=45),
         )
+
+    # A provider 404 does not authorize an uncommitted post deletion.
+    class MissingReader:
+        def observe(self, *_args, **_kwargs):
+            raise XMetricSnapshotUnavailable("post_not_found")
+
+    receipt = first[0]
+    receipt.arguments = {
+        **receipt.arguments,
+        "scheduled_at_epoch": int(datetime.now(UTC).timestamp()),
+    }
+    session.flush()
+    with pytest.raises(TerminalJobError) as missing:
+        handle_metric_snapshot(session, receipt, MissingReader())
+    assert missing.value.code == "post_not_found"
+    assert missing.value.outcome == "needs_reconciliation"
+    assert post.availability == "available"
+    assert not session.is_modified(post, include_collections=False)
+    session.rollback()
+    assert session.get(CanonicalPost, post.id).availability == "available"
+
