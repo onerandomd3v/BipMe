@@ -1,5 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import {
+  draftAnalysisFixture,
+  evidenceFixture,
   healthFixture,
   latestReportFixture,
   permissionFixture,
@@ -47,5 +49,14 @@ export const apiHandlers = [
   ),
   http.get('*/api/v1/creators/me/baseline', () =>
     HttpResponse.json(baselineFixture),
+  ),
+  http.get('*/api/v1/creators/me/history/evidence', () =>
+    HttpResponse.json(evidenceFixture),
+  ),
+  http.post('*/api/v1/creators/me/draft-assessments', () =>
+    HttpResponse.json(draftAnalysisFixture, { status: 201 }),
+  ),
+  http.get('*/api/v1/creators/me/draft-assessments/:assessmentId', () =>
+    HttpResponse.json(draftAnalysisFixture),
   ),
 ]

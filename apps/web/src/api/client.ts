@@ -58,6 +58,8 @@ type DataPermission = components['schemas']['DataPermissionResponse']
 type DataPermissionUpdate = components['schemas']['DataPermissionUpdate']
 type CreatorReport = components['schemas']['CreatorReportResponse']
 type CreatorReportState = components['schemas']['CreatorReportStateResponse']
+type DraftAnalysisRequest = components['schemas']['DraftAnalysisRequest']
+type DraftAnalysisResponse = components['schemas']['DraftAnalysisResponse']
 type EvidencePage = components['schemas']['EvidencePage']
 type PostEvidence = components['schemas']['PostEvidence']
 type ImportPage = components['schemas']['ImportPage']
@@ -433,6 +435,36 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
         signal,
       )
       await unwrap(result, true)
+    },
+    async createDraftAssessment(
+      body: DraftAnalysisRequest,
+      idempotencyKey: string,
+      signal?: AbortSignal,
+    ): Promise<DraftAnalysisResponse> {
+      const result = await request(
+        () =>
+          client.POST('/api/v1/creators/me/draft-assessments', {
+            body,
+            params: { header: { 'Idempotency-Key': idempotencyKey } },
+            signal,
+          }),
+        signal,
+      )
+      return (await unwrap(result)) as DraftAnalysisResponse
+    },
+    async draftAssessment(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<DraftAnalysisResponse> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/draft-assessments/{assessment_id}', {
+            params: { path: { assessment_id: assessmentId } },
+            signal,
+          }),
+        signal,
+      )
+      return (await unwrap(result)) as DraftAnalysisResponse
     },
     async historyPosts(
       params?: HistoryPostsQuery,

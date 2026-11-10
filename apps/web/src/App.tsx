@@ -6,8 +6,9 @@ import {
   type MouseEvent,
 } from 'react'
 import { ApiRequestError, apiClient } from './api/client'
-import { CreatorDashboard } from './CreatorDashboard'
 import { CreatorHistoryDashboard } from './CreatorHistoryDashboard'
+import { CreatorDashboard } from './CreatorDashboard'
+import { DraftAnalysis } from './DraftAnalysis'
 import type { DraftAnalysisContext } from './dashboardModel'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
@@ -251,6 +252,10 @@ export function App() {
       setDraftContext(null)
     })
   }, [])
+
+  useEffect(() => {
+    if (view !== 'draft') setDraftContext(null)
+  }, [view])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -533,6 +538,15 @@ export function App() {
                 setDraftContext(context)
                 navigate('draft')
               }}
+              onSessionExpired={() => {
+                setSessionStatus('unauthenticated')
+                setDraftContext(null)
+              }}
+            />
+          ) : view === 'draft' && sessionStatus === 'authenticated' ? (
+            <DraftAnalysis
+              context={draftContext}
+              onBackToDashboard={() => navigate('dashboard')}
               onSessionExpired={() => {
                 setSessionStatus('unauthenticated')
                 setDraftContext(null)

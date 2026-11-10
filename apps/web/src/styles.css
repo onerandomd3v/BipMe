@@ -1270,3 +1270,151 @@ h2 {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.draft-analysis,
+.draft-results {
+  display: grid;
+  gap: 18px;
+}
+
+.draft-analysis form {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.draft-form-grid,
+.draft-metric-grid,
+.draft-evidence-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.draft-form-grid > div {
+  display: grid;
+  gap: 7px;
+}
+
+.draft-callout,
+.draft-section {
+  padding: 24px;
+  border: 1px solid var(--line, #d8d8d2);
+  border-radius: 18px;
+  background: var(--surface, #fff);
+}
+
+.draft-callout {
+  background: #f3f1e8;
+}
+
+.draft-section__heading,
+.draft-evidence-card__heading,
+.draft-result-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.draft-result-actions {
+  align-items: center;
+}
+
+.draft-result-actions p {
+  overflow-wrap: anywhere;
+}
+
+.draft-outlook-card,
+.draft-evidence-card {
+  padding: 17px;
+  border: 1px solid var(--line, #d8d8d2);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.draft-outlook-card h3,
+.draft-evidence-card h3 {
+  margin: 0;
+}
+
+.draft-outlook-card p,
+.draft-evidence-card p {
+  margin-bottom: 8px;
+}
+
+.draft-evidence-card blockquote {
+  margin: 14px 0;
+  padding-left: 14px;
+  border-left: 3px solid #b8a77c;
+  color: #37352f;
+}
+
+.draft-reasons {
+  margin-top: 15px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, #d8d8d2);
+}
+
+.draft-reasons ul,
+.draft-limitations ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.draft-metric-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 15px;
+}
+
+.draft-metric {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line, #d8d8d2);
+  font-size: 0.85rem;
+}
+
+.draft-metric span {
+  color: #63625b;
+}
+
+.draft-observation-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.draft-observation-list li {
+  display: grid;
+  gap: 5px;
+  padding: 13px 0;
+  border-top: 1px solid var(--line, #d8d8d2);
+}
+
+.draft-observation-list small {
+  color: #63625b;
+}
+
+@media (max-width: 720px) {
+  .draft-form-grid,
+  .draft-metric-grid,
+  .draft-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .draft-section__heading,
+  .draft-evidence-card__heading,
+  .draft-result-actions {
+    flex-direction: column;
+  }
+
+  .draft-callout,
+  .draft-section {
+    padding: 18px;
+  }
+}
