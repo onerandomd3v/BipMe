@@ -294,6 +294,10 @@ def test_links_post_preserves_assessment_and_provider_timestamps(
         post = db.scalar(select(CanonicalPost).where(CanonicalPost.external_post_id == "123456789"))
         assert post is not None
         assert post.source_assessment_id == ASSESSMENT_ID
+        assert post.text == "Original draft"
+        assert post.media_present is False
+        assert post.source == "x_creator_authorized_publication"
+        assert post.provenance["endpoint"] == "/2/tweets/{id}"
 
 
 def test_duplicate_request_replays_without_second_provider_call(

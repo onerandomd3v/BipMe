@@ -472,6 +472,50 @@ class CanonicalPost(TimestampMixin, Base):
     ingestion_key: Mapped[str | None] = mapped_column(String(255))
     source_assessment_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     version_match_state: Mapped[str | None] = mapped_column(String(16))
+    text: Mapped[str | None] = mapped_column(String(10000))
+    media_present: Mapped[bool | None] = mapped_column(Boolean)
+    source: Mapped[str] = mapped_column(String(100), nullable=False, default="unknown")
+    source_endpoint: Mapped[str | None] = mapped_column(String(255))
+    source_observed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    provenance: Mapped[JsonObject] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+
+
+class CreatorHistoryImport(TimestampMixin, Base):
+    """Creator-scoped state for a bounded, repeatable official-history import."""
+
+    __tablename__ = "creator_history_imports"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["creator_id"], ["creators.id"], ondelete="CASCADE", name="fk_history_import_creator"
+        ),
+        UniqueConstraint("creator_id", "import_id", name="history_import_creator_key"),
+        CheckConstraint("length(trim(import_id)) > 0", name="history_import_id_not_blank"),
+        CheckConstraint(
+            "status IN ('running', 'complete', 'partial', 'unavailable')",
+            name="history_import_status_valid",
+        ),
+        CheckConstraint("requested_posts > 0", name="history_import_requested_positive"),
+        CheckConstraint(
+            "pages_read >= 0 AND imported_posts >= 0", name="history_import_counts_valid"
+        ),
+        Index("ix_history_import_creator_started", "creator_id", "started_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    import_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="running")
+    requested_posts: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    pages_read: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    imported_posts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_page_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="x_creator_authorized_history"
+    )
+    provenance: Mapped[JsonObject] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class PostProfileRecord(Base):

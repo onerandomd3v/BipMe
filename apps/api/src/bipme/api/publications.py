@@ -43,6 +43,8 @@ from bipme.persistence.models import (
 router = APIRouter(prefix="/api/v1/creators/me", tags=["publications"])
 _POST_ID = re.compile(r"^[0-9]{1,32}$")
 _HANDLE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
+_PUBLICATION_SOURCE = "x_creator_authorized_publication"
+_PUBLICATION_ENDPOINT = "/2/tweets/{id}"
 VersionMatchState = Literal["match", "mismatch", "unknown"]
 
 
@@ -313,6 +315,16 @@ def link_publication(
                 topology=evidence.topology,
                 reply_to_external_post_id=evidence.reply_to_external_post_id,
                 quoted_external_post_id=evidence.quoted_external_post_id,
+                text=evidence.text,
+                media_present=evidence.media_present,
+                source=_PUBLICATION_SOURCE,
+                source_endpoint=_PUBLICATION_ENDPOINT,
+                source_observed_at=now.astimezone(UTC),
+                provenance={
+                    "source": _PUBLICATION_SOURCE,
+                    "endpoint": _PUBLICATION_ENDPOINT,
+                    "observed_at": now.astimezone(UTC).isoformat(),
+                },
                 source_assessment_id=locked_assessment.id,
                 version_match_state=state,
             )
@@ -329,6 +341,18 @@ def link_publication(
             existing.topology = evidence.topology
             existing.reply_to_external_post_id = evidence.reply_to_external_post_id
             existing.quoted_external_post_id = evidence.quoted_external_post_id
+            if evidence.text is not None:
+                existing.text = evidence.text
+            if evidence.media_present is not None:
+                existing.media_present = evidence.media_present
+            existing.source = _PUBLICATION_SOURCE
+            existing.source_endpoint = _PUBLICATION_ENDPOINT
+            existing.source_observed_at = now.astimezone(UTC)
+            existing.provenance = {
+                "source": _PUBLICATION_SOURCE,
+                "endpoint": _PUBLICATION_ENDPOINT,
+                "observed_at": now.astimezone(UTC).isoformat(),
+            }
         try:
             db.commit()
         except IntegrityError:
