@@ -2607,4 +2607,3 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
     assert not session.is_modified(post, include_collections=False)
     session.rollback()
     assert session.get(CanonicalPost, post.id).availability == "available"
-
