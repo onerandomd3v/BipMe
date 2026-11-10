@@ -1,5 +1,11 @@
 import { http, HttpResponse } from 'msw'
-import { healthFixture, sessionFixture } from './fixtures'
+import {
+  healthFixture,
+  latestReportFixture,
+  permissionFixture,
+  profileFixture,
+  sessionFixture,
+} from './fixtures'
 
 export const apiHandlers = [
   http.get('*/api/health', () => HttpResponse.json(healthFixture)),
@@ -8,4 +14,26 @@ export const apiHandlers = [
     HttpResponse.json(sessionFixture),
   ),
   http.post('*/api/auth/logout', () => new HttpResponse(null, { status: 204 })),
+  http.get('*/api/v1/creators/me/profile', () =>
+    HttpResponse.json(profileFixture),
+  ),
+  http.get('*/api/v1/creators/me/data-permissions', () =>
+    HttpResponse.json(permissionFixture),
+  ),
+  http.get('*/api/v1/creators/me/report/latest', () =>
+    HttpResponse.json(latestReportFixture),
+  ),
+  http.put('*/api/v1/creators/me/profile', () =>
+    HttpResponse.json(profileFixture.profile),
+  ),
+  http.put('*/api/v1/creators/me/data-permissions', () =>
+    HttpResponse.json(permissionFixture),
+  ),
+  http.post('*/api/v1/creators/me/report', () =>
+    HttpResponse.json(latestReportFixture.latest_report),
+  ),
+  http.delete(
+    '*/api/v1/creators/me/reports',
+    () => new HttpResponse(null, { status: 204 }),
+  ),
 ]

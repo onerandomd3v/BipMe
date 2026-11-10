@@ -51,6 +51,14 @@ export class ApiRequestError extends Error {
 
 export type ApiClient = ReturnType<typeof createApiClient>
 
+type CreatorProfileUpdate = components['schemas']['CreatorProfileUpdate']
+type CreatorProfileState = components['schemas']['CreatorProfileStateResponse']
+type CreatorProfile = components['schemas']['CreatorProfileResponse']
+type DataPermission = components['schemas']['DataPermissionResponse']
+type DataPermissionUpdate = components['schemas']['DataPermissionUpdate']
+type CreatorReport = components['schemas']['CreatorReportResponse']
+type CreatorReportState = components['schemas']['CreatorReportStateResponse']
+
 function numberHeader(response: Response, name: string) {
   const value = response.headers.get(name)
   if (!value) return null
@@ -152,6 +160,25 @@ function isHealthResponse(value: unknown): value is Record<string, string> {
 
 export function createApiClient(fetchImplementation: typeof fetch = fetch) {
   let csrfToken: string | null = null
+  const sessionInvalidationListeners = new Set<() => void>()
+
+  const clearSessionState = () => {
+    csrfToken = null
+    sessionInvalidationListeners.forEach((listener) => listener())
+  }
+
+  const invalidateSessionAfterAuthFailure = (error: unknown) => {
+    if (!(error instanceof ApiRequestError)) return
+    const confirmedSessionFailure =
+      error.status === 401 ||
+      (error.status === 403 &&
+        [
+          'csrf_validation_failed',
+          'session_invalid',
+          'session_expired',
+        ].includes(error.code))
+    if (confirmedSessionFailure) clearSessionState()
+  }
 
   const client = createClient<paths>({
     baseUrl:
@@ -186,7 +213,9 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
   ) {
     if (!result.response.ok) {
       const payload = result.error ?? (await parsePayload(result.response))
-      throw errorFromResponse(result.response, payload)
+      const error = errorFromResponse(result.response, payload)
+      invalidateSessionAfterAuthFailure(error)
+      throw error
     }
     if (result.data === undefined && !allowEmpty) {
       throw new ApiRequestError({
@@ -195,7 +224,7 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
         status: result.response.status,
       })
     }
-    return result.data
+    return result.data as T
   }
 
   async function request<T>(operation: () => Promise<T>, signal?: AbortSignal) {
@@ -257,15 +286,11 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
             status: result.response.status,
           })
         }
+        if (!data.authenticated) clearSessionState()
         csrfToken = data.csrf_token
         return data
       } catch (error) {
-        if (
-          error instanceof ApiRequestError &&
-          (error.status === 401 || error.status === 403)
-        ) {
-          csrfToken = null
-        }
+        invalidateSessionAfterAuthFailure(error)
         throw error
       }
     },
@@ -286,6 +311,7 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
           status: result.response.status,
         })
       }
+      clearSessionState()
       csrfToken = data.csrf_token
       return data
     },
@@ -296,19 +322,99 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
           signal,
         )
         await unwrap(result, true)
-        csrfToken = null
+        clearSessionState()
       } catch (error) {
-        if (
-          error instanceof ApiRequestError &&
-          (error.status === 401 || error.status === 403)
-        ) {
-          csrfToken = null
-        }
+        invalidateSessionAfterAuthFailure(error)
         throw error
       }
     },
+    async profile(signal?: AbortSignal): Promise<CreatorProfileState> {
+      const result = await request(
+        () => client.GET('/api/v1/creators/me/profile', { signal }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async saveProfile(
+      body: CreatorProfileUpdate,
+      signal?: AbortSignal,
+    ): Promise<CreatorProfile> {
+      const result = await request(
+        () => client.PUT('/api/v1/creators/me/profile', { body, signal }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async dataPermissions(signal?: AbortSignal): Promise<DataPermission> {
+      const result = await request(
+        () => client.GET('/api/v1/creators/me/data-permissions', { signal }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async saveDataPermissions(
+      body: DataPermissionUpdate,
+      signal?: AbortSignal,
+    ): Promise<DataPermission> {
+      const result = await request(
+        () =>
+          client.PUT('/api/v1/creators/me/data-permissions', { body, signal }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async latestReport(signal?: AbortSignal): Promise<CreatorReportState> {
+      const result = await request(
+        () => client.GET('/api/v1/creators/me/report/latest', { signal }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async generateReport(
+      body: components['schemas']['CreatorReportRequest'],
+      idempotencyKey: string,
+      signal?: AbortSignal,
+    ): Promise<CreatorReport> {
+      const result = await request(
+        () =>
+          client.POST('/api/v1/creators/me/report', {
+            body,
+            params: { header: { 'Idempotency-Key': idempotencyKey } },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async report(
+      reportId: string,
+      signal?: AbortSignal,
+    ): Promise<CreatorReport> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/reports/{report_id}', {
+            params: { path: { report_id: reportId } },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async deleteReports(signal?: AbortSignal): Promise<void> {
+      const result = await request(
+        () => client.DELETE('/api/v1/creators/me/reports', { signal }),
+        signal,
+      )
+      await unwrap(result, true)
+    },
     getCsrfToken() {
       return csrfToken
+    },
+    subscribeSessionInvalidation(listener: () => void) {
+      sessionInvalidationListeners.add(listener)
+      return () => {
+        sessionInvalidationListeners.delete(listener)
+      }
     },
     raw: client,
   }

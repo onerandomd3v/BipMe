@@ -48,6 +48,27 @@ describe('API client', () => {
     })
   })
 
+  it('uses generated report endpoints with synthetic MSW contracts', async () => {
+    const client = createApiClient()
+    await client.session()
+    await expect(client.profile()).resolves.toMatchObject({
+      status: 'configured',
+      profile: { niche: 'Independent product design' },
+    })
+    await expect(client.dataPermissions()).resolves.toMatchObject({
+      niche_discovery: 'unavailable',
+      external_synthesis: 'disabled',
+    })
+    await expect(client.latestReport()).resolves.toMatchObject({
+      status: 'available',
+      latest_report: { coverage: 'personal_only_partial' },
+    })
+    await expect(
+      client.generateReport({ data_sources: [] }, 'cod-379-fixture-key'),
+    ).resolves.toMatchObject({ id: '00000000-0000-0000-0000-000000000380' })
+    await expect(client.deleteReports()).resolves.toBeUndefined()
+  })
+
   it('uses same-origin cookies and returns typed health data', async () => {
     fetchMock.mockResolvedValue(response({ status: 'ok' }))
     const client = createApiClient(fetchMock)
@@ -86,6 +107,61 @@ describe('API client', () => {
     const client = createApiClient(fetchMock)
     await client.session()
     await expect(client.session()).rejects.toMatchObject({ status: 401 })
+    expect(client.getCsrfToken()).toBeNull()
+  })
+
+  it('keeps CSRF for unrelated permission denials', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        response({ authenticated: true, csrf_token: 'csrf' }),
+      )
+      .mockResolvedValueOnce(
+        response(
+          { error: { code: 'creator_forbidden', message: 'Forbidden' } },
+          403,
+        ),
+      )
+    const client = createApiClient(fetchMock)
+    await client.session()
+    await expect(client.profile()).rejects.toMatchObject({
+      status: 403,
+      code: 'creator_forbidden',
+    })
+    expect(client.getCsrfToken()).toBe('csrf')
+  })
+
+  it('notifies subscribers when the authenticated session is invalidated', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        response({ authenticated: true, csrf_token: 'csrf' }),
+      )
+      .mockResolvedValueOnce(
+        response(
+          { error: { code: 'session_expired', message: 'Expired' } },
+          401,
+        ),
+      )
+    const client = createApiClient(fetchMock)
+    const invalidated = vi.fn()
+    client.subscribeSessionInvalidation(invalidated)
+    await client.session()
+    await expect(client.profile()).rejects.toMatchObject({ status: 401 })
+    expect(invalidated).toHaveBeenCalledTimes(1)
+    expect(client.getCsrfToken()).toBeNull()
+  })
+
+  it('notifies subscribers after confirmed logout', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        response({ authenticated: true, csrf_token: 'csrf' }),
+      )
+      .mockResolvedValueOnce(response(null, 204))
+    const client = createApiClient(fetchMock)
+    const invalidated = vi.fn()
+    client.subscribeSessionInvalidation(invalidated)
+    await client.session()
+    await client.logout()
+    expect(invalidated).toHaveBeenCalledTimes(1)
     expect(client.getCsrfToken()).toBeNull()
   })
 

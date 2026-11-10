@@ -6,6 +6,8 @@ import {
   type MouseEvent,
 } from 'react'
 import { ApiRequestError, apiClient } from './api/client'
+import { CreatorDashboard } from './CreatorDashboard'
+import type { DraftAnalysisContext } from './dashboardModel'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
 type ViewState =
@@ -234,10 +236,20 @@ export function App() {
   const [health, setHealth] = useState<ApiHealth>('checking')
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('checking')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [draftContext, setDraftContext] = useState<DraftAnalysisContext | null>(
+    null,
+  )
   const triggerRef = useRef<HTMLButtonElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
   const wasDrawerOpen = useRef(false)
   const page = pages.find((item) => item.id === view) ?? pages[0]
+
+  useEffect(() => {
+    return apiClient.subscribeSessionInvalidation(() => {
+      setSessionStatus('unauthenticated')
+      setDraftContext(null)
+    })
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -514,39 +526,60 @@ export function App() {
             <p className="intro">{page.description}</p>
           </div>
 
-          <section
-            className="workspace-card"
-            aria-labelledby="workspace-card-title"
-          >
-            <div className="workspace-card__header">
-              <div className="workspace-card__mark" aria-hidden="true">
-                i
-              </div>
-              <div>
-                <p className="card-kicker">Private workspace</p>
-                <h2 id="workspace-card-title">
-                  Built for evidence, not guesswork.
-                </h2>
-              </div>
-            </div>
-            <StateNotice
-              state={workspaceState}
-              title={
-                workspaceState === 'unauthenticated'
-                  ? page.stateTitle
-                  : undefined
-              }
-              body={
-                workspaceState === 'unauthenticated'
-                  ? page.stateBody
-                  : undefined
-              }
+          {view === 'dashboard' && sessionStatus === 'authenticated' ? (
+            <CreatorDashboard
+              onAnalyzeDraft={(context) => {
+                setDraftContext(context)
+                navigate('draft')
+              }}
+              onSessionExpired={() => {
+                setSessionStatus('unauthenticated')
+                setDraftContext(null)
+              }}
             />
-            <p className="workspace-card__note">
-              BipMe will show observed creator data only after access and
-              evidence are available.
-            </p>
-          </section>
+          ) : (
+            <section
+              className="workspace-card"
+              aria-labelledby="workspace-card-title"
+            >
+              <div className="workspace-card__header">
+                <div className="workspace-card__mark" aria-hidden="true">
+                  i
+                </div>
+                <div>
+                  <p className="card-kicker">Private workspace</p>
+                  <h2 id="workspace-card-title">
+                    Built for evidence, not guesswork.
+                  </h2>
+                </div>
+              </div>
+              <StateNotice
+                state={workspaceState}
+                title={
+                  workspaceState === 'unauthenticated'
+                    ? page.stateTitle
+                    : undefined
+                }
+                body={
+                  workspaceState === 'unauthenticated'
+                    ? page.stateBody
+                    : undefined
+                }
+              />
+              <p className="workspace-card__note">
+                BipMe will show observed creator data only after access and
+                evidence are available.
+              </p>
+              {view === 'draft' && draftContext && (
+                <p className="workspace-card__note" role="status">
+                  Draft analysis context is available from report{' '}
+                  {draftContext.reportId}; this route does not persist private
+                  evidence and will safely require a fresh handoff after a
+                  refresh.
+                </p>
+              )}
+            </section>
+          )}
 
           <DevelopmentStatePreview />
           <footer className="page-footer">
