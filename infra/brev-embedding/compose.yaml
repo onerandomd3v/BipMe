@@ -1,0 +1,28 @@
+services:
+  embeddings:
+    build: .
+    image: bipme-e5-embeddings:1.0.0
+    restart: unless-stopped
+    environment:
+      BIPME_EMBEDDING_TOKEN: ${BIPME_EMBEDDING_TOKEN:?set a private random bearer secret}
+      HF_HOME: /model-cache
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - model-cache:/model-cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10m
+
+volumes:
+  model-cache:
