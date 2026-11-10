@@ -259,6 +259,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/creators/me/draft-assessments/{assessment_id}/postmortem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a creator-authenticated evidence-aware publication postmortem
+         * @description Evaluates only the immutable saved Outlook, the creator's linked publication, and persisted eligible metric observations. This GET makes no provider calls, schedules no work and performs no writes. A missing publication is reported as publication_pending; missing observations and historical evidence are explicit states in the response.
+         */
+        get: operations["read_postmortem_api_v1_creators_me_draft_assessments__assessment_id__postmortem_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creators/me/draft-assessments/{assessment_id}/publication": {
         parameters: {
             query?: never;
@@ -1176,6 +1196,218 @@ export interface components {
             /** Text */
             text: string | null;
         };
+        /** PostmortemEvaluationResponse */
+        PostmortemEvaluationResponse: {
+            /**
+             * Assessment Id
+             * Format: uuid
+             */
+            assessment_id: string;
+            hypothesis_evaluation: components["schemas"]["PostmortemHypothesisResponse"] | null;
+            /** Limitations */
+            limitations: string[];
+            /** Metric Comparisons */
+            metric_comparisons: components["schemas"]["PostmortemMetricResponse"][];
+            /** Observed Outcomes */
+            observed_outcomes: components["schemas"]["PostmortemObservationResponse"][];
+            original_outlook: components["schemas"]["DraftAnalysisResponse"];
+            /**
+             * Published Post Id
+             * Format: uuid
+             */
+            published_post_id: string;
+            /** Version */
+            version: string;
+            /**
+             * Version State
+             * @enum {string}
+             */
+            version_state: "verified" | "unverified";
+        };
+        /** PostmortemHypothesisResponse */
+        PostmortemHypothesisResponse: {
+            /** Comparison Post Ids */
+            comparison_post_ids: string[];
+            /** Effective Sample Size */
+            effective_sample_size: number;
+            /** Historical Median */
+            historical_median: number | null;
+            hypothesis: components["schemas"]["AcceptedHypothesis"];
+            /** Limitations */
+            limitations: string[];
+            /** Matched Sample Count */
+            matched_sample_count: number;
+            /** Metric */
+            metric: string;
+            /** Metric Definition */
+            metric_definition: string;
+            /** Observed Value */
+            observed_value: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "supported" | "contradicted" | "inconclusive";
+            /** Unit */
+            unit: string;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "mature_cumulative" | "age_aligned";
+        };
+        /** PostmortemMetricResponse */
+        PostmortemMetricResponse: {
+            /** Comparison Observations */
+            comparison_observations: components["schemas"]["PostmortemObservationResponse"][];
+            /** Comparison Post Ids */
+            comparison_post_ids: string[];
+            /** Deviation From Median */
+            deviation_from_median: number | null;
+            /** Effective Sample Size */
+            effective_sample_size: number;
+            /** Historical Median */
+            historical_median: number | null;
+            /** Limitations */
+            limitations: string[];
+            /** Matched Sample Count */
+            matched_sample_count: number;
+            /** Metric */
+            metric: string;
+            /** Metric Definition */
+            metric_definition: string;
+            /** Observation Age Seconds */
+            observation_age_seconds: number | null;
+            /** Observed At */
+            observed_at: string | null;
+            /** Observed Value */
+            observed_value: number | null;
+            reference_range: components["schemas"]["PostmortemRangeResponse"] | null;
+            /** Relative Percentile */
+            relative_percentile: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "scored" | "unavailable" | "version_unverified";
+            /** Unit */
+            unit: string;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "mature_cumulative" | "age_aligned";
+            /** Within Reference Range */
+            within_reference_range: boolean | null;
+        };
+        /** PostmortemObservationResponse */
+        PostmortemObservationResponse: {
+            /** Metric */
+            metric: string;
+            /** Metric Definition */
+            metric_definition: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /**
+             * Post Id
+             * Format: uuid
+             */
+            post_id: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "observed" | "missing";
+            /** Unit */
+            unit: string;
+            /** Value */
+            value: number | null;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "mature_cumulative" | "age_aligned";
+        };
+        /** PostmortemPublicationResponse */
+        PostmortemPublicationResponse: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "available" | "unavailable" | "deleted";
+            /**
+             * Canonical Post Id
+             * Format: uuid
+             */
+            canonical_post_id: string;
+            /** External Post Id */
+            external_post_id: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Version Match State
+             * @enum {string}
+             */
+            version_match_state: "match" | "mismatch" | "unknown";
+        };
+        /** PostmortemRangeResponse */
+        PostmortemRangeResponse: {
+            /** Comparable Post Ids */
+            comparable_post_ids: string[];
+            /** Effective Sample Size */
+            effective_sample_size: number;
+            /** Kind */
+            kind: string;
+            /** Lower P25 */
+            lower_p25: number;
+            /** Median P50 */
+            median_p50: number;
+            /** Upper P75 */
+            upper_p75: number;
+        };
+        /** PostmortemReadResponse */
+        PostmortemReadResponse: {
+            /**
+             * Assessed At
+             * Format: date-time
+             */
+            assessed_at: string;
+            /**
+             * Assessment Id
+             * Format: uuid
+             */
+            assessment_id: string;
+            /**
+             * Limitations
+             * @default []
+             */
+            limitations: string[];
+            original_outlook: components["schemas"]["DraftAnalysisResponse"];
+            postmortem: components["schemas"]["PostmortemEvaluationResponse"] | null;
+            published_post: components["schemas"]["PostmortemPublicationResponse"] | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "publication_pending" | "publication_unavailable" | "monitoring_pending" | "insufficient_evidence" | "version_unverified" | "evaluated";
+        };
         /** PrivateLoginRequest */
         PrivateLoginRequest: {
             /** Secret */
@@ -2030,6 +2262,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftAnalysisResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    read_postmortem_api_v1_creators_me_draft_assessments__assessment_id__postmortem_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostmortemReadResponse"];
                 };
             };
             /** @description Unauthorized */
