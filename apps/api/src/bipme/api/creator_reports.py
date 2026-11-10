@@ -19,7 +19,6 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from bipme.api.analysis import _latest_observation_records
 from bipme.api.creator_report_schemas import (
     CreatorProfileResponse,
     CreatorProfileStateResponse,
@@ -53,7 +52,10 @@ from bipme.intelligence.report_evidence import (
     ReportEvidence,
     ReportSource,
 )
-from bipme.persistence.contracts import outcome_observations_from_records
+from bipme.persistence.contracts import (
+    latest_observation_records,
+    outcome_observations_from_records,
+)
 from bipme.persistence.models import (
     CanonicalPost,
     Creator,
@@ -506,7 +508,7 @@ def _make_evidence_bundle(
                     )
                     # Select the latest row before converting states. A newer invalid row
                     # is an explicit gap and must not resurrect an older observed value.
-                    rows = _latest_observation_records(rows, as_of)
+                    rows = latest_observation_records(rows, as_of)
                     weights = {str(post_id): 1.0 for post_id in post_ids}
                     all_observations = outcome_observations_from_records(
                         rows, weights_by_post_id=weights
