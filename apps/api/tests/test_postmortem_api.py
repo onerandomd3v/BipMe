@@ -29,6 +29,7 @@ from bipme.persistence.base import Base
 from bipme.persistence.models import (
     CanonicalPost,
     Creator,
+    CreatorProcessingPermission,
     DraftAssessment,
     OutcomeObservationRecord,
 )
@@ -45,12 +46,13 @@ DEFINITION = "impressions-v1|unit=impressions"
 
 
 @pytest.fixture
-def postmortem_api() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
+def postmortem_api(monkeypatch) -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     tables = [
         Creator.__table__,
+        CreatorProcessingPermission.__table__,
         DraftAssessment.__table__,
         CanonicalPost.__table__,
         OutcomeObservationRecord.__table__,
@@ -73,6 +75,16 @@ def postmortem_api() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
     with factory() as db:
         db.add_all((Creator(id=CREATOR_ID), Creator(id=OTHER_CREATOR_ID)))
         db.flush()
+        db.add(
+            CreatorProcessingPermission(
+                creator_id=CREATOR_ID,
+                revision=1,
+                source_kind="personal_history",
+                allowed=True,
+                policy_version="synthetic-test",
+                recorded_at=NOW - timedelta(days=1),
+            )
+        )
         metric_observations = tuple(
             observation(
                 str(uuid5(NAMESPACE_URL, f"history-{index}")),
@@ -149,7 +161,7 @@ def postmortem_api() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
                     published_at=item.published_at,
                     availability="available",
                     topology="original",
-                    source="synthetic",
+                    source="x_creator_authorized_history",
                     provenance={},
                 )
             )
@@ -167,7 +179,7 @@ def postmortem_api() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
                 published_at=AS_OF + timedelta(hours=1),
                 availability="available",
                 topology="original",
-                source="synthetic",
+                source="x_authorized_publication_verification",
                 source_assessment_id=ASSESSMENT_ID,
                 version_match_state="match",
                 provenance={},
@@ -185,6 +197,8 @@ def postmortem_api() -> Iterator[tuple[TestClient, sessionmaker[Session]]]:
         db.commit()
 
     app = create_app()
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED", "true")
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT", "2026-11-08T00:00:00Z")
     app.dependency_overrides[get_authenticated_creator] = lambda: AuthenticatedCreator(CREATOR_ID)
     app.dependency_overrides[get_current_time] = lambda: NOW
 
@@ -316,6 +330,74 @@ def test_sparse_historical_evidence_is_explicitly_insufficient(postmortem_api) -
     assert body["state"] == "insufficient_evidence"
     assert body["postmortem"]["metric_comparisons"][0]["status"] == "unavailable"
     assert body["postmortem"]["hypothesis_evaluation"]["status"] == "inconclusive"
+
+
+def test_historical_snapshots_use_the_latest_observation_at_assessment_cutoff(
+    postmortem_api,
+) -> None:
+    client, factory = postmortem_api
+    with factory.begin() as db:
+        original = db.scalar(
+            select(OutcomeObservationRecord).where(OutcomeObservationRecord.post_id != PUBLISHED_ID)
+        )
+        assert original is not None
+        db.add(
+            _record(
+                original.post_id,
+                5.0,
+                original.published_at,
+                original.published_at + timedelta(hours=12),
+                "earlier-history-snapshot",
+            )
+        )
+
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/postmortem")
+
+    assert response.status_code == 200
+    comparison = response.json()["postmortem"]["metric_comparisons"][0]
+    assert comparison["matched_sample_count"] == 10
+
+
+def test_revoked_personal_history_permission_withholds_persisted_observations(
+    postmortem_api,
+) -> None:
+    client, factory = postmortem_api
+    with factory.begin() as db:
+        db.add(
+            CreatorProcessingPermission(
+                creator_id=CREATOR_ID,
+                revision=2,
+                source_kind="personal_history",
+                allowed=False,
+                policy_version="synthetic-revocation",
+                recorded_at=NOW - timedelta(minutes=1),
+            )
+        )
+
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/postmortem")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"] == "evidence_unavailable"
+    assert body["postmortem"] is None
+    assert "permission or source policy" in body["limitations"][0]
+
+
+def test_outlook_without_metric_evidence_is_not_reported_as_monitoring_pending(
+    postmortem_api,
+) -> None:
+    client, factory = postmortem_api
+    with factory.begin() as db:
+        assessment = db.get(DraftAssessment, ASSESSMENT_ID)
+        assert assessment is not None
+        assessment.decision_snapshot = {**assessment.decision_snapshot, "metrics": []}
+
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/postmortem")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"] == "insufficient_evidence"
+    assert body["postmortem"]["metric_comparisons"] == []
 
 
 def test_linked_publication_without_any_observation_is_monitoring_pending(postmortem_api) -> None:

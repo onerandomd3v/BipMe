@@ -9,10 +9,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from pydantic import Field, ValidationError
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from bipme.api.creator_reports import _latest_permission, _x_history_policy_verified_at
 from bipme.api.dependencies import (
     AuthenticatedCreator,
     get_authenticated_creator,
@@ -20,6 +21,7 @@ from bipme.api.dependencies import (
     get_db_session,
 )
 from bipme.api.errors import ApiError
+from bipme.api.evidence import KNOWN_X_SOURCES
 from bipme.api.schemas import AcceptedHypothesis as AcceptedHypothesisSchema
 from bipme.api.schemas import DraftAnalysisResponse, ErrorResponse, StrictModel
 from bipme.intelligence.baselines import BaselineStatistics, OutcomeObservation
@@ -42,7 +44,10 @@ from bipme.intelligence.postmortems import (
     build_postmortem,
 )
 from bipme.intelligence.retrieval import CandidateExclusion, RelevanceComponents
-from bipme.persistence.contracts import outcome_observations_from_records
+from bipme.persistence.contracts import (
+    latest_observation_records,
+    outcome_observations_from_records,
+)
 from bipme.persistence.models import CanonicalPost, DraftAssessment, OutcomeObservationRecord
 from bipme.posts.publications import postmortem_publication
 
@@ -133,6 +138,7 @@ class PostmortemReadResponse(StrictModel):
     state: Literal[
         "publication_pending",
         "publication_unavailable",
+        "evidence_unavailable",
         "monitoring_pending",
         "insufficient_evidence",
         "version_unverified",
@@ -370,11 +376,25 @@ def _evaluation(
     )
 
 
+def _publication_response(post: CanonicalPost) -> PostmortemPublicationResponse:
+    return PostmortemPublicationResponse(
+        canonical_post_id=post.id,
+        external_post_id=post.external_post_id,
+        published_at=post.published_at,
+        availability=cast(Literal["available", "unavailable", "deleted"], post.availability),
+        version_match_state=cast(
+            Literal["match", "mismatch", "unknown"], post.version_match_state or "unknown"
+        ),
+    )
+
+
 def _state(
     result: PostmortemResult, has_published_observation: bool
 ) -> Literal["monitoring_pending", "insufficient_evidence", "version_unverified", "evaluated"]:
     if result.version_state == "unverified":
         return "version_unverified"
+    if not result.original_outlook.metrics:
+        return "insufficient_evidence"
     if not has_published_observation:
         return "monitoring_pending"
     if any(item.status == "unavailable" for item in result.metric_comparisons):
@@ -465,37 +485,54 @@ def read_postmortem(
                 state="publication_unavailable",
                 assessment_id=assessment.id,
                 assessed_at=assessment.assessed_at,
-                published_post=PostmortemPublicationResponse(
-                    canonical_post_id=post.id,
-                    external_post_id=post.external_post_id,
-                    published_at=post.published_at,
-                    availability=cast(
-                        Literal["available", "unavailable", "deleted"], post.availability
-                    ),
-                    version_match_state=cast(
-                        Literal["match", "mismatch", "unknown"],
-                        post.version_match_state or "unknown",
-                    ),
-                ),
+                published_post=_publication_response(post),
                 original_outlook=outlook,
                 postmortem=None,
                 limitations=("The linked publication is unavailable.",),
             )
+        permission = _latest_permission(db, creator.creator_id)
+        processing_allowed = bool(
+            permission
+            and permission.allowed
+            and permission.recorded_at <= now
+            and _x_history_policy_verified_at(now) is not None
+            and post.source in KNOWN_X_SOURCES
+        )
+        if not processing_allowed:
+            return PostmortemReadResponse(
+                state="evidence_unavailable",
+                assessment_id=assessment.id,
+                assessed_at=assessment.assessed_at,
+                published_post=_publication_response(post),
+                original_outlook=outlook,
+                postmortem=None,
+                limitations=(
+                    "Personal-history processing is unavailable because current permission or source policy does not allow reading metric evidence.",
+                ),
+            )
         published: PublishedPost = postmortem_publication(post)
 
-        relevant_ids = {item.post_id for item in outlook.comparable_evidence}
-        relevant_ids.add(post.id)
+        history_ids = {item.post_id for item in outlook.comparable_evidence}
         rows = list(
             db.scalars(
                 select(OutcomeObservationRecord)
                 .join(CanonicalPost, CanonicalPost.id == OutcomeObservationRecord.post_id)
                 .where(
                     OutcomeObservationRecord.creator_id == creator.creator_id,
-                    OutcomeObservationRecord.post_id.in_(relevant_ids),
-                    OutcomeObservationRecord.observed_at <= now,
                     CanonicalPost.creator_id == creator.creator_id,
                     CanonicalPost.platform == "x",
                     CanonicalPost.availability == "available",
+                    CanonicalPost.source.in_(KNOWN_X_SOURCES),
+                    or_(
+                        and_(
+                            OutcomeObservationRecord.post_id == post.id,
+                            OutcomeObservationRecord.observed_at <= now,
+                        ),
+                        and_(
+                            OutcomeObservationRecord.post_id.in_(history_ids),
+                            OutcomeObservationRecord.observed_at <= assessment.assessed_at,
+                        ),
+                    ),
                 )
                 .order_by(
                     OutcomeObservationRecord.observed_at,
@@ -510,10 +547,14 @@ def read_postmortem(
         )
         weights = {str(item.post_id): item.relevance for item in outlook.comparable_evidence}
         weights[str(post.id)] = 1.0
-        mapped = outcome_observations_from_records(rows, weights_by_post_id=weights)
-        history_ids = {str(item.post_id) for item in outlook.comparable_evidence}
-        history = tuple(item for item in mapped if item.post_id in history_ids)
-        published_outcomes = tuple(item for item in mapped if item.post_id == str(post.id))
+        historical_rows = latest_observation_records(
+            [row for row in rows if row.post_id in history_ids], assessment.assessed_at
+        )
+        published_rows = [row for row in rows if row.post_id == post.id]
+        history = outcome_observations_from_records(historical_rows, weights_by_post_id=weights)
+        published_outcomes = outcome_observations_from_records(
+            published_rows, weights_by_post_id=weights
+        )
         request = PostmortemRequest(
             assessment=original,
             published_post=published,
@@ -534,15 +575,7 @@ def read_postmortem(
             state=state,
             assessment_id=assessment.id,
             assessed_at=assessment.assessed_at,
-            published_post=PostmortemPublicationResponse(
-                canonical_post_id=post.id,
-                external_post_id=post.external_post_id,
-                published_at=post.published_at,
-                availability="available",
-                version_match_state=cast(
-                    Literal["match", "mismatch", "unknown"], post.version_match_state or "unknown"
-                ),
-            ),
+            published_post=_publication_response(post),
             original_outlook=outlook,
             postmortem=_evaluation(result, outlook),
             limitations=result.limitations,

@@ -2543,6 +2543,7 @@
             "enum": [
               "publication_pending",
               "publication_unavailable",
+              "evidence_unavailable",
               "monitoring_pending",
               "insufficient_evidence",
               "version_unverified",

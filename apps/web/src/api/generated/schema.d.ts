@@ -1406,7 +1406,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "publication_pending" | "publication_unavailable" | "monitoring_pending" | "insufficient_evidence" | "version_unverified" | "evaluated";
+            state: "publication_pending" | "publication_unavailable" | "evidence_unavailable" | "monitoring_pending" | "insufficient_evidence" | "version_unverified" | "evaluated";
         };
         /** PrivateLoginRequest */
         PrivateLoginRequest: {
