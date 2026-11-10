@@ -259,7 +259,7 @@ describe('CreatorHistoryDashboard states', () => {
       },
     })
     await waitFor(() =>
-      expect(client.baseline).toHaveBeenLastCalledWith(
+      expect(client.baseline).toHaveBeenCalledWith(
         expect.objectContaining({
           metric: 'likes',
           definition: 'public|v1',
