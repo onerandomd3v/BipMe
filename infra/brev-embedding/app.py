@@ -23,7 +23,7 @@ app = FastAPI(title="BipMe private embeddings", docs_url=None, redoc_url=None, o
 inference_slot = threading.BoundedSemaphore(1)
 model_lock = threading.Lock()
 loaded_model: Any | None = None
-MAX_REQUEST_BYTES = 400 * 1024
+MAX_REQUEST_BYTES = 512 * 1024
 
 
 class RequestSizeLimitMiddleware:
@@ -153,7 +153,7 @@ def embed(
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
     require_token(authorization)
-    if any(not text.strip() or len(text) > 8000 for text in request.texts):
+    if any(not text.strip() or len(text) > 10000 for text in request.texts):
         raise HTTPException(status_code=422, detail="invalid input")
     if not inference_slot.acquire(blocking=False):
         raise HTTPException(status_code=503, detail="inference busy")

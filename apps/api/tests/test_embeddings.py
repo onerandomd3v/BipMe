@@ -255,6 +255,25 @@ def test_remote_rejects_oversized_response_without_parsing_it():
         )
 
 
+def test_remote_accepts_existing_api_text_limit():
+    captured = []
+
+    def handler(request):
+        captured.append(request.read())
+        return httpx.Response(
+            200,
+            json={
+                "model": identity().model_id,
+                "revision": identity().revision,
+                "dimensions": 384,
+                "embeddings": [[1.0] + [0.0] * 383],
+            },
+        )
+
+    assert len(_remote(handler).encode(["x" * 10000], role="query")) == 1
+    assert len(httpx.Response(200, content=captured[0]).json()["texts"][0]) == 10000
+
+
 def test_remote_requires_https_and_bounds_requests():
     with pytest.raises(ValueError, match="HTTPS"):
         RemoteTextEmbedder(identity(), endpoint="http://localhost", token="x")
@@ -274,7 +293,7 @@ def test_remote_requires_https_and_bounds_requests():
     )
     with pytest.raises(ValueError, match="bounds"):
         encoder.encode(["one", "two"], role="passage")
-    for bounds in ({"max_batch_size": 9}, {"max_text_chars": 8001}):
+    for bounds in ({"max_batch_size": 9}, {"max_text_chars": 10001}):
         with pytest.raises(ValueError, match="bounds"):
             RemoteTextEmbedder(identity(), endpoint="https://private.example", token="x", **bounds)
 

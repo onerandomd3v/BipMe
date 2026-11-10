@@ -154,7 +154,7 @@ class RemoteTextEmbedder:
         token: str,
         timeout_seconds: float = 10.0,
         max_batch_size: int = 8,
-        max_text_chars: int = 8000,
+        max_text_chars: int = 10000,
         max_concurrency: int = 2,
         client: httpx.Client | None = None,
     ) -> None:
@@ -188,7 +188,7 @@ class RemoteTextEmbedder:
             )
         if (
             not 1 <= max_batch_size <= 8
-            or not 1 <= max_text_chars <= 8000
+            or not 1 <= max_text_chars <= 10000
             or not 1 <= max_concurrency <= 16
         ):
             raise ValueError("Invalid remote embedding bounds")

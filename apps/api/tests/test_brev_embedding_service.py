@@ -95,16 +95,20 @@ def test_embed_rejects_oversized_request_before_json_parsing(app_client) -> None
     assert "synthetic-secret" not in response.text
 
 
-def test_embed_rejects_invalid_role_and_unbounded_text(app_client) -> None:
+def test_embed_enforces_role_and_api_text_limit(app_client) -> None:
     client, _ = app_client
     headers = {"Authorization": "Bearer synthetic-secret"}
     invalid_role = client.post("/embed", headers=headers, json={"texts": ["x"], "role": "other"})
-    long_text = client.post(
-        "/embed", headers=headers, json={"texts": ["x" * 8001], "role": "passage"}
+    max_length = client.post(
+        "/embed", headers=headers, json={"texts": ["x" * 10000], "role": "passage"}
+    )
+    too_long = client.post(
+        "/embed", headers=headers, json={"texts": ["x" * 10001], "role": "passage"}
     )
     assert invalid_role.status_code == 422
-    assert long_text.status_code == 422
-    assert "x" * 40 not in long_text.text
+    assert max_length.status_code == 200
+    assert too_long.status_code == 422
+    assert "x" * 40 not in too_long.text
 
 
 def test_service_unavailable_and_busy_responses_are_safe(app_client) -> None:
