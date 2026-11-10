@@ -6,6 +6,7 @@ import {
   type MouseEvent,
 } from 'react'
 import { ApiRequestError, apiClient } from './api/client'
+import { CreatorHistoryDashboard } from './CreatorHistoryDashboard'
 import { CreatorDashboard } from './CreatorDashboard'
 import { DraftAnalysis } from './DraftAnalysis'
 import type { DraftAnalysisContext } from './dashboardModel'
@@ -546,6 +547,11 @@ export function App() {
             <DraftAnalysis
               context={draftContext}
               onBackToDashboard={() => navigate('dashboard')}
+              onSessionExpired={() => {
+                setSessionStatus('unauthenticated')
+                setDraftContext(null)
+              }}
+            />
           ) : view === 'history' && sessionStatus === 'authenticated' ? (
             <CreatorHistoryDashboard
               onSessionExpired={() => {

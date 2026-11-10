@@ -61,6 +61,32 @@ type CreatorReportState = components['schemas']['CreatorReportStateResponse']
 type DraftAnalysisRequest = components['schemas']['DraftAnalysisRequest']
 type DraftAnalysisResponse = components['schemas']['DraftAnalysisResponse']
 type EvidencePage = components['schemas']['EvidencePage']
+type PostEvidence = components['schemas']['PostEvidence']
+type ImportPage = components['schemas']['ImportPage']
+type HistoryImportResponse = components['schemas']['HistoryImportResponse']
+type CreatorBaseline = components['schemas']['CreatorBaselineResponse']
+
+export type HistoryPostsQuery = {
+  limit?: number
+  cursor?: string | null
+  as_of?: string | null
+  assessment_id?: string | null
+}
+
+export type HistoryEvidenceQuery = {
+  post_ids: string[]
+  as_of?: string | null
+  assessment_id?: string | null
+}
+
+export type BaselineQuery = {
+  metric: string
+  definition: string
+  unit: string
+  window_kind: 'mature_cumulative' | 'age_aligned'
+  window_key: string
+  as_of?: string | null
+}
 
 function numberHeader(response: Response, name: string) {
   const value = response.headers.get(name)
@@ -420,14 +446,6 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
           client.POST('/api/v1/creators/me/draft-assessments', {
             body,
             params: { header: { 'Idempotency-Key': idempotencyKey } },
-    async historyPosts(
-      params?: HistoryPostsQuery,
-      signal?: AbortSignal,
-    ): Promise<EvidencePage> {
-      const result = await request(
-        () =>
-          client.GET('/api/v1/creators/me/history/posts', {
-            params: params ? { query: params } : undefined,
             signal,
           }),
         signal,
@@ -448,17 +466,84 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
       )
       return (await unwrap(result)) as DraftAnalysisResponse
     },
+    async historyPosts(
+      params?: HistoryPostsQuery,
+      signal?: AbortSignal,
+    ): Promise<EvidencePage> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/posts', {
+            params: params ? { query: params } : undefined,
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async historyPost(
+      postId: string,
+      params?: Omit<HistoryPostsQuery, 'limit' | 'cursor'>,
+      signal?: AbortSignal,
+    ): Promise<PostEvidence> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/posts/{post_id}', {
+            params: { path: { post_id: postId }, query: params },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
     async historyEvidence(
-      params: {
-        post_ids: string[]
-        assessment_id?: string | null
-        as_of?: string | null
-      },
+      params: HistoryEvidenceQuery,
       signal?: AbortSignal,
     ): Promise<EvidencePage> {
       const result = await request(
         () =>
           client.GET('/api/v1/creators/me/history/evidence', {
+            params: { query: params },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async historyImports(
+      limit?: number,
+      signal?: AbortSignal,
+    ): Promise<ImportPage> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/imports', {
+            params: limit === undefined ? undefined : { query: { limit } },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async historyImport(
+      importId: string,
+      signal?: AbortSignal,
+    ): Promise<HistoryImportResponse> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/imports/{import_id}', {
+            params: { path: { import_id: importId } },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async baseline(
+      params: BaselineQuery,
+      signal?: AbortSignal,
+    ): Promise<CreatorBaseline> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/baseline', {
             params: { query: params },
             signal,
           }),

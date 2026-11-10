@@ -41,13 +41,22 @@ export const apiHandlers = [
     '*/api/v1/creators/me/reports',
     () => new HttpResponse(null, { status: 204 }),
   ),
+  http.get('*/api/v1/creators/me/history/imports', () =>
+    HttpResponse.json(historyImportFixture),
+  ),
+  http.get('*/api/v1/creators/me/history/posts', () =>
+    HttpResponse.json(historyPostsFixture),
+  ),
+  http.get('*/api/v1/creators/me/baseline', () =>
+    HttpResponse.json(baselineFixture),
+  ),
+  http.get('*/api/v1/creators/me/history/evidence', () =>
+    HttpResponse.json(evidenceFixture),
+  ),
   http.post('*/api/v1/creators/me/draft-assessments', () =>
     HttpResponse.json(draftAnalysisFixture, { status: 201 }),
   ),
   http.get('*/api/v1/creators/me/draft-assessments/:assessmentId', () =>
     HttpResponse.json(draftAnalysisFixture),
-  ),
-  http.get('*/api/v1/creators/me/history/evidence', () =>
-    HttpResponse.json(evidenceFixture),
   ),
 ]

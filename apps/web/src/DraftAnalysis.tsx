@@ -271,14 +271,25 @@ function validEvidenceObservation(value: unknown): boolean {
     isRecord(value) &&
     typeof value.id === 'string' &&
     typeof value.metric_definition === 'string' &&
+    value.metric_definition.trim().length > 0 &&
     typeof value.metric_name === 'string' &&
-    (value.metric_value === null || typeof value.metric_value === 'string') &&
+    value.metric_name.trim().length > 0 &&
+    typeof value.metric_unit === 'string' &&
+    value.metric_unit.trim().length > 0 &&
+    (value.state === 'observed'
+      ? typeof value.metric_value === 'string' &&
+        /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/.test(
+          value.metric_value,
+        ) &&
+        Number.isFinite(Number(value.metric_value))
+      : value.metric_value === null) &&
     finiteNumber(value.observed_age_seconds) &&
     validDate(value.observed_at) &&
     validDate(value.published_at) &&
     oneOf(value.source, SOURCES) &&
     oneOf(value.state, METRIC_STATES) &&
     typeof value.window_key === 'string' &&
+    value.window_key.trim().length > 0 &&
     oneOf(value.window_kind, ['mature_cumulative', 'age_aligned'] as const) &&
     isRecord(value.provenance) &&
     oneOf(value.provenance.source, SOURCES) &&
@@ -523,7 +534,7 @@ function EvidenceCard({
         </div>
         <span className="coverage-badge">
           {comparable
-            ? `${Math.round(comparable.relevance * 100)}% relevant`
+            ? `Retrieval relevance: ${comparable.relevance.toFixed(2)} (ranking score, not probability)`
             : 'Matched'}
         </span>
       </div>
@@ -658,7 +669,8 @@ function ResultView({
         )}
         {hypothesis && (
           <p className="form-hint">
-            This optional hypothesis is not automatically recorded or published.
+            Suggested experiment only: it has not been accepted or saved. This
+            view cannot change an existing assessment.
           </p>
         )}
       </section>
@@ -922,6 +934,7 @@ export function DraftAnalysis({
   ) => {
     const isCurrent = () =>
       generationRef.current === generation && !signal.aborted
+    if (isCurrent()) setEvidence([])
     const ids = result.comparable_evidence
       .map((item) => item.post_id)
       .slice(0, 50)
@@ -947,15 +960,53 @@ export function DraftAnalysis({
         throw new Error(
           'The evidence response belongs to a different assessment.',
         )
+      const cutoff = new Date(result.assessed_at).getTime()
+      if (new Date(page.as_of).getTime() !== cutoff)
+        throw new Error(
+          'The evidence cutoff does not match the immutable assessment timestamp.',
+        )
       const requested = new Set(ids)
       const returned = new Set<string>()
       const validItems: PostEvidence[] = []
-      let invalidItemCount = 0
-      for (const candidate of page.items) {
+      for (const raw of page.items) {
+        const policy = isRecord(raw) ? disclosurePolicy(raw.disclosure) : null
+        const candidate =
+          isRecord(raw) && policy
+            ? {
+                ...raw,
+                text: policy.showContent ? raw.text : null,
+                source_url: policy.showContent ? raw.source_url : null,
+                source_observed_at: policy.showSourceMetadata
+                  ? raw.source_observed_at
+                  : null,
+                observations: policy.showObservations ? raw.observations : [],
+              }
+            : raw
         if (!validEvidenceItem(candidate)) {
-          invalidItemCount += 1
           continue
         }
+        if (
+          new Date(candidate.published_at).getTime() > cutoff ||
+          (candidate.source_observed_at !== null &&
+            new Date(candidate.source_observed_at).getTime() > cutoff) ||
+          candidate.observations.some((observation) => {
+            const observed = new Date(observation.observed_at).getTime()
+            const published = new Date(observation.published_at).getTime()
+            return (
+              observed > cutoff ||
+              published !== new Date(candidate.published_at).getTime() ||
+              observed < published ||
+              observation.observed_age_seconds < 0 ||
+              Math.abs(
+                observation.observed_age_seconds -
+                  (observed - published) / 1000,
+              ) > 0.001
+            )
+          })
+        )
+          throw new Error(
+            'The evidence response included impossible or future observations.',
+          )
         if (!requested.has(candidate.id))
           throw new Error('The evidence response included an unexpected post.')
         if (returned.has(candidate.id))
@@ -967,8 +1018,8 @@ export function DraftAnalysis({
         setEvidence(validItems)
         const unavailableCount = requested.size - returned.size
         setEvidenceError(
-          invalidItemCount > 0 || unavailableCount > 0
-            ? `${validItems.length} of ${requested.size} comparable posts were validated; ${invalidItemCount + unavailableCount} are unavailable and were not inferred.`
+          unavailableCount > 0
+            ? `${validItems.length} of ${requested.size} comparable posts were validated; ${unavailableCount} are unavailable and were not inferred.`
             : null,
         )
       }

@@ -494,3 +494,106 @@ describe('DraftAnalysis', () => {
     expect(client.createDraftAssessment).not.toHaveBeenCalled()
   })
 })
+
+// Treat enrichment as untrusted input even though generated types describe it.
+describe('Draft evidence boundary regressions', () => {
+  it.each([
+    ['wrong cutoff', { ...evidenceFixture, as_of: '2026-11-11T12:00:00Z' }],
+    ...['NaN', 'Infinity', '-1', '', '0x10', 'private'].map((value) => [
+      `invalid value ${value}`,
+      {
+        ...evidenceFixture,
+        items: [
+          {
+            ...evidenceFixture.items[0],
+            observations: [
+              {
+                ...evidenceFixture.items[0].observations[0],
+                metric_value: value,
+              },
+            ],
+          },
+        ],
+      },
+    ]),
+    [
+      'missing unit',
+      {
+        ...evidenceFixture,
+        items: [
+          {
+            ...evidenceFixture.items[0],
+            observations: [
+              { ...evidenceFixture.items[0].observations[0], metric_unit: '' },
+            ],
+          },
+        ],
+      },
+    ],
+    [
+      'future observation',
+      {
+        ...evidenceFixture,
+        items: [
+          {
+            ...evidenceFixture.items[0],
+            observations: [
+              {
+                ...evidenceFixture.items[0].observations[0],
+                observed_at: '2026-11-11T12:00:00Z',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    [
+      'inconsistent age',
+      {
+        ...evidenceFixture,
+        items: [
+          {
+            ...evidenceFixture.items[0],
+            observations: [
+              {
+                ...evidenceFixture.items[0].observations[0],
+                observed_age_seconds: -1,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  ])('withholds %s', async (_name, page) => {
+    const client = clientMock()
+    client.historyEvidence.mockResolvedValue(page)
+    render(<DraftAnalysis context={context} client={client} />)
+    fireEvent.change(screen.getByLabelText('Draft text'), {
+      target: { value: 'Boundary regression' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze this draft' }))
+    await screen.findByRole('alert')
+    expect(
+      screen.queryByText("Which product decision changed your team's week?"),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText('What the evidence suggests trying next'),
+    ).toBeInTheDocument()
+  })
+
+  it('counts a malformed requested post once', async () => {
+    const client = clientMock()
+    client.historyEvidence.mockResolvedValue({
+      ...evidenceFixture,
+      items: [null],
+    })
+    render(<DraftAnalysis context={context} client={client} />)
+    fireEvent.change(screen.getByLabelText('Draft text'), {
+      target: { value: 'Missing post' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze this draft' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '0 of 1 comparable posts were validated; 1 are unavailable',
+    )
+  })
+})

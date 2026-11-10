@@ -90,6 +90,8 @@ describe('App session boundary', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Analyze a Draft' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('cannot submit')
     expect(screen.queryByText(/Using report context/)).not.toBeInTheDocument()
+  })
+
   it('renders the authenticated history route through the App boundary', async () => {
     window.history.replaceState(null, '', '/content-history')
     render(<App />)
