@@ -225,3 +225,47 @@ def outcome_observations_from_records(
             )
         )
     return tuple(observations)
+
+
+def latest_observation_records(
+    records: list[OutcomeObservationRecord], as_of: datetime
+) -> list[OutcomeObservationRecord]:
+    """Select the latest snapshot per exact post/metric/window series at a cutoff.
+
+    Rows after the cutoff are retained in deterministic order so callers that report
+    exclusions can preserve that behavior; prediction-time callers should query only
+    rows known by their immutable assessment cutoff.
+    """
+    latest: dict[tuple[str, str, str, str, str, str], OutcomeObservationRecord] = {}
+    future: list[OutcomeObservationRecord] = []
+    for record in records:
+        if record.observed_at > as_of:
+            future.append(record)
+            continue
+        key = (
+            str(record.post_id),
+            record.metric_name,
+            record.metric_definition,
+            record.metric_unit,
+            record.window_kind,
+            record.window_key,
+        )
+        prior = latest.get(key)
+        if prior is None or (record.observed_at, str(record.id)) > (
+            prior.observed_at,
+            str(prior.id),
+        ):
+            latest[key] = record
+    return [latest[key] for key in sorted(latest)] + sorted(
+        future,
+        key=lambda record: (
+            str(record.post_id),
+            record.metric_name,
+            record.metric_definition,
+            record.metric_unit,
+            record.window_kind,
+            record.window_key,
+            record.observed_at,
+            str(record.id),
+        ),
+    )
