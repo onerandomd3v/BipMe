@@ -2409,12 +2409,8 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
     reader = XMetricSnapshotReader(provider=Provider(), cipher=cipher, settings=settings)
     # Use the actual producer builder instead of a manually registered dummy task.
     engine, schema = migrated_postgres
-    database_url = engine.url.update_query_dict(
-        {"options": f"-csearch_path={schema},public"}
-    )
-    monkeypatch.setenv(
-        "BIPME_DATABASE_URL", database_url.render_as_string(hide_password=False)
-    )
+    database_url = engine.url.update_query_dict({"options": f"-csearch_path={schema},public"})
+    monkeypatch.setenv("BIPME_DATABASE_URL", database_url.render_as_string(hide_password=False))
     monkeypatch.setattr(
         AuthSettings,
         "from_environment",
@@ -2450,10 +2446,13 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
     assert len(first) == len(second) == 8
     assert len({job.id for job in first}) == 8
     assert all(job.runner_job_id is not None for job in first)
-    assert session.scalar(
-        text("SELECT task_name FROM procrastinate_jobs WHERE id = :runner"),
-        {"runner": first[0].runner_job_id},
-    ) == TASK_NAME
+    assert (
+        session.scalar(
+            text("SELECT task_name FROM procrastinate_jobs WHERE id = :runner"),
+            {"runner": first[0].runner_job_id},
+        )
+        == TASK_NAME
+    )
     scheduler.close()
 
     evidence = reader.observe(
