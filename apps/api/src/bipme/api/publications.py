@@ -247,6 +247,10 @@ def link_publication(
                 raise ApiError(
                     404, "published_post_not_found", "The published X post was not found."
                 )
+            if existing.availability != "available":
+                raise ApiError(
+                    404, "published_post_not_found", "The published X post was not found."
+                )
             if existing.source_assessment_id == assessment.id:
                 response.status_code = 200
                 return _response(assessment, existing)
@@ -348,6 +352,10 @@ def link_publication(
             )
             if existing is None:
                 raise ApiError(409, "published_post_changed", "Publication evidence changed.")
+            if existing.availability != "available":
+                raise ApiError(
+                    404, "published_post_not_found", "The published X post was not found."
+                )
             if existing.source_assessment_id == locked_assessment.id:
                 response.status_code = 200
                 return _response(locked_assessment, existing)
@@ -411,7 +419,11 @@ def link_publication(
                     CanonicalPost.creator_id == creator.creator_id,
                 )
             )
-            if raced is not None and raced.source_assessment_id == assessment_id:
+            if (
+                raced is not None
+                and raced.availability == "available"
+                and raced.source_assessment_id == assessment_id
+            ):
                 response.status_code = 200
                 return _response(locked_assessment, raced)
             raise ApiError(
@@ -457,6 +469,7 @@ def get_publication(
             select(CanonicalPost).where(
                 CanonicalPost.creator_id == creator.creator_id,
                 CanonicalPost.source_assessment_id == assessment_id,
+                CanonicalPost.availability == "available",
             )
         )
         if post is None:
