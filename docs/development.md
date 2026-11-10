@@ -1,6 +1,6 @@
 # BipMe — Development guide
 
-**Status:** Deterministic intelligence, canonical persistence, COD-358 analysis routes and COD-346 private session/auth contracts are implemented. Private sessions and the current creator endpoints remain fail-closed until the configured creator, database and private login secret are provisioned. X OAuth is opt-in and remains disabled until COD-344's account-specific access and rights gates are verified.
+**Status:** Deterministic intelligence, canonical persistence, COD-358 analysis routes, COD-346 private session/auth contracts, and COD-362 PostgreSQL worker infrastructure are implemented. Private sessions and the current creator endpoints remain fail-closed until the configured creator, database and private login secret are provisioned. X OAuth is opt-in and remains disabled until COD-344's account-specific access and rights gates are verified.
 
 ## Prerequisites
 
@@ -44,6 +44,17 @@ uv sync --locked --group dev
 uv run alembic upgrade head
 uv run uvicorn bipme.api.app:app --reload
 ```
+
+Run a separate durable job worker with the same database URL:
+
+```powershell
+cd apps/api
+uv run python -m bipme.jobs
+```
+
+The worker listens only to the `bipme` queue, retains runner jobs, uses a 30-second graceful timeout, and checks for stalled workers by heartbeat. Recovery is supervised alongside the worker; a recovery failure stops intake and drains the worker before returning a sanitized failure. A handler must complete within a bounded duration because Python cannot cancel its synchronous thread; shutdown waits for in-flight handler work to finish, even after Procrastinate's graceful timeout. On Windows use Ctrl+C for cooperative shutdown; Python does not install Procrastinate signal handlers there, so do not assume SIGTERM drains active work. Scheduling is currently an internal service API; no public scheduling route or COD-363 metric handler is enabled. Migration `0005_durable_jobs` installs the pinned Procrastinate schema snapshot and permanent BipMe receipts. The runner schema snapshot is fixed at Procrastinate 3.10.0 and is not dynamically upgraded by Alembic. Consent-generation invalidation is deferred to COD-363. Procrastinate startup/prune lifecycle behavior and sanitization of its own exception logs have not been verified beyond BipMe receipt/outcome logging.
+
+The PostgreSQL delay/restart integration test first confirms that a future job is not claimed, then manually clears its `scheduled_at` value to make it eligible. It creates a fresh runtime against the same database in the same test process; it does not wait for wall-clock eligibility or kill/restart a subprocess.
 
 Check `http://127.0.0.1:8000/api/health`. Migration `0001_enable_vector` creates the pgvector extension; `0002_canonical_persistence` creates canonical creator/post records; `0003_private_auth_sessions` adds revocable sessions and short-lived OAuth transactions. COD-346 provides `POST /api/auth/private/session`, `GET /api/auth/session`, `POST /api/auth/logout`, `GET /api/auth/x/authorize`, `GET /api/auth/x/callback`, and authenticated X status/refresh/disconnect routes. Protected endpoints require a configured existing `BIPME_CREATOR_ID`; private sign-in additionally requires a high-entropy `BIPME_PRIVATE_LOGIN_SECRET` (at least 32 bytes). For local OAuth callback cookies, use the same loopback host in `BIPME_APP_ORIGIN` and the registered callback URI. X OAuth stays disabled unless explicitly enabled after COD-344's access and rights checks.
 
@@ -109,6 +120,16 @@ uv run python -c 'import json; from bipme.api.app import app; print(json.dumps(a
 ```
 
 `tests/test_analysis_api.py` checks that the artifact matches the generated schema. COD-356 and COD-360 should generate their client types from `apps/api/openapi.json`; do not hand-copy response interfaces. Draft text is fingerprinted but is not stored. Reusing an `Idempotency-Key` with the same creator and canonical input replays the original immutable assessment; a different input returns 409.
+
+The Web client contract is generated from that checked-in artifact with pinned `openapi-typescript`, `openapi-fetch`, MSW and Vitest versions. From `apps/web`, run:
+
+```bash
+pnpm generate:api
+pnpm check:api
+pnpm test
+```
+
+`generate:api` writes `src/api/generated/schema.d.ts`; `check:api` regenerates into a temporary directory and fails when the checked-in output is stale. Neither command starts the API or makes network requests. `src/api/client.ts` is the reusable same-origin client: it sends cookies, retains the server-provided CSRF token only in memory, accepts `AbortSignal` for cancellable reads, maps structured API errors to `ApiRequestError`, and preserves HTTP status, API codes, validation details and rate-limit headers. Synthetic MSW handlers and fixtures live in `src/api/mocks.ts` and `src/api/fixtures.ts`; they must not be treated as production creator data.
 
 COD-378 adds typed `/api/v1/creators/me/profile`, `/data-permissions`, `/report`, `/report/latest` and `/reports/{id}` contracts. Profile updates append revisions; report generation is draft-free and replays by creator-scoped `Idempotency-Key`. `data_sources` currently accepts only explicitly opted-in personal history; the server-side X-history policy gate requires both `BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED=true` and a valid `BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT` timestamp, niche discovery is unavailable, and synthesis is disabled. The latest report response exposes coverage, source freshness, processing permission snapshot and limitations so Web can render insufficient/partial states without inventing data. Regenerate `openapi.json` when these schemas change.
 

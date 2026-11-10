@@ -1,165 +1,156 @@
-import assert from 'node:assert/strict'
-import { afterEach, test } from 'node:test'
-import { ApiResponseError, authApi, getXAuthorizationUrl } from './client.ts'
+import { describe, expect, it } from 'vitest'
+import { createApiClient } from '../api/client'
+import { ApiResponseError, createAuthApi, getXAuthorizationUrl } from './client'
 
-const originalFetch = globalThis.fetch
+function createTestAuthApi(
+  responder: (request: Request) => Response | Promise<Response>,
+) {
+  const requests: Request[] = []
+  const fetchMock: typeof fetch = async (input) => {
+    const request = input instanceof Request ? input : new Request(input)
+    requests.push(request)
+    return responder(request)
+  }
+  return { auth: createAuthApi(createApiClient(fetchMock)), requests }
+}
 
-afterEach(() => {
-  globalThis.fetch = originalFetch
-})
-
-test('session and connection calls use same-origin cookies and in-memory CSRF', async () => {
-  const calls: { url: string; init?: RequestInit }[] = []
-  globalThis.fetch = (async (input, init) => {
-    const url = String(input)
-    calls.push({ url, init })
-    if (url === '/api/auth/session')
-      return Response.json({ authenticated: true, csrf_token: 'csrf-test' })
-    if (url === '/api/auth/x/refresh')
-      return Response.json({
-        connected: true,
-        state: 'connected',
-        scopes: ['tweet.read'],
-        expires_at: null,
-      })
-    throw new Error(`Unexpected request: ${url}`)
-  }) as typeof fetch
-
-  await authApi.readSession()
-  await authApi.refreshXConnection()
-
-  assert.deepEqual(
-    calls.map(({ url }) => url),
-    ['/api/auth/session', '/api/auth/x/refresh'],
-  )
-  assert.equal(calls[0]?.init?.credentials, 'same-origin')
-  assert.equal(calls[1]?.init?.credentials, 'same-origin')
-  assert.equal(
-    new Headers(calls[1]?.init?.headers).get('X-CSRF-Token'),
-    'csrf-test',
-  )
-  assert.equal(calls[1]?.init?.body, '{}')
-})
-
-test('private session sends the secret in the request body only', async () => {
-  let observed: { url: string; init?: RequestInit } | undefined
-  globalThis.fetch = (async (input, init) => {
-    observed = { url: String(input), init }
-    return Response.json({ authenticated: true, csrf_token: 'new-csrf' })
-  }) as typeof fetch
-
-  await authApi.createPrivateSession('temporary-test-secret')
-
-  assert.equal(observed?.url, '/api/auth/private/session')
-  assert.equal(observed?.init?.credentials, 'same-origin')
-  assert.equal(
-    new Headers(observed?.init?.headers).get('Content-Type'),
-    'application/json',
-  )
-  assert.deepEqual(JSON.parse(String(observed?.init?.body)), {
-    secret: 'temporary-test-secret',
+function response(body: unknown, status = 200) {
+  return new Response(body === null ? null : JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
   })
-  assert.equal(observed?.url.includes('temporary-test-secret'), false)
-})
+}
 
-test('X reauthorization expiry does not clear the private-session CSRF token', async () => {
-  const calls: { url: string; init?: RequestInit }[] = []
-  globalThis.fetch = (async (input, init) => {
-    const url = String(input)
-    calls.push({ url, init })
-    if (url === '/api/auth/session')
-      return Response.json({ authenticated: true, csrf_token: 'active-csrf' })
-    if (url === '/api/auth/x/refresh')
-      return Response.json(
-        { error: { code: 'x_reauthorization_required' } },
-        { status: 401 },
-      )
-    if (url === '/api/auth/logout') return new Response(null, { status: 204 })
-    throw new Error(`Unexpected request: ${url}`)
-  }) as typeof fetch
+describe('Connections authentication client', () => {
+  it('uses the generated client, same-origin cookies, and in-memory CSRF', async () => {
+    const { auth, requests } = createTestAuthApi((request) => {
+      const path = new URL(request.url).pathname
+      if (path === '/api/auth/session')
+        return response({ authenticated: true, csrf_token: 'csrf-test' })
+      if (path === '/api/auth/x/refresh')
+        return response({
+          connected: true,
+          state: 'connected',
+          scopes: ['tweet.read'],
+          expires_at: null,
+        })
+      throw new Error(`Unexpected request: ${path}`)
+    })
 
-  await authApi.readSession()
-  await assert.rejects(authApi.refreshXConnection(), (error: unknown) => {
-    assert.ok(error instanceof ApiResponseError)
-    assert.equal(error.code, 'x_reauthorization_required')
-    return true
+    await auth.readSession()
+    await auth.refreshXConnection()
+
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+      '/api/auth/session',
+      '/api/auth/x/refresh',
+    ])
+    expect(requests[0]?.credentials).toBe('same-origin')
+    expect(requests[1]?.credentials).toBe('same-origin')
+    expect(requests[1]?.headers.get('X-CSRF-Token')).toBe('csrf-test')
+    expect(requests[1]?.body).toBeNull()
   })
-  await authApi.logout()
 
-  assert.equal(
-    new Headers(calls[2]?.init?.headers).get('X-CSRF-Token'),
-    'active-csrf',
-  )
-})
+  it('sends the private-session secret in the request body only', async () => {
+    const { auth, requests } = createTestAuthApi(() =>
+      response({ authenticated: true, csrf_token: 'new-csrf' }),
+    )
 
-test('X authorization starts with a fixed same-origin return path', () => {
-  assert.equal(
-    getXAuthorizationUrl(),
-    '/api/auth/x/authorize?return_to=%2Fconnections',
-  )
-  assert.equal(getXAuthorizationUrl().startsWith('https://'), false)
-})
+    await auth.createPrivateSession('temporary-test-secret')
 
-test('rate-limited refresh is surfaced without retrying or dropping the session CSRF token', async () => {
-  const calls: { url: string; init?: RequestInit }[] = []
-  globalThis.fetch = (async (input, init) => {
-    const url = String(input)
-    calls.push({ url, init })
-    if (url === '/api/auth/session')
-      return Response.json({ authenticated: true, csrf_token: 'active-csrf' })
-    if (url === '/api/auth/x/refresh')
-      return Response.json({ error: { code: 'rate_limited' } }, { status: 429 })
-    if (url === '/api/auth/logout') return new Response(null, { status: 204 })
-    throw new Error(`Unexpected request: ${url}`)
-  }) as typeof fetch
-
-  await authApi.readSession()
-  await assert.rejects(authApi.refreshXConnection(), (error: unknown) => {
-    assert.ok(error instanceof ApiResponseError)
-    assert.equal(error.status, 429)
-    assert.equal(error.code, 'rate_limited')
-    return true
+    const request = requests[0]
+    expect(request).toBeDefined()
+    expect(new URL(request!.url).pathname).toBe('/api/auth/private/session')
+    expect(request!.credentials).toBe('same-origin')
+    expect(request!.headers.get('Content-Type')).toBe('application/json')
+    expect(await request!.clone().json()).toEqual({
+      secret: 'temporary-test-secret',
+    })
+    expect(request!.url.includes('temporary-test-secret')).toBe(false)
   })
-  await authApi.logout()
 
-  assert.equal(
-    calls.filter(({ url }) => url === '/api/auth/x/refresh').length,
-    1,
-  )
-  assert.equal(
-    new Headers(calls[2]?.init?.headers).get('X-CSRF-Token'),
-    'active-csrf',
-  )
-})
+  it('does not clear private-session CSRF after X reauthorization expires', async () => {
+    const { auth, requests } = createTestAuthApi((request) => {
+      const path = new URL(request.url).pathname
+      if (path === '/api/auth/session')
+        return response({ authenticated: true, csrf_token: 'active-csrf' })
+      if (path === '/api/auth/x/refresh')
+        return response({ error: { code: 'x_reauthorization_required' } }, 401)
+      if (path === '/api/auth/logout') return response(null, 204)
+      throw new Error(`Unexpected request: ${path}`)
+    })
 
-test('disconnect failures preserve the reported connection state and CSRF token', async () => {
-  const calls: { url: string; init?: RequestInit }[] = []
-  globalThis.fetch = (async (input, init) => {
-    const url = String(input)
-    calls.push({ url, init })
-    if (url === '/api/auth/session')
-      return Response.json({ authenticated: true, csrf_token: 'active-csrf' })
-    if (url === '/api/auth/x/disconnect')
-      return Response.json(
-        { error: { code: 'connection_unavailable' } },
-        { status: 503 },
-      )
-    if (url === '/api/auth/logout') return new Response(null, { status: 204 })
-    throw new Error(`Unexpected request: ${url}`)
-  }) as typeof fetch
+    await auth.readSession()
+    await expect(auth.refreshXConnection()).rejects.toMatchObject({
+      code: 'x_reauthorization_required',
+    })
+    await auth.logout()
 
-  await authApi.readSession()
-  await assert.rejects(authApi.disconnectXConnection(), (error: unknown) => {
-    assert.ok(error instanceof ApiResponseError)
-    assert.equal(error.status, 503)
-    assert.equal(error.code, 'connection_unavailable')
-    return true
+    expect(requests[2]?.headers.get('X-CSRF-Token')).toBe('active-csrf')
   })
-  await authApi.logout()
 
-  assert.equal(
-    new Headers(calls[1]?.init?.headers).get('X-CSRF-Token'),
-    'active-csrf',
-  )
-  assert.equal(calls[1]?.init?.credentials, 'same-origin')
+  it('starts X authorization with a fixed same-origin return path', () => {
+    expect(getXAuthorizationUrl()).toBe(
+      '/api/auth/x/authorize?return_to=%2Fconnections',
+    )
+    expect(getXAuthorizationUrl().startsWith('https://')).toBe(false)
+  })
+
+  it('surfaces rate limiting without retrying or dropping session CSRF', async () => {
+    const { auth, requests } = createTestAuthApi((request) => {
+      const path = new URL(request.url).pathname
+      if (path === '/api/auth/session')
+        return response({ authenticated: true, csrf_token: 'active-csrf' })
+      if (path === '/api/auth/x/refresh')
+        return new Response(
+          JSON.stringify({ error: { code: 'rate_limited' } }),
+          {
+            status: 429,
+            headers: {
+              'Content-Type': 'application/json',
+              'Retry-After': '30',
+            },
+          },
+        )
+      if (path === '/api/auth/logout') return response(null, 204)
+      throw new Error(`Unexpected request: ${path}`)
+    })
+
+    await auth.readSession()
+    const refresh = auth.refreshXConnection()
+    await expect(refresh).rejects.toBeInstanceOf(ApiResponseError)
+    await expect(refresh).rejects.toMatchObject({
+      status: 429,
+      code: 'rate_limited',
+    })
+    await auth.logout()
+
+    expect(
+      requests.filter(
+        (request) => new URL(request.url).pathname === '/api/auth/x/refresh',
+      ).length,
+    ).toBe(1)
+    expect(requests[2]?.headers.get('X-CSRF-Token')).toBe('active-csrf')
+  })
+
+  it('preserves the session CSRF token after disconnect failure', async () => {
+    const { auth, requests } = createTestAuthApi((request) => {
+      const path = new URL(request.url).pathname
+      if (path === '/api/auth/session')
+        return response({ authenticated: true, csrf_token: 'active-csrf' })
+      if (path === '/api/auth/x/disconnect')
+        return response({ error: { code: 'connection_unavailable' } }, 503)
+      if (path === '/api/auth/logout') return response(null, 204)
+      throw new Error(`Unexpected request: ${path}`)
+    })
+
+    await auth.readSession()
+    await expect(auth.disconnectXConnection()).rejects.toMatchObject({
+      status: 503,
+      code: 'connection_unavailable',
+    })
+    await auth.logout()
+
+    expect(requests[1]?.headers.get('X-CSRF-Token')).toBe('active-csrf')
+    expect(requests[1]?.credentials).toBe('same-origin')
+  })
 })

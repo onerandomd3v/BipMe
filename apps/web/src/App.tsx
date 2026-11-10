@@ -5,13 +5,13 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react'
-import { authApi, ApiResponseError } from './auth/client'
 import { ConnectionsPage } from './connections/ConnectionsPage'
 import {
   StateNotice,
   stateMessages,
   type ViewState,
 } from './components/StateNotice'
+import { ApiRequestError, apiClient } from './api/client'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
 type ApiHealth = 'checking' | 'available' | 'unavailable'
@@ -175,14 +175,12 @@ export function App() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/health', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('API health check failed')
-        return (await response.json()) as { status?: string }
+    apiClient
+      .health(controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted)
+          setHealth(data.status === 'ok' ? 'available' : 'unavailable')
       })
-      .then((data) =>
-        setHealth(data.status === 'ok' ? 'available' : 'unavailable'),
-      )
       .catch(() => {
         if (!controller.signal.aborted) setHealth('unavailable')
       })
@@ -191,14 +189,21 @@ export function App() {
 
   useEffect(() => {
     const controller = new AbortController()
-    authApi
-      .readSession(controller.signal)
-      .then(() => setSessionStatus('authenticated'))
+    apiClient
+      .session(controller.signal)
+      .then((session) => {
+        if (controller.signal.aborted) return
+        setSessionStatus(
+          session.authenticated ? 'authenticated' : 'unauthenticated',
+        )
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
-        if (error instanceof ApiResponseError && error.status === 401)
+        if (error instanceof ApiRequestError && error.status === 401) {
           setSessionStatus('unauthenticated')
-        else setSessionStatus('unavailable')
+          return
+        }
+        setSessionStatus('unavailable')
       })
     return () => controller.abort()
   }, [])

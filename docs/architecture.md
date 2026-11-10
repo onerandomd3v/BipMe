@@ -21,10 +21,12 @@ BipMe intelligence         SQLAlchemy/Alembic
                                       ^
                                       |
                          PostgreSQL-backed worker
-                            (planned, separate process)
+                         Procrastinate 3.10.0
 ```
 
-The API and future worker share one `apps/api/src/bipme` Python codebase. The intelligence engine is an **in-process package**, not a separately deployed microservice. PostgreSQL is the sole state store; Redis or an external vector DB is not needed initially.
+The API and worker share one `apps/api/src/bipme` Python codebase. The intelligence engine is an **in-process package**, not a separately deployed microservice. PostgreSQL is the sole state store; Redis or an external vector DB is not needed initially. COD-362 adds a Procrastinate 3.10.0 worker and permanent `scheduled_jobs` submission receipts. The receipt and queue row are inserted in the caller's SQLAlchemy transaction through its psycopg3 connection; runner `todo`/`doing`/retry status remains authoritative for queue execution.
+
+Submissions use a creator-scoped idempotency key and canonical input digest. A matching replay returns the permanent receipt; changed input for the same key conflicts. Dispatch payloads contain only the receipt UUID, and workers resolve handler names through a fixed code registry. A worker holds the receipt row fence and rechecks creator/connection state without locking those rows; bounded handler work runs in a separate session. Stalled recovery takes worker, receipt, then runner locks with `SKIP LOCKED`, matching Procrastinate's worker-prune lock order and revalidating runner state. The final X adapter performs its authoritative connection lock and permission recheck immediately before any provider request. Runner jobs are retained; receipt cleanup is prohibited. COD-363 may register a metric observation handler after its own endpoint, rights, cost, and data gates are met.
 
 ## Attention evidence and archive-first source boundary (planned; validation gated)
 
@@ -127,7 +129,7 @@ This is a deterministic Intelligence service and synthetic test boundary only. C
 | Quality | Ruff, mypy, pytest, ESLint, TypeScript, Playwright when E2E flows exist |
 | Local infrastructure | Docker Compose for PostgreSQL |
 
-**Not currently implemented:** X adapter, login/session system, background worker, real X ingestion, calibrated prediction or metrics collection. COD-352 pure retrieval/reranking, COD-353 baseline calculations, COD-354 deterministic Outlook assembly and the COD-358 private analysis API/data adapters are implemented. The COD-358 production routes remain fail-closed until COD-346 provides a verified server session. Local synthetic CPU embedding inference is available; no live X text is processed.
+**Not currently implemented:** real X ingestion, calibrated prediction or metrics collection. COD-362 provides worker infrastructure only; no live metric handler is registered. COD-352 pure retrieval/reranking, COD-353 baseline calculations, COD-354 deterministic Outlook assembly and the COD-358 private analysis API/data adapters are implemented. The COD-358 production routes remain fail-closed until COD-346 provides a verified server session. Local synthetic CPU embedding inference is available; no live X text is processed.
 
 ## Repository
 
@@ -135,7 +137,7 @@ This is a deterministic Intelligence service and synthetic test boundary only. C
 - `apps/api/src/bipme/integrations/`: provider-specific clients; official X API responses map to internal structures here.
 - `apps/api/src/bipme/intelligence/`: deterministic profiling/retrieval/baselines/prediction/backtesting.
 - `apps/api/src/bipme/persistence/`: SQLAlchemy schema and database coordination.
-- `apps/api/src/bipme/jobs/`: shared job handlers/worker entrypoint when built.
+- `apps/api/src/bipme/jobs/`: durable scheduling service and worker entrypoint; COD-363 handlers remain future work.
 - `apps/api/alembic/`: schema migration history.
 - `apps/web/src/`: client views, state and typed API access.
 - `docs/research/`: original product and prediction design sources.
