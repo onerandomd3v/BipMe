@@ -99,3 +99,67 @@ test('X authorization starts with a fixed same-origin return path', () => {
   )
   assert.equal(getXAuthorizationUrl().startsWith('https://'), false)
 })
+
+test('rate-limited refresh is surfaced without retrying or dropping the session CSRF token', async () => {
+  const calls: { url: string; init?: RequestInit }[] = []
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    calls.push({ url, init })
+    if (url === '/api/auth/session')
+      return Response.json({ authenticated: true, csrf_token: 'active-csrf' })
+    if (url === '/api/auth/x/refresh')
+      return Response.json({ error: { code: 'rate_limited' } }, { status: 429 })
+    if (url === '/api/auth/logout') return new Response(null, { status: 204 })
+    throw new Error(`Unexpected request: ${url}`)
+  }) as typeof fetch
+
+  await authApi.readSession()
+  await assert.rejects(authApi.refreshXConnection(), (error: unknown) => {
+    assert.ok(error instanceof ApiResponseError)
+    assert.equal(error.status, 429)
+    assert.equal(error.code, 'rate_limited')
+    return true
+  })
+  await authApi.logout()
+
+  assert.equal(
+    calls.filter(({ url }) => url === '/api/auth/x/refresh').length,
+    1,
+  )
+  assert.equal(
+    new Headers(calls[2]?.init?.headers).get('X-CSRF-Token'),
+    'active-csrf',
+  )
+})
+
+test('disconnect failures preserve the reported connection state and CSRF token', async () => {
+  const calls: { url: string; init?: RequestInit }[] = []
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    calls.push({ url, init })
+    if (url === '/api/auth/session')
+      return Response.json({ authenticated: true, csrf_token: 'active-csrf' })
+    if (url === '/api/auth/x/disconnect')
+      return Response.json(
+        { error: { code: 'connection_unavailable' } },
+        { status: 503 },
+      )
+    if (url === '/api/auth/logout') return new Response(null, { status: 204 })
+    throw new Error(`Unexpected request: ${url}`)
+  }) as typeof fetch
+
+  await authApi.readSession()
+  await assert.rejects(authApi.disconnectXConnection(), (error: unknown) => {
+    assert.ok(error instanceof ApiResponseError)
+    assert.equal(error.status, 503)
+    assert.equal(error.code, 'connection_unavailable')
+    return true
+  })
+  await authApi.logout()
+
+  assert.equal(
+    new Headers(calls[1]?.init?.headers).get('X-CSRF-Token'),
+    'active-csrf',
+  )
+  assert.equal(calls[1]?.init?.credentials, 'same-origin')
+})
