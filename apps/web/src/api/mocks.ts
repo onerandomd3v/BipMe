@@ -7,6 +7,9 @@ import {
   permissionFixture,
   profileFixture,
   sessionFixture,
+  baselineFixture,
+  historyImportFixture,
+  historyPostsFixture,
 } from './fixtures'
 
 export const apiHandlers = [

@@ -515,7 +515,7 @@ export function App() {
           </div>
           <span className="environment-tag">
             <span className="environment-tag__dot" aria-hidden="true" />
-            Development · No live creator data
+            Development · Authenticated API preview
           </span>
         </header>
 
@@ -546,6 +546,8 @@ export function App() {
             <DraftAnalysis
               context={draftContext}
               onBackToDashboard={() => navigate('dashboard')}
+          ) : view === 'history' && sessionStatus === 'authenticated' ? (
+            <CreatorHistoryDashboard
               onSessionExpired={() => {
                 setSessionStatus('unauthenticated')
                 setDraftContext(null)

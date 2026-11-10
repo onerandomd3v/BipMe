@@ -420,6 +420,14 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
           client.POST('/api/v1/creators/me/draft-assessments', {
             body,
             params: { header: { 'Idempotency-Key': idempotencyKey } },
+    async historyPosts(
+      params?: HistoryPostsQuery,
+      signal?: AbortSignal,
+    ): Promise<EvidencePage> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/posts', {
+            params: params ? { query: params } : undefined,
             signal,
           }),
         signal,

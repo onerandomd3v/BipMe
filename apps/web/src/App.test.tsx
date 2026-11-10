@@ -6,6 +6,9 @@ import {
   latestReportFixture,
   permissionFixture,
   profileFixture,
+  baselineFixture,
+  historyImportFixture,
+  historyPostsFixture,
 } from './api/fixtures'
 
 const api = vi.hoisted(() => ({
@@ -15,6 +18,9 @@ const api = vi.hoisted(() => ({
   profile: vi.fn(),
   dataPermissions: vi.fn(),
   latestReport: vi.fn(),
+  historyImports: vi.fn(),
+  historyPosts: vi.fn(),
+  baseline: vi.fn(),
   saveProfile: vi.fn(),
   saveDataPermissions: vi.fn(),
   generateReport: vi.fn(),
@@ -45,6 +51,9 @@ describe('App session boundary', () => {
     api.profile.mockResolvedValue(profileFixture)
     api.dataPermissions.mockResolvedValue(permissionFixture)
     api.latestReport.mockResolvedValue(latestReportFixture)
+    api.historyImports.mockResolvedValue(historyImportFixture)
+    api.historyPosts.mockResolvedValue(historyPostsFixture)
+    api.baseline.mockResolvedValue(baselineFixture)
   })
 
   it('clears draft context when the authenticated session is invalidated', async () => {
@@ -81,5 +90,19 @@ describe('App session boundary', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Analyze a Draft' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('cannot submit')
     expect(screen.queryByText(/Using report context/)).not.toBeInTheDocument()
+  it('renders the authenticated history route through the App boundary', async () => {
+    window.history.replaceState(null, '', '/content-history')
+    render(<App />)
+    expect(
+      await screen.findByText('Evidence you are permitted to inspect'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('combobox', {
+        name: 'Metric series discovered in loaded history',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Development · Authenticated API preview'),
+    ).toBeInTheDocument()
   })
 })
