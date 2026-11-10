@@ -259,6 +259,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/creators/me/draft-assessments/{assessment_id}/publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Publication
+         * @description Read the historical attachment without a provider request or active X grant.
+         */
+        get: operations["get_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_get"];
+        put?: never;
+        /**
+         * Attach a manually published X post to an immutable Outlook
+         * @description Verify and attach one creator-owned publication without changing the Outlook.
+         */
+        post: operations["link_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creators/me/history/imports": {
         parameters: {
             query?: never;
@@ -959,6 +983,55 @@ export interface components {
         PrivateLoginRequest: {
             /** Secret */
             secret: string;
+        };
+        /**
+         * PublicationLinkRequest
+         * @description A canonical X URL or numeric post ID; provider timestamps are authoritative.
+         */
+        PublicationLinkRequest: {
+            /** Post Url Or Id */
+            post_url_or_id: string;
+        };
+        /** PublicationLinkResponse */
+        PublicationLinkResponse: {
+            accepted_hypothesis: components["schemas"]["AcceptedHypothesis"] | null;
+            /**
+             * Assessed At
+             * Format: date-time
+             */
+            assessed_at: string;
+            /** Assessed Fingerprint */
+            assessed_fingerprint: string;
+            /**
+             * Assessment Id
+             * Format: uuid
+             */
+            assessment_id: string;
+            /**
+             * Canonical Post Id
+             * Format: uuid
+             */
+            canonical_post_id: string;
+            /** External Post Id */
+            external_post_id: string;
+            /**
+             * Linkage State
+             * @default linked
+             * @constant
+             */
+            linkage_state: "linked";
+            /** Linked At */
+            linked_at?: string | null;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Version Match State
+             * @enum {string}
+             */
+            version_match_state: "match" | "mismatch" | "unknown";
         };
         /** RelevanceComponentsResponse */
         RelevanceComponentsResponse: {
@@ -1796,6 +1869,166 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationLinkResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    link_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicationLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationLinkResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationLinkResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Service Unavailable */

@@ -1612,6 +1612,105 @@
         "title": "PrivateLoginRequest",
         "type": "object"
       },
+      "PublicationLinkRequest": {
+        "additionalProperties": false,
+        "description": "A canonical X URL or numeric post ID; provider timestamps are authoritative.",
+        "properties": {
+          "post_url_or_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Post Url Or Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "post_url_or_id"
+        ],
+        "title": "PublicationLinkRequest",
+        "type": "object"
+      },
+      "PublicationLinkResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_hypothesis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcceptedHypothesis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assessed_at": {
+            "format": "date-time",
+            "title": "Assessed At",
+            "type": "string"
+          },
+          "assessed_fingerprint": {
+            "title": "Assessed Fingerprint",
+            "type": "string"
+          },
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "canonical_post_id": {
+            "format": "uuid",
+            "title": "Canonical Post Id",
+            "type": "string"
+          },
+          "external_post_id": {
+            "title": "External Post Id",
+            "type": "string"
+          },
+          "linkage_state": {
+            "const": "linked",
+            "default": "linked",
+            "title": "Linkage State",
+            "type": "string"
+          },
+          "linked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked At"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "version_match_state": {
+            "enum": [
+              "match",
+              "mismatch",
+              "unknown"
+            ],
+            "title": "Version Match State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assessment_id",
+          "assessed_at",
+          "assessed_fingerprint",
+          "accepted_hypothesis",
+          "canonical_post_id",
+          "external_post_id",
+          "published_at",
+          "version_match_state"
+        ],
+        "title": "PublicationLinkResponse",
+        "type": "object"
+      },
       "RelevanceComponentsResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2874,6 +2973,234 @@
         "summary": "Read one of the authenticated creator's immutable assessments",
         "tags": [
           "creator analysis"
+        ]
+      }
+    },
+    "/api/v1/creators/me/draft-assessments/{assessment_id}/publication": {
+      "get": {
+        "description": "Read the historical attachment without a provider request or active X grant.",
+        "operationId": "get_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationLinkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Publication",
+        "tags": [
+          "publications"
+        ]
+      },
+      "post": {
+        "description": "Verify and attach one creator-owned publication without changing the Outlook.",
+        "operationId": "link_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicationLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationLinkResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationLinkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Attach a manually published X post to an immutable Outlook",
+        "tags": [
+          "publications"
         ]
       }
     },
