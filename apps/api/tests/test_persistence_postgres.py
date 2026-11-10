@@ -2308,8 +2308,9 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
     migrated_postgres: tuple[Engine, str], session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A linked post gets durable candidate receipts and exact partial observations."""
-    from cryptography.fernet import Fernet
     from types import SimpleNamespace
+
+    from cryptography.fernet import Fernet
 
     from bipme.auth.config import AuthSettings
     from bipme.auth.crypto import TokenCipher
