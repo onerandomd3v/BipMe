@@ -279,6 +279,10 @@ def list_posts(
     assessment_id: UUID | None = None,
 ) -> EvidencePage:
     try:
+        if as_of is not None and assessment_id is not None:
+            raise ApiError(
+                422, "ambiguous_evidence_cutoff", "Use as_of or assessment_id, not both."
+            )
         position = None
         if cursor:
             try:

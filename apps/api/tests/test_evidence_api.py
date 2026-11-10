@@ -150,6 +150,8 @@ def test_actual_metrics_and_sanitization(runtime):
     metrics = {m["state"]: m for m in post["observations"]}
     assert Decimal(metrics["observed"]["metric_value"]) == 0
     assert metrics["missing"]["metric_value"] is None and metrics["invalid"]["metric_value"] is None
+    assert datetime.fromisoformat(metrics["observed"]["observed_at"]) == NOW - timedelta(hours=1)
+    assert datetime.fromisoformat(metrics["observed"]["published_at"]) == NOW - timedelta(days=1)
     assert metrics["observed"]["observed_age_seconds"] == 23 * 3600
     assert metrics["observed"]["metric_definition"] == "exact-definition"
     assert metrics["observed"]["metric_unit"] == "count"
