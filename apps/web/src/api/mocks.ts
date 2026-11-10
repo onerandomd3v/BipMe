@@ -5,6 +5,9 @@ import {
   permissionFixture,
   profileFixture,
   sessionFixture,
+  baselineFixture,
+  historyImportFixture,
+  historyPostsFixture,
 } from './fixtures'
 
 export const apiHandlers = [
@@ -35,5 +38,14 @@ export const apiHandlers = [
   http.delete(
     '*/api/v1/creators/me/reports',
     () => new HttpResponse(null, { status: 204 }),
+  ),
+  http.get('*/api/v1/creators/me/history/imports', () =>
+    HttpResponse.json(historyImportFixture),
+  ),
+  http.get('*/api/v1/creators/me/history/posts', () =>
+    HttpResponse.json(historyPostsFixture),
+  ),
+  http.get('*/api/v1/creators/me/baseline', () =>
+    HttpResponse.json(baselineFixture),
   ),
 ]

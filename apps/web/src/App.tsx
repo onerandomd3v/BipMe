@@ -7,6 +7,7 @@ import {
 } from 'react'
 import { ApiRequestError, apiClient } from './api/client'
 import { CreatorDashboard } from './CreatorDashboard'
+import { CreatorHistoryDashboard } from './CreatorHistoryDashboard'
 import type { DraftAnalysisContext } from './dashboardModel'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
@@ -510,7 +511,7 @@ export function App() {
           </div>
           <span className="environment-tag">
             <span className="environment-tag__dot" aria-hidden="true" />
-            Development · No live creator data
+            Development · Authenticated API preview
           </span>
         </header>
 
@@ -532,6 +533,13 @@ export function App() {
                 setDraftContext(context)
                 navigate('draft')
               }}
+              onSessionExpired={() => {
+                setSessionStatus('unauthenticated')
+                setDraftContext(null)
+              }}
+            />
+          ) : view === 'history' && sessionStatus === 'authenticated' ? (
+            <CreatorHistoryDashboard
               onSessionExpired={() => {
                 setSessionStatus('unauthenticated')
                 setDraftContext(null)
