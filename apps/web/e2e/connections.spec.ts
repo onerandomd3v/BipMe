@@ -100,7 +100,7 @@ test('visits all six onboarding steps and supports back and continue', async ({
   }
   await page.getByRole('button', { name: 'Back' }).click()
   await expect(page.getByRole('heading', { name: titles[4] })).toBeVisible()
-  await expect(page.getByText('Waiting for import service')).toBeVisible()
+  await expect(page.getByText('Import unavailable')).toBeVisible()
   await expect(
     page.getByText(/No import has been started from this screen/),
   ).toBeVisible()

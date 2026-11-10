@@ -58,6 +58,8 @@ type DataPermission = components['schemas']['DataPermissionResponse']
 type DataPermissionUpdate = components['schemas']['DataPermissionUpdate']
 type CreatorReport = components['schemas']['CreatorReportResponse']
 type CreatorReportState = components['schemas']['CreatorReportStateResponse']
+type CreatorHistoryImport = components['schemas']['HistoryImportResponse']
+type CreatorHistoryImportRequest = components['schemas']['HistoryImportRequest']
 
 function numberHeader(response: Response, name: string) {
   const value = response.headers.get(name)
@@ -169,6 +171,26 @@ function isXConnectionResponse(
     (value as { scopes: unknown[] }).scopes.every(
       (scope) => typeof scope === 'string',
     ),
+  )
+}
+
+function isCreatorHistoryImport(value: unknown): value is CreatorHistoryImport {
+  if (!value || typeof value !== 'object') return false
+  const result = value as Record<string, unknown>
+  return (
+    typeof result.import_id === 'string' &&
+    typeof result.status === 'string' &&
+    typeof result.requested_posts === 'number' &&
+    typeof result.pages_read === 'number' &&
+    typeof result.imported_posts === 'number' &&
+    typeof result.next_page_available === 'boolean' &&
+    (typeof result.error_code === 'string' || result.error_code === null) &&
+    typeof result.source === 'string' &&
+    typeof result.started_at === 'string' &&
+    (typeof result.completed_at === 'string' || result.completed_at === null) &&
+    Boolean(result.provenance) &&
+    typeof result.provenance === 'object' &&
+    !Array.isArray(result.provenance)
   )
 }
 
@@ -419,6 +441,54 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
         signal,
       )
       return unwrap(result)
+    },
+    async startHistoryImport(
+      body: CreatorHistoryImportRequest,
+      signal?: AbortSignal,
+    ): Promise<CreatorHistoryImport> {
+      const result = await request(
+        () =>
+          client.POST('/api/v1/creators/me/history/imports', { body, signal }),
+        signal,
+      )
+      const data = await unwrap(result)
+      if (!isCreatorHistoryImport(data)) {
+        throw new ApiRequestError({
+          code: 'malformed_response',
+          message: 'The history import response was invalid.',
+          status: result.response.status,
+        })
+      }
+      return data
+    },
+    async historyImportStatus(
+      importId: string,
+      signal?: AbortSignal,
+    ): Promise<CreatorHistoryImport> {
+      if (!/^[A-Za-z0-9._:-]{1,100}$/.test(importId)) {
+        throw new ApiRequestError({
+          code: 'invalid_import_id',
+          message: 'The history import identifier was invalid.',
+          status: null,
+        })
+      }
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/imports/{import_id}', {
+            params: { path: { import_id: importId } },
+            signal,
+          }),
+        signal,
+      )
+      const data = await unwrap(result)
+      if (!isCreatorHistoryImport(data)) {
+        throw new ApiRequestError({
+          code: 'malformed_response',
+          message: 'The history import status response was invalid.',
+          status: result.response.status,
+        })
+      }
+      return data
     },
     async generateReport(
       body: components['schemas']['CreatorReportRequest'],

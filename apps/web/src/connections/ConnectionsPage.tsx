@@ -585,8 +585,8 @@ export function ConnectionsPage({
                       <span className="prototype-tag">Unavailable</span>
                     </h4>
                     <p>
-                      Archive upload and import are not available until the
-                      format, rights and import service are ready.
+                      Archive import is unavailable until its format, rights,
+                      retention and deletion requirements are resolved.
                     </p>
                   </div>
                   <button
@@ -594,7 +594,7 @@ export function ConnectionsPage({
                     type="button"
                     disabled
                   >
-                    Waiting for import service
+                    Archive import unavailable
                   </button>
                 </article>
               </div>
@@ -733,12 +733,12 @@ export function ConnectionsPage({
                   title={
                     import.meta.env.DEV
                       ? importState.title
-                      : 'Waiting for import service'
+                      : 'Import unavailable'
                   }
                   body={
                     import.meta.env.DEV
                       ? importState.body
-                      : 'No import has been started from this screen. No progress is being reported, and no upload or background polling is running.'
+                      : 'No import has been started from this screen. This UI will not request or retain creator history until its authorization, budget and deletion safeguards are ready.'
                   }
                 />
                 {import.meta.env.DEV && fixture !== 'not-started' && (
@@ -817,7 +817,8 @@ export function ConnectionsPage({
       </section>
       <p className="onboarding-footnote">
         X is optional. Goals stay local to this page. Import and reporting
-        remain unavailable until their services are ready.
+        remain unavailable until their authorization and data safeguards are
+        ready.
       </p>
       <span className="sr-only" aria-live="polite">
         Current step: {activeStep.label}

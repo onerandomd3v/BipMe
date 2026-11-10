@@ -21,6 +21,22 @@ function response(body: unknown, status = 200, headers?: HeadersInit) {
   })
 }
 
+function historyImport(status: string) {
+  return {
+    import_id: 'cod-357-test-import',
+    status,
+    requested_posts: 20,
+    pages_read: status === 'running' ? 0 : 1,
+    imported_posts: status === 'partial' || status === 'complete' ? 12 : 0,
+    next_page_available: status === 'partial',
+    error_code: status === 'unavailable' ? 'external_gate_unverified' : null,
+    source: 'x_creator_authorized_history',
+    started_at: '2026-11-10T09:00:00Z',
+    completed_at: status === 'running' ? null : '2026-11-10T09:01:00Z',
+    provenance: { provider: 'x', endpoint: 'fixture' },
+  }
+}
+
 describe('API client', () => {
   const fetchMock = vi.fn<typeof fetch>()
   const server = setupServer(...apiHandlers)
@@ -77,6 +93,96 @@ describe('API client', () => {
     expect((fetchMock.mock.calls[0]?.[0] as Request).credentials).toBe(
       'same-origin',
     )
+  })
+
+  it.each(['running', 'partial', 'complete', 'unavailable'])(
+    'returns the server-reported history import state: %s',
+    async (status) => {
+      fetchMock.mockResolvedValueOnce(response(historyImport(status)))
+      const client = createApiClient(fetchMock)
+      await expect(
+        client.historyImportStatus('cod-357-test-import'),
+      ).resolves.toMatchObject({
+        import_id: 'cod-357-test-import',
+        status,
+        imported_posts: status === 'partial' || status === 'complete' ? 12 : 0,
+      })
+      const request = fetchMock.mock.calls[0]?.[0] as Request
+      expect(request.method).toBe('GET')
+      expect(decodeURIComponent(new URL(request.url).pathname)).toBe(
+        '/api/v1/creators/me/history/imports/cod-357-test-import',
+      )
+      expect(request.credentials).toBe('same-origin')
+    },
+  )
+
+  it('retries a history import with the same id and does not create a new import identity', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        response({ authenticated: true, csrf_token: 'history-csrf' }),
+      )
+      .mockResolvedValueOnce(
+        response({ error: { code: 'history_import_unavailable' } }, 503),
+      )
+      .mockResolvedValueOnce(response(historyImport('complete')))
+    const client = createApiClient(fetchMock)
+    await client.session()
+    const requestBody = {
+      import_id: 'cod-357-test-import',
+      max_posts: 20,
+    } as const
+    await expect(client.startHistoryImport(requestBody)).rejects.toMatchObject({
+      status: 503,
+      code: 'history_import_unavailable',
+    })
+    await expect(client.startHistoryImport(requestBody)).resolves.toMatchObject(
+      {
+        status: 'complete',
+      },
+    )
+
+    const first = fetchMock.mock.calls[1]?.[0] as Request
+    const retry = fetchMock.mock.calls[2]?.[0] as Request
+    expect(first.method).toBe('POST')
+    expect(retry.method).toBe('POST')
+    expect(first.url).toBe(retry.url)
+    expect(await first.clone().json()).toEqual(await retry.clone().json())
+    expect(first.headers.get('X-CSRF-Token')).toBe('history-csrf')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('resumes a known import by reading status with its existing id', async () => {
+    fetchMock
+      .mockResolvedValueOnce(response(historyImport('running')))
+      .mockResolvedValueOnce(response(historyImport('complete')))
+    const client = createApiClient(fetchMock)
+    await expect(
+      client.historyImportStatus('cod-357-test-import'),
+    ).resolves.toMatchObject({ status: 'running' })
+    await expect(
+      client.historyImportStatus('cod-357-test-import'),
+    ).resolves.toMatchObject({ status: 'complete' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(
+      fetchMock.mock.calls.map(([input]) => (input as Request).method),
+    ).toEqual(['GET', 'GET'])
+  })
+
+  it('rejects malformed import status without making another request', async () => {
+    fetchMock.mockResolvedValueOnce(response({ import_id: 'partial' }))
+    const client = createApiClient(fetchMock)
+    await expect(
+      client.historyImportStatus('cod-357-test-import'),
+    ).rejects.toMatchObject({
+      code: 'malformed_response',
+    })
+    await expect(
+      client.historyImportStatus('../outside'),
+    ).rejects.toMatchObject({
+      code: 'invalid_import_id',
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('stores CSRF in memory and sends it on unsafe calls', async () => {
