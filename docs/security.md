@@ -68,6 +68,12 @@ Do not run a prelaunch multi-model benchmark. Require only focused smoke/unit te
 
 The pure COD-380 synthesis service is disabled by default and is not yet connected to a report API or persistence layer. Its built-in daily cost reservation is process-local and resets when the process restarts; use a shared durable budget implementation before enabling it across production workers. Current tests use synthetic fixtures and mocked provider responses only. They do not verify real X processing rights, provider-transfer rights, Groq account access, quotas, retention terms or billing configuration.
 
+### COD-421 remote embedding boundary
+
+Remote inference is opt-in through `BIPME_EMBEDDING_PROVIDER=remote`; the default remains local CPU inference. The remote adapter accepts only the pinned E5 model/revision/vector identity, uses HTTPS with a bearer secret, bounds request and response body sizes, batch size, concurrency and timeouts, and maps provider failures to a generic API 503. It does not automatically fall back to local inference: operators may explicitly switch the configured provider to `local` if that is an approved operating decision. The inference service must remain loopback-bound on the Brev VM behind a private, access-controlled TLS overlay. Never use a Brev browser tunnel or public Funnel as unattended backend transport, expose Jupyter, or place the token in Git, request logs, exception text or issue comments.
+
+The COD-421 Brev checkpoint in Linear is owner-reported: an L4 instance was provisioned at a displayed USD 1.49/hour with USD 68.63 credits, but credit expiry, storage cost and enforceable billing/stop controls were not verified. A stopped instance and active private connection were also not independently verified in this workspace. Do not start GPU compute or assume these displayed figures remain current without the owner rechecking the console. The repository's inference tests and mocked HTTP tests use synthetic strings only; they do not authorize processing real X-derived text. Existing COD-344 source-processing and any applicable third-party transfer/processor permissions remain gates before real creator text can reach either the local or remote embedding model.
+
 ## Data handling
 
 ### Durable background jobs (COD-362)

@@ -18,7 +18,7 @@ from bipme.api.errors import ApiError
 from bipme.auth.config import AuthSettings
 from bipme.auth.crypto import csrf_token_for
 from bipme.auth.sessions import active_session_by_cookie
-from bipme.intelligence.embeddings import TextEmbedder, e5_from_environment
+from bipme.intelligence.embeddings import TextEmbedder, embedder_from_environment
 from bipme.persistence.models import CreatorPlatformIdentity
 
 
@@ -110,10 +110,15 @@ def get_authenticated_creator(
     return AuthenticatedCreator(record.creator_id, record.id, csrf_token)
 
 
+@lru_cache(maxsize=1)
+def _configured_embedder() -> TextEmbedder:
+    return embedder_from_environment()
+
+
 def get_embedder() -> TextEmbedder:
-    """Return the configured local encoder; no remote inference service is used."""
+    """Return the configured encoder; remote failures never trigger a local fallback."""
     try:
-        return e5_from_environment()
+        return _configured_embedder()
     except Exception as exc:
         raise ApiError(
             503, "embedding_unavailable", "Draft analysis is temporarily unavailable."
