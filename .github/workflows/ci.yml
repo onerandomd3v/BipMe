@@ -30,6 +30,12 @@ jobs:
           if missing:
               raise SystemExit("Missing required files: " + ", ".join(missing))
           PY
+      - name: Check service environment boundaries
+        run: python3 scripts/check_env_boundaries.py
+      - name: Validate Compose configuration
+        run: |
+          docker compose -f compose.yaml config --quiet
+          docker compose -f infra/brev-embedding/compose.yaml --env-file infra/brev-embedding/.env.example config --quiet
 
   api-checks:
     name: api-checks

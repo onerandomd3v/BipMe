@@ -11,6 +11,35 @@
 
 From the repository root, `apps/api` and `apps/web` are independent dependency roots, even though the code lives in one monorepo. Commit both `uv.lock` and `pnpm-lock.yaml` on dependency changes.
 
+## Environment configuration
+
+Environment examples belong to the service that consumes them: `apps/api/.env.example` configures the API and its worker; `infra/brev-embedding/.env.example` configures the standalone Brev inference container. The React/Vite app currently consumes no app-specific environment variables, so it has no `.env.example`. Vite variables prefixed with `VITE_` are embedded in browser assets and must never contain secrets.
+
+An example file documents values; Python does not load it automatically. For local API work, create and load the API file in the same shell session used to run the API, migrations, or worker:
+
+```bash
+cp apps/api/.env.example apps/api/.env
+# Replace the private-login placeholder and configure a provisioned local creator if using private sign-in.
+set -a
+. ./apps/api/.env
+set +a
+```
+
+In Windows PowerShell, use the same file and load its simple `KEY=value` entries into the current process:
+
+```powershell
+Copy-Item apps/api/.env.example apps/api/.env
+Get-Content apps/api/.env | ForEach-Object {
+  if ($_ -match '^\s*([^#=][^=]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], 'Process')
+  }
+}
+```
+
+The example's creator UUID must correspond to an existing local creator row. Replace `BIPME_PRIVATE_LOGIN_SECRET` with at least 32 random bytes before testing private sign-in. Keep X, report-synthesis, and remote-embedding features disabled unless their documented access, rights, transfer, and cost gates have been independently verified. For production, inject API values through the deployment platform's server-side environment or secret manager; never copy the example placeholders into production.
+
+The root `compose.yaml` defines only local PostgreSQL and has fixed development-only credentials; it does not read an application `.env` file. Compose interpolation for Brev is separate from API process loading: run its Compose file from `infra/brev-embedding/` after creating its local `.env`, or pass `--env-file` explicitly. Keep `BIPME_EMBEDDING_TOKEN` only in the Brev host's private environment and provision its matching value as the API's `BIPME_EMBEDDING_REMOTE_TOKEN` through separate server-side secret stores.
+
 ## Local database
 
 ```bash
@@ -22,19 +51,7 @@ The `--wait` flag waits for the configured PostgreSQL health check to pass befor
 
 The local service exposes PostgreSQL on `127.0.0.1:5432` with **development-only** credentials in `compose.yaml`. Never reuse them outside local development. The volume persists between restarts.
 
-The scaffold's Alembic configuration reads `BIPME_DATABASE_URL` **from the process environment**. Merely copying `.env.example` does **not** currently auto-load it. Authentication secrets and creator IDs are also read from the process environment; keep real values out of Git.
-
-Linux/macOS Bash:
-
-```bash
-export BIPME_DATABASE_URL='postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme'
-```
-
-Windows PowerShell:
-
-```powershell
-$env:BIPME_DATABASE_URL = 'postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme'
-```
+Alembic and the application read `BIPME_DATABASE_URL` **from the process environment**. The commands above load `apps/api/.env` into that environment; merely copying the example does not load it. To use a different database, override this process value. Authentication secrets and creator IDs are also process environment values; keep real values out of Git.
 
 ## Start the API
 
