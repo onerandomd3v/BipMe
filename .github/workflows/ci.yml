@@ -35,7 +35,7 @@ jobs:
       - name: Validate Compose configuration
         run: |
           docker compose -f compose.yaml config --quiet
-          docker compose -f infra/brev-embedding/compose.yaml --env-file infra/brev-embedding/.env.example config --quiet
+          BIPME_EMBEDDING_TOKEN=compose-validation-only docker compose -f infra/brev-embedding/compose.yaml --env-file infra/brev-embedding/.env.example config --quiet
 
   api-checks:
     name: api-checks
