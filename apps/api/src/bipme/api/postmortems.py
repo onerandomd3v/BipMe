@@ -571,15 +571,20 @@ def read_postmortem(
             for item in published_outcomes
         )
         state = _state(result, has_observation)
-        return PostmortemReadResponse(
-            state=state,
-            assessment_id=assessment.id,
-            assessed_at=assessment.assessed_at,
-            published_post=_publication_response(post),
-            original_outlook=outlook,
-            postmortem=_evaluation(result, outlook),
-            limitations=result.limitations,
-        )
+        try:
+            return PostmortemReadResponse(
+                state=state,
+                assessment_id=assessment.id,
+                assessed_at=assessment.assessed_at,
+                published_post=_publication_response(post),
+                original_outlook=outlook,
+                postmortem=_evaluation(result, outlook),
+                limitations=result.limitations,
+            )
+        except (KeyError, TypeError, ValueError, ValidationError) as exc:
+            raise ApiError(
+                503, "assessment_snapshot_invalid", "The saved assessment is unavailable."
+            ) from exc
     except ApiError:
         raise
     except SQLAlchemyError as exc:

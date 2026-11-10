@@ -10,6 +10,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import CheckConstraint, create_engine, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 from test_outlooks import AS_OF, observation
@@ -290,6 +291,51 @@ def test_missing_or_foreign_assessment_is_hidden_and_no_publication_is_explicit(
     assert pending.status_code == 200
     assert pending.json()["state"] == "publication_pending"
     assert pending.json()["postmortem"] is None
+
+
+def test_invalid_saved_snapshot_returns_sanitized_unavailable_error(postmortem_api) -> None:
+    client, factory = postmortem_api
+    with factory.begin() as db:
+        assessment = db.get(DraftAssessment, ASSESSMENT_ID)
+        assert assessment is not None
+        assessment.decision_snapshot = {"corrupt": True}
+
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/postmortem")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "assessment_snapshot_invalid"
+    assert "corrupt" not in response.text
+
+
+def test_malformed_metric_window_during_response_assembly_is_sanitized(postmortem_api) -> None:
+    client, factory = postmortem_api
+    with factory.begin() as db:
+        assessment = db.get(DraftAssessment, ASSESSMENT_ID)
+        assert assessment is not None
+        metrics = list(assessment.decision_snapshot["metrics"])
+        metrics[0] = {**metrics[0], "window": "malformed"}
+        assessment.decision_snapshot = {**assessment.decision_snapshot, "metrics": metrics}
+
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/postmortem")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "assessment_snapshot_invalid"
+    assert "malformed" not in response.text
+
+
+def test_postmortem_database_failure_returns_sanitized_unavailable_error(postmortem_api) -> None:
+    client, _ = postmortem_api
+
+    class FailingSession:
+        def scalar(self, *_args, **_kwargs):
+            raise SQLAlchemyError("synthetic database failure")
+
+    client.app.dependency_overrides[get_db_session] = lambda: FailingSession()
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/postmortem")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "postmortem_store_unavailable"
+    assert "synthetic database failure" not in response.text
 
 
 @pytest.mark.parametrize("verification_state", ["mismatch", "unknown"])
