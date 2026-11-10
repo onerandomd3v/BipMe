@@ -196,3 +196,29 @@ No real X API credentials are required for routine local/CI scaffold tests. Befo
 - **Type/lint failures:** run the exact job commands above and fix underlying code, not just CI configuration.
 
 COD-361 also exposes `GET /api/v1/creators/me/draft-assessments/{assessment_id}/publication` for owner-scoped historical status without a provider call. Publication verification requires `BIPME_X_PUBLICATION_PRICING_OBSERVED_AT`, `BIPME_X_PUBLICATION_PRICING_EXPIRES_AT` and `BIPME_X_PUBLICATION_PRICING_SOURCE` as well as the existing explicit rights, entitlement and budget settings. Missing/expired pricing fails closed. Committed verification digests are reused after attachment rollback; ambiguous reservations without evidence remain blocked for reconciliation rather than authorizing another paid read. Equal text with unverifiable media content, thread role or reply/quote targets remains unknown for evaluation.
+
+## COD-420 frontend handoff for COD-359 / COD-360
+
+Aliyu should use the generated `PostEvidence`, `MetricObservationEvidence`, `EvidencePage` and `ImportPage` contracts; the only Web change in COD-420 is regenerated types. Use the existing same-origin authenticated client and cookies:
+
+```ts
+// COD-359 history: retain next_cursor and pass it as cursor on the next call.
+client.GET('/api/v1/creators/me/history/posts', {
+  params: { query: { limit: 20 } },
+})
+// COD-360 comparable drill-down: take canonical IDs from the saved assessment,
+// not provider IDs; this pins observations to the immutable prediction cutoff.
+client.GET('/api/v1/creators/me/history/evidence', {
+  params: { query: { post_ids: canonicalIds.slice(0, 50), assessment_id: assessmentId } },
+})
+client.GET('/api/v1/creators/me/history/posts/{post_id}', {
+  params: { path: { post_id: canonicalPostId } },
+})
+client.GET('/api/v1/creators/me/history/imports', {
+  params: { query: { limit: 10 } },
+})
+```
+
+Batch items are ordered by publication time/ID, not request order. Match IDs explicitly and treat omitted IDs as unavailable without inferring their ownership. Render disclosure states, null text/URL, observation truncation, source freshness and empty evidence honestly. Decimal metric values arrive as strings: never coalesce null to zero. Use each exact metric definition/unit/window; never substitute another series or newer observations for original prediction evidence. Observation provenance is deliberately narrow. An archive/unknown-source metadata-only card does not establish permission to display its text or metrics. Import status does not prove sufficient analytical evidence. The current policy and creator permission apply even to a historical assessment read; revocation is not bypassed by an old cursor.
+
+Run `BIPME_TEST_DATABASE_URL=... uv run pytest -q tests/test_evidence_api.py` against disposable PostgreSQL for auth/isolation, cursor, temporal, permission, provenance and query-count checks. Read routes do not need X credentials. The API returns 401/403 through existing auth, 404 for hidden/missing detail, 422 for invalid bounds/cursors/cutoffs, and sanitized 503 for store failure.

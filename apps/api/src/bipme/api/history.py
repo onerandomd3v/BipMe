@@ -162,4 +162,4 @@ def get_history_import(
     )
     if row is None:
         raise ApiError(404, "history_import_not_found", "The creator history import was not found.")
-    return import_summary(row)
+    return {**import_summary(row), "provenance": {}}
