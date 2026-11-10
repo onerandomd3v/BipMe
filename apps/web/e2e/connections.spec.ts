@@ -52,6 +52,11 @@ async function openConnections(page: Page) {
   ).toBeVisible()
 }
 
+async function goToSourceStep(page: Page) {
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await page.getByRole('button', { name: 'Continue' }).click()
+}
+
 test('renders without horizontal overflow at requested viewport widths', async ({
   page,
 }) => {
@@ -73,6 +78,11 @@ test('renders without horizontal overflow at requested viewport widths', async (
 test('visits all six onboarding steps and supports back and continue', async ({
   page,
 }) => {
+  const importRequests: string[] = []
+  page.on('request', (request) => {
+    if (request.url().includes('/api/v1/creators/me/history/imports'))
+      importRequests.push(request.url())
+  })
   await mockSession(page)
   await openConnections(page)
   const titles = [
@@ -92,12 +102,13 @@ test('visits all six onboarding steps and supports back and continue', async ({
   await expect(page.getByRole('heading', { name: titles[4] })).toBeVisible()
   await expect(page.getByText('Waiting for import service')).toBeVisible()
   await expect(
-    page.getByText(/No import\/status endpoint is available yet/),
+    page.getByText(/No import has been started from this screen/),
   ).toBeVisible()
   await expect(page.getByLabel('Development fixture (synthetic)')).toHaveCount(
     0,
   )
   await expect(page.getByRole('progressbar')).toHaveCount(0)
+  expect(importRequests).toHaveLength(0)
 })
 
 test('provides labelled goal and niche inputs and labels prototype-only choices', async ({
@@ -165,7 +176,7 @@ test('initiates OAuth through a top-level server navigation with same-origin ret
 }) => {
   await mockSession(page)
   await openConnections(page)
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await goToSourceStep(page)
   const authorizationRequest = page.waitForRequest((request) =>
     request.url().includes('/api/auth/x/authorize?'),
   )
@@ -192,7 +203,7 @@ test('shows server connection failures without claiming success', async ({
     route.fulfill({ status: 503, json: { error: { code: 'unavailable' } } }),
   )
   await openConnections(page)
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await goToSourceStep(page)
   await expect(page.getByText('Connection status unavailable')).toBeVisible()
   await expect(page.getByRole('link', { name: 'Connect X' })).toBeVisible()
   await expect(page.getByText('Connected', { exact: true })).toHaveCount(0)
@@ -220,7 +231,7 @@ test('keeps private-session expiry separate from a server-reported expired X tok
     }),
   )
   await openConnections(page)
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await goToSourceStep(page)
   await expect(page.getByText('X access token expired')).toBeVisible()
   await expect(page.getByText('Private session active')).toBeVisible()
 })
@@ -259,7 +270,7 @@ test('reports rate limited refresh and failed disconnect without automatic retry
     route.fulfill({ status: 503, json: { error: { code: 'unavailable' } } }),
   )
   await openConnections(page)
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await goToSourceStep(page)
   await page.getByRole('button', { name: 'Refresh authorization' }).click()
   await expect(page.getByText(/rate limiting requests/)).toBeVisible()
   await expect.poll(() => refreshCount).toBe(1)

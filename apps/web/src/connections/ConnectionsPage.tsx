@@ -738,7 +738,7 @@ export function ConnectionsPage({
                   body={
                     import.meta.env.DEV
                       ? importState.body
-                      : 'No import/status endpoint is available yet. No upload, background polling or live import has started.'
+                      : 'No import has been started from this screen. No progress is being reported, and no upload or background polling is running.'
                   }
                 />
                 {import.meta.env.DEV && fixture !== 'not-started' && (
