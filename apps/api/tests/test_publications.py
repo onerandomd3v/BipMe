@@ -384,6 +384,49 @@ def test_wrong_account_and_revoked_access_never_create_attachment(
         )
 
 
+@pytest.mark.parametrize("availability", ["deleted", "unavailable"])
+@pytest.mark.parametrize("already_linked", [False, True])
+def test_unavailable_or_deleted_posts_cannot_be_linked_or_replayed(
+    publication_api: tuple[TestClient, sessionmaker[Session], FakeVerifier],
+    availability: str,
+    already_linked: bool,
+) -> None:
+    client, factory, verifier = publication_api
+    external_post_id = "123456789"
+    linked_id = ASSESSMENT_ID if already_linked else None
+    with factory() as db:
+        db.add(
+            CanonicalPost(
+                id=uuid4(),
+                creator_id=CREATOR_ID,
+                platform="x",
+                external_post_id=external_post_id,
+                published_at=NOW + timedelta(minutes=5),
+                availability=availability,
+                deleted_at=NOW if availability == "deleted" else None,
+                topology="original",
+                source_assessment_id=linked_id,
+                version_match_state="unknown" if already_linked else None,
+            )
+        )
+        db.commit()
+    path = f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/publication"
+    reply = client.post(path, json={"post_url_or_id": external_post_id})
+    assert reply.status_code == 404
+    assert reply.json()["error"]["code"] == "published_post_not_found"
+    assert verifier.calls == []
+    if already_linked:
+        assert client.get(path).status_code == 404
+    with factory() as db:
+        persisted = db.scalar(
+            select(CanonicalPost).where(CanonicalPost.external_post_id == external_post_id)
+        )
+        assert persisted is not None
+        assert persisted.availability == availability
+        assert persisted.source_assessment_id == linked_id
+        assert persisted.text is None
+
+
 def test_cross_creator_and_already_linked_posts_are_not_reassigned(
     publication_api: tuple[TestClient, sessionmaker[Session], FakeVerifier],
 ) -> None:
