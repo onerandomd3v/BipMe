@@ -6,13 +6,17 @@ import math
 import os
 from typing import Any
 
+import httpx
 import pytest
 
 from bipme.intelligence.embeddings import (
     E5_CHECKPOINT_REVISION,
     E5TextEmbedder,
     EmbeddingIdentity,
+    RemoteEmbeddingError,
+    RemoteTextEmbedder,
     e5_from_environment,
+    embedder_from_environment,
 )
 
 REV = "a" * 40
@@ -28,7 +32,9 @@ class FakeModel:
 
 
 def identity() -> EmbeddingIdentity:
-    return EmbeddingIdentity("intfloat/multilingual-e5-small", REV, 384, "e5-prefix-strip-v1")
+    return EmbeddingIdentity(
+        "intfloat/multilingual-e5-small", E5_CHECKPOINT_REVISION, 384, "e5-prefix-strip-v1"
+    )
 
 
 def test_batch_query_and_passage_prefixes_and_cpu() -> None:
@@ -43,7 +49,10 @@ def test_batch_query_and_passage_prefixes_and_cpu() -> None:
     queries = encoder.encode(["  Building a startup  ", "Python lessons"], role="query")
     passages = encoder.encode(["Creator lessons"], role="passage")
     assert [len(vector) for vector in queries + passages] == [384, 384, 384]
-    assert calls == [(identity().model_id, REV), (identity().model_id, REV)]
+    assert calls == [
+        (identity().model_id, E5_CHECKPOINT_REVISION),
+        (identity().model_id, E5_CHECKPOINT_REVISION),
+    ]
     assert model.calls[0][0] == ["query: Building a startup", "query: Python lessons"]
     assert model.calls[1][0] == ["passage: Creator lessons"]
     assert model.calls[0][1]["normalize_embeddings"] is True
@@ -122,6 +131,205 @@ def test_configuration_requires_pinned_checkpoint(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("BIPME_EMBEDDING_MODEL", "unsupported/model")
     with pytest.raises(ValueError, match="only supports"):
         e5_from_environment()
+
+
+def test_provider_selection_is_explicit_and_remote_preserves_identity(monkeypatch):
+    monkeypatch.delenv("BIPME_EMBEDDING_PROVIDER", raising=False)
+    assert isinstance(embedder_from_environment(), E5TextEmbedder)
+    monkeypatch.setenv("BIPME_EMBEDDING_PROVIDER", "remote")
+    monkeypatch.setenv("BIPME_EMBEDDING_REMOTE_URL", "https://private.example")
+    monkeypatch.setenv("BIPME_EMBEDDING_REMOTE_TOKEN", "synthetic-secret")
+    remote = embedder_from_environment()
+    assert isinstance(remote, RemoteTextEmbedder)
+    assert remote.identity == identity()
+    monkeypatch.setenv("BIPME_EMBEDDING_PROVIDER", "unknown")
+    with pytest.raises(ValueError, match="BIPME_EMBEDDING_PROVIDER"):
+        embedder_from_environment()
+
+
+def _remote(handler):
+    return RemoteTextEmbedder(
+        identity(),
+        endpoint="https://private.example",
+        token="synthetic-secret",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+
+@pytest.mark.parametrize("role", ["query", "passage"])
+def test_remote_posts_bearer_and_role_with_checked_identity(role):
+    captured = []
+
+    def handler(request):
+        captured.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "model": identity().model_id,
+                "revision": identity().revision,
+                "dimensions": 384,
+                "embeddings": [[1.0] + [0.0] * 383],
+            },
+        )
+
+    vectors = _remote(handler).encode(["synthetic only"], role=role)
+    assert len(vectors[0]) == 384
+    assert captured[0].headers["Authorization"] == "Bearer synthetic-secret"
+    assert captured[0].url.path == "/embed"
+    assert captured[0].read() == b'{"texts":["synthetic only"],"role":"' + role.encode() + b'"}'
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"model": "other", "revision": REV, "dimensions": 384, "embeddings": []},
+        {
+            "model": "intfloat/multilingual-e5-small",
+            "revision": REV,
+            "dimensions": 384,
+            "embeddings": [],
+        },
+        {
+            "model": "intfloat/multilingual-e5-small",
+            "revision": E5_CHECKPOINT_REVISION,
+            "dimensions": 384,
+        },
+        {
+            "model": "intfloat/multilingual-e5-small",
+            "revision": E5_CHECKPOINT_REVISION,
+            "dimensions": 384,
+            "embeddings": [[0.0] * 383],
+        },
+        {
+            "model": "intfloat/multilingual-e5-small",
+            "revision": E5_CHECKPOINT_REVISION,
+            "dimensions": 384,
+            "embeddings": [[0.0] * 384],
+        },
+        {
+            "model": "intfloat/multilingual-e5-small",
+            "revision": E5_CHECKPOINT_REVISION,
+            "dimensions": 384,
+            "embeddings": [[float("nan")] + [0.0] * 383],
+        },
+        {
+            "model": "intfloat/multilingual-e5-small",
+            "revision": E5_CHECKPOINT_REVISION,
+            "dimensions": 384,
+            "embeddings": [[0.5] + [0.0] * 383],
+        },
+    ],
+)
+def test_remote_rejects_mismatched_or_invalid_service_vectors(payload):
+    with pytest.raises(RemoteEmbeddingError):
+        _remote(lambda request: httpx.Response(200, json=payload)).encode(
+            ["synthetic"], role="query"
+        )
+
+
+@pytest.mark.parametrize("status", [401, 403, 500, 503])
+def test_remote_maps_auth_and_service_failures_without_leaking(status):
+    with pytest.raises(RemoteEmbeddingError) as error:
+        _remote(
+            lambda request: httpx.Response(status, text="synthetic-secret creator text")
+        ).encode(["synthetic creator text"], role="passage")
+    assert "synthetic-secret" not in str(error.value)
+    assert "creator text" not in str(error.value)
+
+
+def test_remote_maps_network_failure_without_leaking_text_or_token():
+    def handler(request):
+        raise httpx.ReadTimeout("synthetic-secret synthetic creator text", request=request)
+
+    with pytest.raises(RemoteEmbeddingError) as error:
+        _remote(handler).encode(["synthetic creator text"], role="query")
+    assert "synthetic-secret" not in str(error.value)
+    assert "creator text" not in str(error.value)
+    assert error.value.__cause__ is None
+
+
+def test_remote_maps_malformed_json_without_leaking_response_text():
+    with pytest.raises(RemoteEmbeddingError) as error:
+        _remote(
+            lambda request: httpx.Response(200, text="synthetic-secret private creator response")
+        ).encode(["synthetic"], role="query")
+    assert "synthetic-secret" not in str(error.value)
+    assert "private creator response" not in str(error.value)
+    assert error.value.__cause__ is None
+
+
+def test_remote_rejects_oversized_response_without_parsing_it():
+    with pytest.raises(RemoteEmbeddingError, match="response is too large"):
+        _remote(lambda request: httpx.Response(200, content=b" " * (256 * 1024 + 1))).encode(
+            ["synthetic"], role="query"
+        )
+
+
+def test_remote_accepts_existing_api_text_limit():
+    captured = []
+
+    def handler(request):
+        captured.append(request.read())
+        return httpx.Response(
+            200,
+            json={
+                "model": identity().model_id,
+                "revision": identity().revision,
+                "dimensions": 384,
+                "embeddings": [[1.0] + [0.0] * 383],
+            },
+        )
+
+    assert len(_remote(handler).encode(["x" * 10000], role="query")) == 1
+    assert len(httpx.Response(200, content=captured[0]).json()["texts"][0]) == 10000
+
+
+def test_remote_requires_https_and_bounds_requests():
+    with pytest.raises(ValueError, match="HTTPS"):
+        RemoteTextEmbedder(identity(), endpoint="http://localhost", token="x")
+    with pytest.raises(ValueError, match="timeout"):
+        RemoteTextEmbedder(
+            identity(), endpoint="https://private.example", token="x", timeout_seconds=61
+        )
+    for endpoint in (
+        "https://user:password@private.example",
+        "https://private.example?token=secret",
+        "https://private.example/#fragment",
+    ):
+        with pytest.raises(ValueError, match="HTTPS"):
+            RemoteTextEmbedder(identity(), endpoint=endpoint, token="x")
+    encoder = RemoteTextEmbedder(
+        identity(),
+        endpoint="https://private.example",
+        token="x",
+        max_batch_size=1,
+        max_concurrency=1,
+    )
+    with pytest.raises(ValueError, match="bounds"):
+        encoder.encode(["one", "two"], role="passage")
+    assert encoder._slots.acquire(blocking=False)
+    try:
+        with pytest.raises(RemoteEmbeddingError, match="concurrency limit"):
+            encoder.encode(["synthetic"], role="passage")
+    finally:
+        encoder._slots.release()
+    for bounds in ({"max_batch_size": 9}, {"max_text_chars": 10001}):
+        with pytest.raises(ValueError, match="bounds"):
+            RemoteTextEmbedder(identity(), endpoint="https://private.example", token="x", **bounds)
+
+
+@pytest.mark.parametrize("value", [True, 1e308])
+def test_remote_rejects_boolean_or_overflowing_vector_values(value):
+    payload = {
+        "model": identity().model_id,
+        "revision": identity().revision,
+        "dimensions": 384,
+        "embeddings": [[value] + [0.0] * 383],
+    }
+    with pytest.raises(RemoteEmbeddingError):
+        _remote(lambda request: httpx.Response(200, json=payload)).encode(
+            ["synthetic"], role="query"
+        )
 
 
 @pytest.mark.skipif(
