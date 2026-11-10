@@ -1,9 +1,11 @@
 """Synthetic persistence tests for the bounded creator-history import seam."""
 
-from datetime import UTC, datetime
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from uuid import UUID, uuid4
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import CheckConstraint, create_engine, event, select
 from sqlalchemy.exc import IntegrityError
@@ -13,14 +15,27 @@ from sqlalchemy.pool import StaticPool
 from bipme.api.app import create_app
 from bipme.api.dependencies import AuthenticatedCreator, get_authenticated_creator, get_db_session
 from bipme.api.history import get_history_importer
-from bipme.integrations.x_read import XMetricValue, XReadPost, XReadResult
+from bipme.auth.crypto import TokenCipher
+from bipme.integrations.x_read import (
+    XCreatorHistoryReader,
+    XMetricValue,
+    XPage,
+    XReadPost,
+    XReadPricing,
+    XReadResult,
+    XReadSettings,
+)
 from bipme.persistence.base import Base
 from bipme.persistence.models import (
+    APIUsageLedger,
     CanonicalPost,
     Creator,
     CreatorHistoryImport,
+    CreatorPlatformIdentity,
     OutcomeObservationRecord,
+    XAccountConnection,
 )
+from bipme.persistence.usage import XUsageLimits
 from bipme.posts.history import CreatorHistoryImporter
 
 CREATOR_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -58,12 +73,15 @@ def _runtime():
         CanonicalPost.__table__,
         OutcomeObservationRecord.__table__,
         CreatorHistoryImport.__table__,
+        CreatorPlatformIdentity.__table__,
+        XAccountConnection.__table__,
+        APIUsageLedger.__table__,
     ]
     removed = []
     for table in tables:
         for constraint in list(table.constraints):
-            if isinstance(constraint, CheckConstraint) and "jsonb_typeof" in str(
-                constraint.sqltext
+            if isinstance(constraint, CheckConstraint) and any(
+                marker in str(constraint.sqltext) for marker in ("jsonb_typeof", "substring(")
             ):
                 table.constraints.remove(constraint)
                 removed.append((table, constraint))
@@ -266,4 +284,112 @@ def test_history_routes_validate_auth_fail_closed_and_scope_status():
         == 503
     )
     app.dependency_overrides.clear()
+    engine.dispose()
+
+
+def test_mocked_x_pages_flow_through_budgeted_reader_and_import_persistence():
+    engine, factory = _runtime()
+    cipher = TokenCipher({"v1": Fernet.generate_key().decode("ascii")}, "v1")
+    with factory() as db:
+        identity = CreatorPlatformIdentity(
+            id=uuid4(), creator_id=CREATOR_ID, platform="x", external_creator_id="987654321"
+        )
+        encrypted = cipher.encrypt("synthetic-access-token")
+        db.add(identity)
+        db.add(
+            XAccountConnection(
+                id=uuid4(),
+                creator_id=CREATOR_ID,
+                creator_identity_id=identity.id,
+                platform="x",
+                state="connected",
+                scopes=["tweet.read", "users.read"],
+                encrypted_access_token=encrypted.envelope,
+                key_version=encrypted.key_version,
+                access_token_expires_at=NOW + timedelta(hours=1),
+            )
+        )
+        db.commit()
+
+    class PagedProvider:
+        max_request_attempts = 1
+
+        def __init__(self):
+            self.calls = []
+
+        def creator_posts_page(self, *, access_token, user_id, max_results, pagination_token):
+            self.calls.append((access_token, user_id, max_results, pagination_token))
+            assert access_token == "synthetic-access-token"
+            assert user_id == "987654321"
+            first = {
+                "id": "101",
+                "text": "synthetic reply",
+                "created_at": "2026-11-08T10:00:00Z",
+                "referenced_tweets": [{"type": "replied_to", "id": "100"}],
+                "public_metrics": {"reply_count": 2},
+            }
+            if pagination_token is None:
+                return XPage((first,), "page-2", NOW)
+            return XPage(
+                (
+                    first,
+                    {
+                        "id": "102",
+                        "text": "synthetic original",
+                        "created_at": "2026-11-08T11:00:00Z",
+                    },
+                ),
+                None,
+                NOW,
+            )
+
+    provider = PagedProvider()
+    reader = XCreatorHistoryReader(
+        provider=provider,
+        cipher=cipher,
+        settings=XReadSettings(
+            enabled=True,
+            allowed_user_id="987654321",
+            account_entitlement_verified=True,
+            data_rights_verified=True,
+            max_results=5,
+            max_pages=2,
+        ),
+        pricing=XReadPricing(
+            Decimal("0.001"),
+            Decimal("0.002"),
+            NOW - timedelta(hours=1),
+            NOW + timedelta(hours=1),
+            "operator-verified:test",
+        ),
+        limits=XUsageLimits(*(Decimal("1.00") for _ in range(4))),
+    )
+    importer = CreatorHistoryImporter(reader)
+    with factory() as db:
+        first = importer.import_history(
+            db, creator_id=CREATOR_ID, import_id="integrated-1", max_posts=5, now=NOW
+        )
+        replay = importer.import_history(
+            db, creator_id=CREATOR_ID, import_id="integrated-1", max_posts=5, now=NOW
+        )
+        posts = db.scalars(select(CanonicalPost).order_by(CanonicalPost.external_post_id)).all()
+        metrics = db.scalars(select(OutcomeObservationRecord)).all()
+        ledger = db.scalars(select(APIUsageLedger)).all()
+    assert first == replay
+    assert first["status"] == "complete"
+    assert first["pages_read"] == 2
+    assert first["imported_posts"] == 2
+    assert [call[3] for call in provider.calls] == [None, "page-2"]
+    assert [post.external_post_id for post in posts] == ["101", "102"]
+    assert posts[0].topology == "reply"
+    assert posts[0].reply_to_external_post_id == "100"
+    assert posts[0].creator_id == CREATOR_ID
+    assert posts[0].published_at == datetime(2026, 11, 8, 10, tzinfo=UTC)
+    assert posts[0].provenance["source"] == "x_creator_authorized_history"
+    assert any(row.metric_name == "reply_count" and row.metric_value == 2 for row in metrics)
+    assert any(row.metric_name == "impression_count" and row.state == "missing" for row in metrics)
+    assert all(row.observed_at == NOW for row in metrics)
+    assert len(ledger) == 2
+    assert all(row.actual_cost is None for row in ledger)
+    assert all(row.estimated_cost > 0 for row in ledger)
     engine.dispose()
