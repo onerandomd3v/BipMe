@@ -41,6 +41,7 @@ from bipme.intelligence.post_profiles import (
 )
 from bipme.intelligence.retrieval import VectorCandidateQuery
 from bipme.jobs.runtime import (
+    TASK_NAME,
     JobRuntime,
     JobRuntimeSettings,
     RetryableHandlerError,
@@ -2301,3 +2302,308 @@ def test_publication_verification_survives_attachment_rollback_without_second_pa
         == second.text_fingerprint
     )
     assert "synthetic publication" not in str(usage.request_metadata)
+
+
+def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
+    migrated_postgres: tuple[Engine, str], session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A linked post gets durable candidate receipts and exact partial observations."""
+    from types import SimpleNamespace
+
+    from cryptography.fernet import Fernet
+
+    from bipme.auth.config import AuthSettings
+    from bipme.auth.crypto import TokenCipher
+    from bipme.integrations.x_metric_snapshots import (
+        XMetricSnapshot,
+        XMetricSnapshotReader,
+        XMetricSnapshotSettings,
+        XMetricSnapshotUnavailable,
+        XSnapshotMetric,
+    )
+    from bipme.jobs import metric_snapshots
+    from bipme.jobs.metric_snapshots import (
+        _persist_observations,
+        build_metric_snapshot_scheduler,
+        handle_metric_snapshot,
+    )
+
+    creator = _creator(session)
+    external_user_id = str(creator.id.int)[:18]
+    assessment = DraftAssessment(
+        id=uuid4(),
+        creator_id=creator.id,
+        assessment_key="cod363-assessment-001",
+        assessed_at=NOW - timedelta(hours=1),
+        content_fingerprint="sha256:" + "a" * 64,
+        outlook_version="distribution-outlook-v1",
+        decision_snapshot={"version": "distribution-outlook-v1"},
+    )
+    session.add(assessment)
+    session.flush()
+    identity = CreatorPlatformIdentity(
+        id=uuid4(),
+        creator_id=creator.id,
+        platform="x",
+        external_creator_id=external_user_id,
+    )
+    encryption_key = Fernet.generate_key().decode()
+    cipher = TokenCipher({"v1": encryption_key}, "v1")
+    encrypted = cipher.encrypt("synthetic-token")
+    connection = XAccountConnection(
+        id=uuid4(),
+        creator_id=creator.id,
+        creator_identity_id=identity.id,
+        platform="x",
+        state="connected",
+        scopes=["tweet.read", "users.read"],
+        encrypted_access_token=encrypted.envelope,
+        key_version=encrypted.key_version,
+        access_token_expires_at=NOW + timedelta(days=1),
+    )
+    post = CanonicalPost(
+        id=uuid4(),
+        creator_id=creator.id,
+        platform="x",
+        external_post_id="999123456",
+        published_at=NOW,
+        source_assessment_id=assessment.id,
+        availability="available",
+        topology="original",
+        source="x_authorized_publication_verification",
+        provenance={},
+    )
+    session.add_all((identity, connection, post))
+    session.flush()
+
+    class Provider:
+        max_request_attempts = 1
+
+        def post_metrics(self, *, access_token: str, post_id: str) -> XMetricSnapshot:
+            assert access_token == "synthetic-token"
+            return XMetricSnapshot(
+                external_post_id=post_id,
+                author_id=external_user_id,
+                published_at=NOW,
+                observed_at=NOW + timedelta(minutes=5),
+                metrics={
+                    "like_count": XSnapshotMetric(4, "synthetic likes"),
+                    "impression_count": XSnapshotMetric(
+                        None, "synthetic impressions", missing_reason="not_returned"
+                    ),
+                },
+            )
+
+    settings = XMetricSnapshotSettings(
+        enabled=True,
+        account_entitlement_verified=True,
+        data_rights_verified=True,
+        allowed_user_id=external_user_id,
+        estimated_cost=Decimal("0.001"),
+        limits=XUsageLimits(Decimal("1"), Decimal("1"), Decimal("1"), None),
+        per_post_limit=Decimal("0.01"),
+        pricing_observed_at=NOW - timedelta(hours=1),
+        pricing_expires_at=NOW + timedelta(hours=1),
+        pricing_source="synthetic:test",
+    )
+    reader = XMetricSnapshotReader(provider=Provider(), cipher=cipher, settings=settings)
+    # Use the actual producer builder instead of a manually registered dummy task.
+    engine, schema = migrated_postgres
+    database_url = engine.url.update_query_dict({"options": f"-csearch_path={schema},public"})
+    monkeypatch.setenv("BIPME_DATABASE_URL", database_url.render_as_string(hide_password=False))
+    monkeypatch.setattr(
+        AuthSettings,
+        "from_environment",
+        classmethod(
+            lambda _cls: SimpleNamespace(
+                token_encryption_ready=True,
+                token_encryption_keys={"v1": encryption_key},
+                active_token_key_version="v1",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        XMetricSnapshotSettings, "from_environment", classmethod(lambda _cls: settings)
+    )
+    monkeypatch.setattr(metric_snapshots, "HttpXPostMetricsProvider", Provider)
+    scheduler = build_metric_snapshot_scheduler()
+    assert scheduler is not None
+    assert TASK_NAME in scheduler.app.tasks
+    first = scheduler.schedule(
+        session,
+        creator_id=creator.id,
+        post_id=post.id,
+        required_x_connection_id=connection.id,
+        now=NOW,
+    )
+    second = scheduler.schedule(
+        session,
+        creator_id=creator.id,
+        post_id=post.id,
+        required_x_connection_id=connection.id,
+        now=NOW,
+    )
+    assert len(first) == len(second) == 8
+    assert len({job.id for job in first}) == 8
+    assert all(job.runner_job_id is not None for job in first)
+    assert (
+        session.scalar(
+            text("SELECT task_name FROM procrastinate_jobs WHERE id = :runner"),
+            {"runner": first[0].runner_job_id},
+        )
+        == TASK_NAME
+    )
+    scheduler.close()
+
+    evidence = reader.observe(
+        session,
+        creator_id=creator.id,
+        post=post,
+        window_key="age:5m",
+        scheduled_at=NOW + timedelta(minutes=5),
+        now=NOW + timedelta(minutes=5),
+    )
+    _persist_observations(session, first[0], post, "age:5m", NOW + timedelta(minutes=5), evidence)
+    session.commit()
+    rows = session.scalars(
+        select(OutcomeObservationRecord).where(
+            OutcomeObservationRecord.post_id == post.id,
+            OutcomeObservationRecord.window_key == "age:5m",
+        )
+    ).all()
+    assert {row.metric_name: row.state for row in rows} == {
+        "like_count": "observed",
+        "impression_count": "missing",
+    }
+    assert all(row.observed_at == NOW + timedelta(minutes=5) for row in rows)
+
+    tight_reader = XMetricSnapshotReader(
+        provider=Provider(),
+        cipher=cipher,
+        settings=XMetricSnapshotSettings(
+            **{**settings.__dict__, "per_post_limit": Decimal("0.001")}
+        ),
+    )
+    with pytest.raises(XMetricSnapshotUnavailable, match="budget_exhausted"):
+        tight_reader.observe(
+            session,
+            creator_id=creator.id,
+            post=post,
+            window_key="age:15m",
+            scheduled_at=NOW + timedelta(minutes=15),
+            now=NOW + timedelta(minutes=15),
+        )
+
+    class FailingProvider(Provider):
+        def post_metrics(self, *, access_token: str, post_id: str) -> XMetricSnapshot:
+            raise XMetricSnapshotUnavailable(
+                "provider_unavailable", ambiguous=True, request_count=1
+            )
+
+    failing_reader = XMetricSnapshotReader(
+        provider=FailingProvider(), cipher=cipher, settings=settings
+    )
+    with pytest.raises(XMetricSnapshotUnavailable) as failure:
+        failing_reader.observe(
+            session,
+            creator_id=creator.id,
+            post=post,
+            window_key="age:30m",
+            scheduled_at=NOW + timedelta(minutes=30),
+            now=NOW + timedelta(minutes=30),
+        )
+    assert failure.value.ambiguous
+    failed_ledger = session.scalar(
+        select(APIUsageLedger).where(APIUsageLedger.idempotency_key.endswith(":age:30m"))
+    )
+    assert failed_ledger is not None and failed_ledger.completed_at is not None
+    assert failed_ledger.request_metadata["response_received"] is False
+
+    # A competing transaction deletes the canonical post just after the
+    # ledger reservation commits. The provider must not be called.
+    from bipme.integrations import x_metric_snapshots as snapshot_module
+
+    provider_calls = []
+
+    class ForbiddenProvider(Provider):
+        def post_metrics(self, *, access_token: str, post_id: str) -> XMetricSnapshot:
+            provider_calls.append(post_id)
+            raise AssertionError("Deleted post must never reach external X")
+
+    real_reserve = snapshot_module.reserve_x_usage
+
+    def delete_after_reservation(db: Session, **kwargs):
+        reserved = real_reserve(db, **kwargs)
+        with engine.begin() as competing:
+            competing.execute(text(f'SET LOCAL search_path TO "{schema}", public'))
+            competing.execute(
+                text(
+                    "UPDATE canonical_posts SET availability = 'deleted', "
+                    "deleted_at = :deleted_at WHERE id = :id"
+                ),
+                {"id": post.id, "deleted_at": NOW + timedelta(minutes=15)},
+            )
+        return reserved
+
+    blocked_reader = XMetricSnapshotReader(
+        provider=ForbiddenProvider(), cipher=cipher, settings=settings
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(snapshot_module, "reserve_x_usage", delete_after_reservation)
+        with pytest.raises(XMetricSnapshotUnavailable, match="post_unavailable"):
+            blocked_reader.observe(
+                session,
+                creator_id=creator.id,
+                post=post,
+                window_key="age:15m",
+                scheduled_at=NOW + timedelta(minutes=15),
+                now=NOW + timedelta(minutes=15),
+            )
+    assert provider_calls == []
+    with engine.begin() as restoring:
+        restoring.execute(text(f'SET LOCAL search_path TO "{schema}", public'))
+        restoring.execute(
+            text(
+                "UPDATE canonical_posts SET availability = 'available', "
+                "deleted_at = NULL WHERE id = :id"
+            ),
+            {"id": post.id},
+        )
+    session.expire_all()
+    assert session.get(CanonicalPost, post.id).availability == "available"
+
+    connection.state = "revoked"
+    connection.encrypted_access_token = None
+    connection.encrypted_refresh_token = None
+    connection.access_token_expires_at = None
+    connection.revoked_at = NOW
+    session.commit()
+    with pytest.raises(XMetricSnapshotUnavailable, match="connection_unavailable"):
+        reader.observe(
+            session,
+            creator_id=creator.id,
+            post=post,
+            window_key="age:1h",
+            scheduled_at=NOW + timedelta(hours=1),
+            now=NOW + timedelta(minutes=45),
+        )
+
+    # A provider 404 does not authorize an uncommitted post deletion.
+    class MissingReader:
+        def observe(self, *_args, **_kwargs):
+            raise XMetricSnapshotUnavailable("post_not_found")
+
+    receipt = first[0]
+    receipt.arguments = {
+        **receipt.arguments,
+        "scheduled_at_epoch": int(datetime.now(UTC).timestamp()),
+    }
+    session.flush()
+    with pytest.raises(TerminalJobError) as missing:
+        handle_metric_snapshot(session, receipt, MissingReader())
+    assert missing.value.code == "post_not_found"
+    assert missing.value.outcome == "needs_reconciliation"
+    assert post.availability == "available"
+    assert not session.is_modified(post, include_collections=False)
+    session.rollback()
+    assert session.get(CanonicalPost, post.id).availability == "available"

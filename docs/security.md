@@ -67,7 +67,6 @@ Do not run a prelaunch multi-model benchmark. Require only focused smoke/unit te
 - Keep audit trails with evidence IDs, prompt/model/schema versions and policy decisions so explanations can be reproduced and deleted when source rights change.
 
 The pure COD-380 synthesis service is disabled by default and is not yet connected to a report API or persistence layer. Its built-in daily cost reservation is process-local and resets when the process restarts; use a shared durable budget implementation before enabling it across production workers. Current tests use synthetic fixtures and mocked provider responses only. They do not verify real X processing rights, provider-transfer rights, Groq account access, quotas, retention terms or billing configuration.
-
 ### COD-421 remote embedding boundary
 
 Remote inference is opt-in through `BIPME_EMBEDDING_PROVIDER=remote`; the default remains local CPU inference. The remote adapter accepts only the pinned E5 model/revision/vector identity, uses HTTPS with a bearer secret, bounds request and response body sizes, batch size, concurrency and timeouts, and maps provider failures to a generic API 503. It does not automatically fall back to local inference: operators may explicitly switch the configured provider to `local` if that is an approved operating decision. The inference service must remain loopback-bound on the Brev VM behind a private, access-controlled TLS overlay. Never use a Brev browser tunnel or public Funnel as unattended backend transport, expose Jupyter, or place the token in Git, request logs, exception text or issue comments.
@@ -192,6 +191,25 @@ COD-344 may be marked **Done** after the owner has confirmed the relevant develo
 - **Before history import:** API price/permissions review, budget limits, safe pagination and failed/retry behavior tests.
 - **Before monitoring:** idempotent jobs, missing-window handling, no fabricated observation timestamps, explicit cost model.
 - **Before any external deployment:** HTTPS, secure secret management, least privilege, access control, and relevant X requirements.
+
+COD-363 implements the monitoring gate with the existing COD-347 ledger and COD-362 durable
+worker: every candidate window is receipt-idempotent, every provider call is preceded by a
+creator-scoped reservation, and the reservation estimate covers the adapter's bounded retry
+envelope. A separate per-post ceiling is checked under the same creator lock as global/daily/
+operation ceilings. The producer constructs the registered Procrastinate dispatcher
+using the same runtime factory as the worker. After the reservation commits, the reader
+locks and revalidates the current canonical post (owner, platform, availability,
+assessment attachment and original identity) as well as the X connection, current token
+expiry, read scopes and allowlisted numeric user ID. The post row lock remains held
+through the provider call, preventing concurrent deletion from overtaking the check.
+A provider 404 does not prove deletion: the receipt moves to needs_reconciliation,
+and canonical post availability is left unchanged until a separate authorized
+reconciliation. A provider response is committed as sanitized ledger evidence before
+observation rows are written; crashes or ambiguous responses therefore stop in
+reconciliation instead of issuing a potentially billable duplicate. Missing
+fields remain explicit `missing`/`invalid` rows, while windows skipped because they are no longer
+actionable remain cancelled receipts and never receive synthetic observation times. The adapter
+has no publish/write operation and all tests use synthetic providers.
 
 ## References
 

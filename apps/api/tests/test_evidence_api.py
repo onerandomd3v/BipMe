@@ -27,7 +27,9 @@ from bipme.persistence.models import (
     OutcomeObservationRecord,
 )
 
-NOW = datetime(2026, 11, 10, 12, tzinfo=UTC)
+# Keep the synthetic cutoff ahead of PostgreSQL server timestamps so the test does not
+# accidentally classify freshly inserted fixture rows as "not known at cutoff".
+NOW = datetime.now(UTC).replace(microsecond=0) + timedelta(minutes=5)
 ROOT = "/api/v1/creators/me/history"
 
 
