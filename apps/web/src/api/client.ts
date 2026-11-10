@@ -63,6 +63,8 @@ type PostEvidence = components['schemas']['PostEvidence']
 type ImportPage = components['schemas']['ImportPage']
 type HistoryImportResponse = components['schemas']['HistoryImportResponse']
 type CreatorBaseline = components['schemas']['CreatorBaselineResponse']
+type DraftAssessment = components['schemas']['DraftAnalysisResponse']
+type PublicationLink = components['schemas']['PublicationLinkResponse']
 
 export type HistoryPostsQuery = {
   limit?: number
@@ -433,6 +435,49 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
         signal,
       )
       await unwrap(result, true)
+    },
+    async draftAssessment(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<DraftAssessment> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/draft-assessments/{assessment_id}', {
+            params: { path: { assessment_id: assessmentId } },
+            signal,
+          }),
+        signal,
+      )
+      return (await unwrap(result)) as DraftAssessment
+    },
+    async publication(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<PublicationLink> {
+      const result = await request(
+        () =>
+          client.GET(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/publication',
+            { params: { path: { assessment_id: assessmentId } }, signal },
+          ),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async linkPublication(
+      assessmentId: string,
+      body: components['schemas']['PublicationLinkRequest'],
+      signal?: AbortSignal,
+    ): Promise<PublicationLink> {
+      const result = await request(
+        () =>
+          client.POST(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/publication',
+            { params: { path: { assessment_id: assessmentId } }, body, signal },
+          ),
+        signal,
+      )
+      return unwrap(result)
     },
     async historyPosts(
       params?: HistoryPostsQuery,

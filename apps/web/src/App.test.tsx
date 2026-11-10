@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
+import { ApiRequestError } from './api/client'
 import {
+  draftAssessmentFixture,
   healthFixture,
   latestReportFixture,
   permissionFixture,
@@ -25,6 +27,9 @@ const api = vi.hoisted(() => ({
   saveDataPermissions: vi.fn(),
   generateReport: vi.fn(),
   deleteReports: vi.fn(),
+  draftAssessment: vi.fn(),
+  publication: vi.fn(),
+  linkPublication: vi.fn(),
   invalidate: null as (() => void) | null,
 }))
 
@@ -51,6 +56,49 @@ describe('App session boundary', () => {
     api.historyImports.mockResolvedValue(historyImportFixture)
     api.historyPosts.mockResolvedValue(historyPostsFixture)
     api.baseline.mockResolvedValue(baselineFixture)
+    api.draftAssessment.mockResolvedValue({
+      accepted_hypothesis: null,
+      assessed_at: '2026-11-10T12:00:00Z',
+      assessment_id: '00000000-0000-4000-8000-000000000365',
+      assumptions: [],
+      comparable_evidence: [],
+      decision_state: 'insufficient_evidence',
+      exclusions: [],
+      input_fingerprint: 'sha256:app-fixture',
+      limitations: [],
+      metrics: [],
+      observations: [],
+      retrieval_candidate_count: 0,
+      retrieval_coverage_limitations: [],
+      retrieval_eligible_count: 0,
+      retrieval_excluded_count: 0,
+      retrieval_exclusions: [],
+      retrieval_state: 'no_match',
+      retrieval_truncated: false,
+      retrieval_vector_candidate_count: 0,
+      suggested_hypothesis: null,
+      versions: {
+        baseline: 'baseline-v1',
+        decision: 'decision-v1',
+        decision_config: 'decision-config-v1',
+        embedding_identity: 'embedding-fixture',
+        profile: 'profile-v1',
+        ranking_config: 'ranking-config-v1',
+        retrieval: 'retrieval-v1',
+      },
+    })
+    api.publication.mockResolvedValue({
+      assessment_id: '00000000-0000-4000-8000-000000000365',
+      assessed_at: '2026-11-10T12:00:00Z',
+      assessed_fingerprint: 'sha256:app-fixture',
+      accepted_hypothesis: null,
+      canonical_post_id: '00000000-0000-4000-8000-000000000366',
+      external_post_id: '1900000000000000001',
+      published_at: '2026-11-10T13:00:00Z',
+      version_match_state: 'unknown',
+      linkage_state: 'linked',
+      linked_at: '2026-11-10T13:01:00Z',
+    })
   })
 
   it('clears draft context when the authenticated session is invalidated', async () => {
@@ -90,5 +138,86 @@ describe('App session boundary', () => {
     expect(
       screen.getByText('Development · Authenticated API preview'),
     ).toBeInTheDocument()
+  })
+
+  it('switches monitoring assessment context across browser history', async () => {
+    const assessmentA = '00000000-0000-4000-8000-000000000365'
+    const assessmentB = '00000000-0000-4000-8000-000000000367'
+    api.draftAssessment.mockImplementation((id: string) =>
+      Promise.resolve({ ...draftAssessmentFixture, assessment_id: id }),
+    )
+    api.publication.mockImplementation((id: string) =>
+      Promise.resolve({
+        assessment_id: id,
+        assessed_at: '2026-11-10T12:00:00Z',
+        assessed_fingerprint: 'sha256:app-fixture',
+        accepted_hypothesis: null,
+        canonical_post_id: '00000000-0000-4000-8000-000000000366',
+        external_post_id: '1900000000000000001',
+        published_at: '2026-11-10T13:00:00Z',
+        version_match_state: 'unknown',
+        linkage_state: 'linked',
+        linked_at: '2026-11-10T13:01:00Z',
+      }),
+    )
+    window.history.replaceState(
+      null,
+      '',
+      `/post-monitoring?assessment_id=${assessmentA}`,
+    )
+    render(<App />)
+    expect(await screen.findByText(assessmentA)).toBeInTheDocument()
+
+    window.history.pushState(
+      null,
+      '',
+      `/post-monitoring?assessment_id=${assessmentB}`,
+    )
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(await screen.findByText(assessmentB)).toBeInTheDocument()
+    expect(screen.queryByText(assessmentA)).not.toBeInTheDocument()
+
+    window.history.pushState(
+      null,
+      '',
+      `/post-monitoring?assessment_id=${assessmentA}`,
+    )
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(await screen.findByText(assessmentA)).toBeInTheDocument()
+  })
+
+  it('unmounts monitoring safely when the session expires during attachment', async () => {
+    const assessmentId = '00000000-0000-4000-8000-000000000365'
+    let resolvePublication: (() => void) | undefined
+    api.publication.mockRejectedValue(
+      new ApiRequestError({
+        status: 404,
+        code: 'publication_not_linked',
+        message: 'No publication is linked.',
+      }),
+    )
+    api.linkPublication.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePublication = resolve
+        }),
+    )
+    window.history.replaceState(
+      null,
+      '',
+      `/post-monitoring?assessment_id=${assessmentId}`,
+    )
+    render(<App />)
+    const input = await screen.findByLabelText('X post URL or numeric post ID')
+    fireEvent.input(input, { target: { value: '1900000000000000001' } })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Verify and attach post' }),
+    )
+    api.invalidate?.()
+    expect(await screen.findByText('Sign-in required')).toBeInTheDocument()
+    resolvePublication?.()
+    expect(
+      screen.queryByText('Original Distribution Outlook'),
+    ).not.toBeInTheDocument()
   })
 })

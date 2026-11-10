@@ -8,6 +8,7 @@ import {
 import { ApiRequestError, apiClient } from './api/client'
 import { CreatorDashboard } from './CreatorDashboard'
 import { CreatorHistoryDashboard } from './CreatorHistoryDashboard'
+import { PostMonitoring } from './PostMonitoring'
 import type { DraftAnalysisContext } from './dashboardModel'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
@@ -102,9 +103,15 @@ function routeFromPath(): View {
 
 function useView() {
   const [view, setView] = useState<View>(routeFromPath)
+  const [locationKey, setLocationKey] = useState(
+    () => `${window.location.pathname}${window.location.search}`,
+  )
 
   useEffect(() => {
-    const onPopState = () => setView(routeFromPath())
+    const onPopState = () => {
+      setView(routeFromPath())
+      setLocationKey(`${window.location.pathname}${window.location.search}`)
+    }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
@@ -114,9 +121,10 @@ function useView() {
     if (window.location.pathname !== destination)
       window.history.pushState(null, '', destination)
     setView(next)
+    setLocationKey(`${window.location.pathname}${window.location.search}`)
   }
 
-  return { view, navigate }
+  return { view, navigate, locationKey }
 }
 
 const stateMessages: Record<
@@ -233,7 +241,7 @@ function DevelopmentStatePreview() {
 }
 
 export function App() {
-  const { view, navigate } = useView()
+  const { view, navigate, locationKey } = useView()
   const [health, setHealth] = useState<ApiHealth>('checking')
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('checking')
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -544,6 +552,12 @@ export function App() {
                 setSessionStatus('unauthenticated')
                 setDraftContext(null)
               }}
+            />
+          ) : view === 'monitoring' && sessionStatus === 'authenticated' ? (
+            <PostMonitoring
+              assessmentId={new URLSearchParams(
+                locationKey.split('?')[1] ?? '',
+              ).get('assessment_id')}
             />
           ) : (
             <section

@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import {
+  draftAssessmentFixture,
   healthFixture,
   latestReportFixture,
   permissionFixture,
@@ -8,6 +9,7 @@ import {
   baselineFixture,
   historyImportFixture,
   historyPostsFixture,
+  publicationLinkFixture,
 } from './fixtures'
 
 export const apiHandlers = [
@@ -38,6 +40,17 @@ export const apiHandlers = [
   http.delete(
     '*/api/v1/creators/me/reports',
     () => new HttpResponse(null, { status: 204 }),
+  ),
+  http.get('*/api/v1/creators/me/draft-assessments/:assessmentId', () =>
+    HttpResponse.json(draftAssessmentFixture),
+  ),
+  http.get(
+    '*/api/v1/creators/me/draft-assessments/:assessmentId/publication',
+    () => HttpResponse.json(publicationLinkFixture),
+  ),
+  http.post(
+    '*/api/v1/creators/me/draft-assessments/:assessmentId/publication',
+    () => HttpResponse.json(publicationLinkFixture, { status: 201 }),
   ),
   http.get('*/api/v1/creators/me/history/imports', () =>
     HttpResponse.json(historyImportFixture),

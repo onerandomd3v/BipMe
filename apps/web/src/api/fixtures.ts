@@ -80,6 +80,51 @@ export const latestReportFixture = {
   latest_report: reportFixture,
 } satisfies components['schemas']['CreatorReportStateResponse']
 
+export const draftAssessmentFixture = {
+  accepted_hypothesis: null,
+  assessed_at: '2026-11-10T12:00:00Z',
+  assessment_id: '00000000-0000-4000-8000-000000000365',
+  assumptions: ['Only permitted creator-owned evidence is included.'],
+  comparable_evidence: [],
+  decision_state: 'insufficient_evidence',
+  exclusions: [],
+  input_fingerprint: 'sha256:cod-365-fixture',
+  limitations: ['No eligible comparable posts were available.'],
+  metrics: [],
+  observations: [],
+  retrieval_candidate_count: 0,
+  retrieval_coverage_limitations: ['History coverage is unavailable.'],
+  retrieval_eligible_count: 0,
+  retrieval_excluded_count: 0,
+  retrieval_exclusions: [],
+  retrieval_state: 'no_match',
+  retrieval_truncated: false,
+  retrieval_vector_candidate_count: 0,
+  suggested_hypothesis: null,
+  versions: {
+    baseline: 'baseline-v1',
+    decision: 'decision-v1',
+    decision_config: 'decision-config-v1',
+    embedding_identity: 'embedding-fixture',
+    profile: 'profile-v1',
+    ranking_config: 'ranking-config-v1',
+    retrieval: 'retrieval-v1',
+  },
+} satisfies components['schemas']['DraftAnalysisResponse']
+
+export const publicationLinkFixture = {
+  assessment_id: draftAssessmentFixture.assessment_id,
+  assessed_at: draftAssessmentFixture.assessed_at,
+  assessed_fingerprint: draftAssessmentFixture.input_fingerprint,
+  accepted_hypothesis: null,
+  canonical_post_id: '00000000-0000-4000-8000-000000000366',
+  external_post_id: '1900000000000000001',
+  published_at: '2026-11-10T13:00:00Z',
+  version_match_state: 'unknown',
+  linkage_state: 'linked',
+  linked_at: '2026-11-10T13:01:00Z',
+} satisfies components['schemas']['PublicationLinkResponse']
+
 export const historyImportFixture = {
   items: [
     {
