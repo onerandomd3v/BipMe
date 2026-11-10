@@ -336,8 +336,14 @@ class XMetricSnapshotReader:
             post.creator_id != creator_id
             or post.platform != "x"
             or post.availability != "available"
+            or post.source_assessment_id is None
         ):
             raise XMetricSnapshotUnavailable("post_unavailable")
+        # Preserve the pre-reservation identity. reserve_x_usage commits its
+        # transaction, so the ORM instance is not authority for a paid read.
+        expected_external_post_id = post.external_post_id
+        expected_published_at = post.published_at
+        expected_assessment_id = post.source_assessment_id
         if not self.settings.valid(now):
             raise XMetricSnapshotUnavailable("external_gate_unverified")
         connection = db.scalar(
@@ -469,6 +475,27 @@ class XMetricSnapshotReader:
         ):
             _complete_failure(db, reservation.ledger_id, now)
             raise XMetricSnapshotUnavailable("connection_unavailable")
+        # Lock order after the reservation commit: X connection, then post.
+        # Hold the post fence through the provider call. This makes a concurrent
+        # deletion/availability change wait instead of authorizing a paid read
+        # from the stale pre-reservation CanonicalPost ORM instance.
+        locked_post = db.scalar(
+            select(CanonicalPost)
+            .where(
+                CanonicalPost.id == post.id,
+                CanonicalPost.creator_id == creator_id,
+                CanonicalPost.platform == "x",
+                CanonicalPost.availability == "available",
+                CanonicalPost.source_assessment_id == expected_assessment_id,
+                CanonicalPost.external_post_id == expected_external_post_id,
+                CanonicalPost.published_at == expected_published_at,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if locked_post is None:
+            _complete_failure(db, reservation.ledger_id, now)
+            raise XMetricSnapshotUnavailable("post_unavailable")
         try:
             token = self.cipher.decrypt(locked.encrypted_access_token, locked.key_version)
         except (TokenEncryptionError, TypeError):
