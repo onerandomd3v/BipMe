@@ -21,6 +21,7 @@ WEB_SECRET = re.compile(
 
 
 def names_in_example(path: Path) -> set[str]:
+    """Return environment variable assignments from a service example."""
     return {
         match.group(1)
         for line in path.read_text(encoding="utf-8").splitlines()
@@ -29,6 +30,7 @@ def names_in_example(path: Path) -> set[str]:
 
 
 def main() -> int:
+    """Validate ownership and safety rules for service environment examples."""
     errors: list[str] = []
     if (ROOT / ".env.example").exists():
         errors.append("Remove the root .env.example; configuration belongs to a service.")
@@ -76,12 +78,13 @@ def main() -> int:
         errors.append("Web consumes VITE_ settings but apps/web/.env.example is missing.")
 
     brev_names = names_in_example(BREV_EXAMPLE)
-    if "BIPME_EMBEDDING_TOKEN" not in brev_names:
-        errors.append("Brev example must define its server-side BIPME_EMBEDDING_TOKEN.")
-    if "LOG_LEVEL" not in brev_names:
-        errors.append("Brev example must document its configurable LOG_LEVEL.")
-    if "BIPME_EMBEDDING_REMOTE_TOKEN" in brev_names:
-        errors.append("Brev example must not contain the API's remote-token setting.")
+    allowed_brev_names = {"BIPME_EMBEDDING_TOKEN", "LOG_LEVEL"}
+    missing_brev = sorted(allowed_brev_names - brev_names)
+    if missing_brev:
+        errors.append("Brev example is missing settings: " + ", ".join(missing_brev))
+    unexpected_brev = sorted(brev_names - allowed_brev_names)
+    if unexpected_brev:
+        errors.append("Brev example has unowned settings: " + ", ".join(unexpected_brev))
     brev_compose = (ROOT / "infra/brev-embedding/compose.yaml").read_text(encoding="utf-8")
     if "BIPME_EMBEDDING_TOKEN: ${BIPME_EMBEDDING_TOKEN:?" not in brev_compose:
         errors.append("Brev Compose must require the private inference token.")
@@ -99,6 +102,7 @@ def main() -> int:
 
 
 def fail(errors: list[str]) -> int:
+    """Print validation errors and return a failing process status."""
     print("Environment boundary check failed:", file=sys.stderr)
     for error in errors:
         print(f"- {error}", file=sys.stderr)

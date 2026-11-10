@@ -56,13 +56,28 @@ export BIPME_PRIVATE_LOGIN_SECRET='replace-with-a-generated-secret-of-at-least-3
 
 The API and worker share `apps/api/src/bipme` and the same environment-variable definitions, but run as separate processes. The baseline worker needs only `BIPME_DATABASE_URL`; no `apps/worker` package or duplicate worker example is needed. If scheduled X metric snapshots are enabled, give the worker only the additional encryption-key and snapshot settings it needs. X OAuth client secrets and unrelated API-only settings should not be copied into the worker environment.
 
-The service examples remain optional templates. To load one explicitly, copy `apps/api/.env.example` to `apps/api/.env`, then source it with `set -a; . ./apps/api/.env; set +a` in Bash. In PowerShell, import its simple `KEY=value` lines into the current process:
+The service examples are templates, not runtime files. Create `apps/api/.env` only if it does not already exist, and restrict its permissions before adding secrets. In Bash:
+
+```bash
+if [ ! -e apps/api/.env ]; then install -m 600 apps/api/.env.example apps/api/.env; fi
+chmod 600 apps/api/.env
+set -a
+. ./apps/api/.env
+set +a
+```
+
+For a nonempty X token key map, keep JSON quoting intact in the file, for example `BIPME_TOKEN_ENCRYPTION_KEYS='{"v1":"<fernet-key>"}'`. The same single-quoted value works when sourcing in Bash. PowerShell's loader below removes those outer single quotes before setting the process value; re-running setup leaves an existing `.env` untouched:
 
 ```powershell
-Copy-Item apps/api/.env.example apps/api/.env
+if (-not (Test-Path apps/api/.env)) {
+  Copy-Item apps/api/.env.example apps/api/.env
+}
+icacls apps/api/.env /inheritance:r /grant:r "$($env:USERNAME):(F)"
 Get-Content apps/api/.env | ForEach-Object {
   if ($_ -match '^\s*([^#=][^=]*)=(.*)$') {
-    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], 'Process')
+    $value = $matches[2]
+    if ($value -match "^'(.*)'$") { $value = $matches[1] }
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $value, 'Process')
   }
 }
 ```
