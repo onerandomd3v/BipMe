@@ -1236,6 +1236,53 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "EvidencePage": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "assessment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessment Id"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PostEvidence"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "as_of",
+          "assessment_id"
+        ],
+        "title": "EvidencePage",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1396,6 +1443,102 @@
         "title": "HistoryImportResponse",
         "type": "object"
       },
+      "ImportPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ImportStatus"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "truncated"
+        ],
+        "title": "ImportPage",
+        "type": "object"
+      },
+      "ImportStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "imported_posts": {
+            "title": "Imported Posts",
+            "type": "integer"
+          },
+          "next_page_available": {
+            "title": "Next Page Available",
+            "type": "boolean"
+          },
+          "pages_read": {
+            "title": "Pages Read",
+            "type": "integer"
+          },
+          "requested_posts": {
+            "title": "Requested Posts",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "authorized_x_api",
+              "archive",
+              "unknown"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "complete",
+              "partial",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "import_id",
+          "status",
+          "requested_posts",
+          "imported_posts",
+          "pages_read",
+          "next_page_available",
+          "started_at",
+          "completed_at",
+          "source"
+        ],
+        "title": "ImportStatus",
+        "type": "object"
+      },
       "MetricEvidenceResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1549,6 +1692,103 @@
         "title": "MetricIdentity",
         "type": "object"
       },
+      "MetricObservationEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "metric_definition": {
+            "title": "Metric Definition",
+            "type": "string"
+          },
+          "metric_name": {
+            "title": "Metric Name",
+            "type": "string"
+          },
+          "metric_unit": {
+            "title": "Metric Unit",
+            "type": "string"
+          },
+          "metric_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Value"
+          },
+          "observed_age_seconds": {
+            "title": "Observed Age Seconds",
+            "type": "number"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ObservationProvenance"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "authorized_x_api",
+              "archive",
+              "unknown"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "observed",
+              "missing",
+              "invalid"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "window_key": {
+            "title": "Window Key",
+            "type": "string"
+          },
+          "window_kind": {
+            "enum": [
+              "mature_cumulative",
+              "age_aligned"
+            ],
+            "title": "Window Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "metric_name",
+          "metric_definition",
+          "metric_unit",
+          "metric_value",
+          "state",
+          "window_kind",
+          "window_key",
+          "observed_at",
+          "published_at",
+          "observed_age_seconds",
+          "provenance",
+          "source"
+        ],
+        "title": "MetricObservationEvidence",
+        "type": "object"
+      },
       "MetricPreference": {
         "additionalProperties": false,
         "description": "Exact outcome series requested for a draft analysis.",
@@ -1594,6 +1834,143 @@
           "window_key"
         ],
         "title": "MetricPreference",
+        "type": "object"
+      },
+      "ObservationProvenance": {
+        "additionalProperties": false,
+        "properties": {
+          "missing_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_returned",
+                  "invalid_value",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Reason"
+          },
+          "source": {
+            "enum": [
+              "authorized_x_api",
+              "archive",
+              "unknown"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "ObservationProvenance",
+        "type": "object"
+      },
+      "PostEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "disclosure": {
+            "enum": [
+              "permitted",
+              "permission_required",
+              "source_policy_blocked",
+              "not_known_at_cutoff"
+            ],
+            "title": "Disclosure",
+            "type": "string"
+          },
+          "freshness": {
+            "enum": [
+              "recorded",
+              "unknown",
+              "not_known_at_cutoff"
+            ],
+            "title": "Freshness",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/MetricObservationEvidence"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "observations_truncated": {
+            "title": "Observations Truncated",
+            "type": "boolean"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "authorized_x_api",
+              "archive",
+              "unknown"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "source_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Observed At"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "id",
+          "published_at",
+          "source",
+          "text",
+          "source_url",
+          "disclosure",
+          "source_observed_at",
+          "freshness",
+          "observations",
+          "observations_truncated"
+        ],
+        "title": "PostEvidence",
         "type": "object"
       },
       "PrivateLoginRequest": {
@@ -3204,7 +3581,244 @@
         ]
       }
     },
+    "/api/v1/creators/me/history/evidence": {
+      "get": {
+        "operationId": "batch_posts_api_v1_creators_me_history_evidence_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "post_ids",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 50,
+              "minItems": 1,
+              "title": "Post Ids",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assessment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assessment Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidencePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Batch Posts",
+        "tags": [
+          "history evidence"
+        ]
+      }
+    },
     "/api/v1/creators/me/history/imports": {
+      "get": {
+        "operationId": "list_imports_api_v1_creators_me_history_imports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Imports",
+        "tags": [
+          "history evidence"
+        ]
+      },
       "post": {
         "operationId": "start_history_import_api_v1_creators_me_history_imports_post",
         "parameters": [
@@ -3318,6 +3932,291 @@
         "summary": "Get History Import",
         "tags": [
           "creator-history"
+        ]
+      }
+    },
+    "/api/v1/creators/me/history/posts": {
+      "get": {
+        "operationId": "list_posts_api_v1_creators_me_history_posts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assessment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assessment Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidencePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List Posts",
+        "tags": [
+          "history evidence"
+        ]
+      }
+    },
+    "/api/v1/creators/me/history/posts/{post_id}": {
+      "get": {
+        "operationId": "get_post_api_v1_creators_me_history_posts__post_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Post Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assessment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assessment Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostEvidence"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Post",
+        "tags": [
+          "history evidence"
         ]
       }
     },
