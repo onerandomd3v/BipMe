@@ -112,6 +112,7 @@ def get_authenticated_creator(
 
 @lru_cache(maxsize=1)
 def _configured_embedder() -> TextEmbedder:
+    """Create one process-local embedder from the explicit provider settings."""
     return embedder_from_environment()
 
 

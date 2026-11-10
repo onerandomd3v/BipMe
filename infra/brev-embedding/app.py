@@ -30,10 +30,12 @@ class RequestSizeLimitMiddleware:
     """Bound the JSON body before FastAPI parses it, including chunked requests."""
 
     def __init__(self, application: Any, *, max_body_bytes: int) -> None:
+        """Store the wrapped ASGI app and its per-request byte ceiling."""
         self.application = application
         self.max_body_bytes = max_body_bytes
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        """Reject oversized embedding bodies before the framework parses JSON."""
         if not (
             scope["type"] == "http"
             and scope.get("method") == "POST"
@@ -87,6 +89,7 @@ class RequestSizeLimitMiddleware:
 
     @staticmethod
     async def _too_large(send: Any) -> None:
+        """Send a body-free 413 response for inputs above the configured cap."""
         body = b'{"detail":"request too large"}'
         await send(
             {
@@ -111,6 +114,7 @@ class EmbedRequest(BaseModel):
 
 
 def model() -> Any:
+    """Load the pinned GPU model once and verify its vector dimension."""
     global loaded_model
     with model_lock:
         if loaded_model is None:
@@ -126,11 +130,13 @@ def model() -> Any:
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return a generic validation message without echoing submitted text."""
     del request, exc
     return JSONResponse(status_code=422, content={"detail": "invalid request"})
 
 
 def require_token(authorization: str | None) -> None:
+    """Require the configured bearer secret using constant-time comparison."""
     expected = os.getenv("BIPME_EMBEDDING_TOKEN", "")
     if (
         not expected
@@ -142,6 +148,7 @@ def require_token(authorization: str | None) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str | int]:
+    """Load the model if needed and report readiness and immutable identity."""
     try:
         model()
     except Exception as exc:
@@ -155,10 +162,11 @@ def embed(
     request: EmbedRequest,
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
+    """Authenticate and return normalized embeddings for a bounded text batch."""
     require_token(authorization)
     if any(not text.strip() or len(text) > 10000 for text in request.texts):
         raise HTTPException(status_code=422, detail="invalid input")
-    if not inference_slot.acquire(blocking=False):
+    if not inference_slot.acquire(timeout=2.0):
         raise HTTPException(status_code=503, detail="inference busy")
     try:
         try:

@@ -118,6 +118,24 @@ def test_embed_rejects_oversized_request_before_json_parsing(app_client) -> None
     assert "synthetic-secret" not in response.text
 
 
+def test_embed_rejects_oversized_chunked_request(app_client) -> None:
+    client, _ = app_client
+
+    def body():
+        yield b"{"
+        yield b" " * service.MAX_REQUEST_BYTES
+
+    response = client.post(
+        "/embed",
+        content=body(),
+        headers={
+            "Authorization": "Bearer synthetic-secret",
+            "Content-Type": "application/json",
+        },
+    )
+    assert response.status_code == 413
+
+
 def test_embed_enforces_role_and_api_text_limit(app_client) -> None:
     client, _ = app_client
     headers = {"Authorization": "Bearer synthetic-secret"}

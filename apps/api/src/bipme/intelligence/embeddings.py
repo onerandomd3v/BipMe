@@ -158,6 +158,7 @@ class RemoteTextEmbedder:
         max_concurrency: int = 2,
         client: httpx.Client | None = None,
     ) -> None:
+        """Configure one private endpoint and enforce the deployed E5 contract."""
         if identity != EmbeddingIdentity(
             E5_MODEL_ID, E5_CHECKPOINT_REVISION, 384, E5_PREPROCESSING_VERSION
         ):
@@ -203,9 +204,11 @@ class RemoteTextEmbedder:
 
     @property
     def identity(self) -> EmbeddingIdentity:
+        """Return the immutable vector-space identity shared with local E5."""
         return self._identity
 
     def encode(self, texts: Sequence[str], *, role: EmbeddingRole) -> list[list[float]]:
+        """Embed a bounded batch and validate every returned vector."""
         if role not in ("query", "passage"):
             raise ValueError("role must be 'query' or 'passage'")
         if isinstance(texts, str):
@@ -286,6 +289,7 @@ class RemoteTextEmbedder:
             self._slots.release()
 
     def close(self) -> None:
+        """Close the HTTP client only when this adapter created it."""
         if self._owns_client:
             self._client.close()
 
