@@ -31,6 +31,59 @@ jobs:
               raise SystemExit("Missing required files: " + ", ".join(missing))
           PY
 
+  api-worker-container:
+    name: api-worker-container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment Compose configuration
+        run: docker compose --env-file infra/api-worker/.env.example -f infra/api-worker/compose.yaml config --quiet
+      - name: Build the shared API and worker image
+        run: docker compose --env-file infra/api-worker/.env.example -f infra/api-worker/compose.yaml build api
+      - name: Verify database migrations and independent service lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose=(docker compose --env-file infra/api-worker/.env.example -f infra/api-worker/compose.yaml)
+          "${compose[@]}" up -d db
+          "${compose[@]}" run --rm api alembic upgrade head
+          "${compose[@]}" up -d api worker
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              "${compose[@]}" logs api worker db
+              exit 1
+            fi
+            sleep 2
+          done
+          test "$("${compose[@]}" ps --format '{{.State}}' api)" = running
+          test "$("${compose[@]}" ps --format '{{.State}}' worker)" = running
+          "${compose[@]}" exec -T worker python -c 'import bipme.jobs'
+          for attempt in $(seq 1 30); do
+            worker_count=$("${compose[@]}" exec -T db psql -U bipme -d bipme -Atqc 'SELECT count(*) FROM procrastinate_workers')
+            if [ "$worker_count" -gt 0 ]; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              "${compose[@]}" logs worker db
+              exit 1
+            fi
+            sleep 1
+          done
+          "${compose[@]}" restart worker
+          test "$("${compose[@]}" ps --format '{{.State}}' worker)" = running
+          "${compose[@]}" stop -t 120 worker
+          test "$("${compose[@]}" ps --format '{{.State}}' worker)" = exited
+          curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null
+          "${compose[@]}" start worker
+          test "$("${compose[@]}" ps --format '{{.State}}' worker)" = running
+      - name: Stop deployment smoke services
+        if: always()
+        run: docker compose --env-file infra/api-worker/.env.example -f infra/api-worker/compose.yaml down -v
+
   api-checks:
     name: api-checks
     runs-on: ubuntu-latest
