@@ -284,6 +284,14 @@ def _content_fingerprint(request: DraftAnalysisRequest) -> str:
     return f"sha256:{digest}"
 
 
+def _assessed_text_fingerprint(text: str) -> str:
+    """Persist a non-reversible publishable-text fingerprint for COD-361 linking."""
+    digest = hashlib.sha256(
+        b"bipme-published-text-v1\0" + _canonical_text(text).encode("utf-8")
+    ).hexdigest()
+    return f"sha256:{digest}"
+
+
 def _canonical_text(value: str) -> str:
     """Normalize equivalent Unicode and newline encodings without trimming content."""
     return unicodedata.normalize("NFC", value.replace("\r\n", "\n").replace("\r", "\n"))
@@ -291,7 +299,9 @@ def _canonical_text(value: str) -> str:
 
 def _response_from_snapshot(snapshot: dict[str, object]) -> DraftAnalysisResponse:
     try:
-        return DraftAnalysisResponse.model_validate(snapshot)
+        public_snapshot = dict(snapshot)
+        public_snapshot.pop("_cod361_linking", None)
+        return DraftAnalysisResponse.model_validate(public_snapshot)
     except Exception as exc:
         raise ApiError(
             503, "assessment_snapshot_invalid", "The saved assessment is unavailable."
@@ -531,7 +541,16 @@ def analyze_draft(
             assessed_at=assessed_at,
             content_fingerprint=fingerprint,
             outlook_version=OUTLOOK_ALGORITHM_VERSION,
-            decision_snapshot=response.model_dump(mode="json"),
+            decision_snapshot={
+                **response.model_dump(mode="json"),
+                "_cod361_linking": {
+                    "assessed_text_fingerprint": _assessed_text_fingerprint(request.text),
+                    "topology": request.topology,
+                    "media_present": (
+                        None if request.media_types is None else bool(request.media_types)
+                    ),
+                },
+            },
             accepted_hypothesis=(
                 request.accepted_hypothesis.model_dump(mode="json")
                 if request.accepted_hypothesis

@@ -30,6 +30,8 @@ from bipme.api.dependencies import (
     get_db_session,
     get_embedder,
 )
+from bipme.api.publications import get_x_publication_verifier
+from bipme.integrations.x_publication import PublishedPostEvidence
 from bipme.intelligence.embeddings import EmbeddingIdentity
 from bipme.intelligence.post_profiles import (
     CreatorContextSnapshot,
@@ -49,6 +51,7 @@ from bipme.jobs.runtime import (
     run_worker_supervised,
 )
 from bipme.jobs.service import IdempotencyConflict, schedule_job
+from bipme.persistence.base import EncryptedTokenEnvelope
 from bipme.persistence.contracts import (
     comparable_candidate_from_records,
     pgvector_candidate_statement,
@@ -1950,3 +1953,186 @@ def test_assessment_reads_are_creator_scoped_and_no_history_abstains(session: Se
     client_b = _authorized_client(session, creator_b.id)
     foreign = client_b.get(f"/api/v1/creators/me/draft-assessments/{payload['assessment_id']}")
     assert foreign.status_code == 404
+
+
+def test_postgres_manual_publication_link_preserves_immutable_assessment_and_owner(
+    session: Session,
+) -> None:
+    creator = _creator(session)
+    identity = CreatorPlatformIdentity(
+        id=uuid4(),
+        creator_id=creator.id,
+        platform="x",
+        external_creator_id="987654321",
+    )
+    session.add(identity)
+    session.flush()
+    session.add(
+        XAccountConnection(
+            id=uuid4(),
+            creator_id=creator.id,
+            creator_identity_id=identity.id,
+            platform="x",
+            state="connected",
+            scopes=["tweet.read", "users.read"],
+            encrypted_access_token=EncryptedTokenEnvelope.prefix + b"synthetic",
+            key_version="v1",
+            access_token_expires_at=NOW + timedelta(hours=1),
+        )
+    )
+    assessment = DraftAssessment(
+        id=uuid4(),
+        creator_id=creator.id,
+        assessment_key="postgres-cod361-assessment",
+        assessed_at=NOW,
+        content_fingerprint="sha256:" + "b" * 64,
+        outlook_version="outlook-v1",
+        decision_snapshot={
+            "_cod361_linking": {
+                "assessed_text_fingerprint": "sha256:" + "c" * 64,
+                "topology": "original",
+                "media_present": False,
+            }
+        },
+        accepted_hypothesis=None,
+    )
+    session.add(assessment)
+    session.commit()
+
+    class FakeVerifier:
+        def verify(self, _db: Session, *, creator_id: UUID, post_id: str, now: datetime):
+            assert creator_id == creator.id
+            assert post_id == "987654321"
+            assert now == NOW
+            return PublishedPostEvidence(
+                external_post_id=post_id,
+                author_id="987654321",
+                text="published copy",
+                published_at=NOW + timedelta(minutes=3),
+                topology="original",
+                media_present=False,
+            )
+
+    app = create_app()
+    app.dependency_overrides[get_authenticated_creator] = lambda: AuthenticatedCreator(creator.id)
+    app.dependency_overrides[get_db_session] = lambda: session
+    app.dependency_overrides[get_current_time] = lambda: NOW
+    app.dependency_overrides[get_x_publication_verifier] = lambda: FakeVerifier()
+    response = TestClient(app).post(
+        f"/api/v1/creators/me/draft-assessments/{assessment.id}/publication",
+        json={"post_url_or_id": "https://x.com/creator/status/987654321"},
+    )
+
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert payload["assessment_id"] == str(assessment.id)
+    assert payload["assessed_at"] == NOW.isoformat().replace("+00:00", "Z")
+    assert payload["external_post_id"] == "987654321"
+    assert payload["version_match_state"] == "mismatch"
+    post = session.scalar(
+        select(CanonicalPost).where(CanonicalPost.external_post_id == "987654321")
+    )
+    assert post is not None
+    assert post.source_assessment_id == assessment.id
+    assert post.creator_id == creator.id
+
+
+def test_postgres_duplicate_publication_links_resolve_to_one_attachment(
+    session: Session,
+    migrated_postgres: tuple[Engine, str],
+) -> None:
+    engine, schema = migrated_postgres
+    creator = _creator(session)
+    identity = CreatorPlatformIdentity(
+        id=uuid4(),
+        creator_id=creator.id,
+        platform="x",
+        external_creator_id="987654322",
+    )
+    session.add(identity)
+    session.flush()
+    session.add(
+        XAccountConnection(
+            id=uuid4(),
+            creator_id=creator.id,
+            creator_identity_id=identity.id,
+            platform="x",
+            state="connected",
+            scopes=["tweet.read", "users.read"],
+            encrypted_access_token=EncryptedTokenEnvelope.prefix + b"synthetic",
+            key_version="v1",
+            access_token_expires_at=NOW + timedelta(hours=1),
+        )
+    )
+    assessment = DraftAssessment(
+        id=uuid4(),
+        creator_id=creator.id,
+        assessment_key="postgres-cod361-concurrent-assessment",
+        assessed_at=NOW,
+        content_fingerprint="sha256:" + "d" * 64,
+        outlook_version="outlook-v1",
+        decision_snapshot={"_cod361_linking": {"topology": "original", "media_present": False}},
+    )
+    session.add(assessment)
+    session.commit()
+
+    class FakeVerifier:
+        authorized_user_id = "987654322"
+
+        def verify(self, _db: Session, *, creator_id: UUID, post_id: str, now: datetime):
+            del creator_id, now
+            return PublishedPostEvidence(
+                external_post_id=post_id,
+                author_id="987654322",
+                text="same synthetic post",
+                published_at=NOW + timedelta(minutes=4),
+            )
+
+    def request_once() -> tuple[int, str]:
+        app = create_app()
+        app.dependency_overrides[get_authenticated_creator] = lambda: AuthenticatedCreator(
+            creator.id
+        )
+        app.dependency_overrides[get_current_time] = lambda: NOW
+        app.dependency_overrides[get_x_publication_verifier] = lambda: FakeVerifier()
+
+        def override_db() -> Iterator[Session]:
+            connection = engine.connect()
+            connection.execute(text(f'SET search_path TO "{schema}", public'))
+            connection.commit()
+            db = Session(bind=connection, expire_on_commit=False)
+            try:
+                yield db
+            finally:
+                db.close()
+                connection.close()
+
+        app.dependency_overrides[get_db_session] = override_db
+        with TestClient(app) as client:
+            response = client.post(
+                f"/api/v1/creators/me/draft-assessments/{assessment.id}/publication",
+                json={"post_url_or_id": "987654323"},
+            )
+            return response.status_code, response.text
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(lambda _index: request_once(), range(2)))
+    assert sorted(status for status, _body in statuses) == [200, 201], statuses
+    assert (
+        session.scalar(
+            select(CanonicalPost).where(
+                CanonicalPost.creator_id == creator.id,
+                CanonicalPost.external_post_id == "987654323",
+            )
+        )
+        is not None
+    )
+    assert (
+        session.scalar(
+            select(CanonicalPost.id).where(
+                CanonicalPost.creator_id == creator.id,
+                CanonicalPost.source_assessment_id == assessment.id,
+            )
+        )
+        is not None
+    )
