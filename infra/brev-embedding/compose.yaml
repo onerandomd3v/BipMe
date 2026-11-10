@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     environment:
       BIPME_EMBEDDING_TOKEN: ${BIPME_EMBEDDING_TOKEN:?set a private random bearer secret}
+      LOG_LEVEL: ${LOG_LEVEL:-WARNING}
       HF_HOME: /model-cache
     ports:
       - "127.0.0.1:8000:8000"

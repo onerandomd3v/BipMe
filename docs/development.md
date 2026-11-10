@@ -11,6 +11,97 @@
 
 From the repository root, `apps/api` and `apps/web` are independent dependency roots, even though the code lives in one monorepo. Commit both `uv.lock` and `pnpm-lock.yaml` on dependency changes.
 
+## Minimum Environment Configuration
+
+The API process can start without environment variables and serve `GET /api/health`; that endpoint is liveness only. `BIPME_DATABASE_URL` is the only environment setting required for migrations or the baseline worker, and is needed by database-backed API routes. Authentication routes can also require the creator/session settings below. The template at `apps/api/.env.example` documents optional settings too; Python does not automatically load `.env.example` or `.env`.
+
+From the repository root, start local PostgreSQL, set the one required database value, then migrate and start FastAPI:
+
+```bash
+docker compose up -d --wait db
+cd apps/api
+uv sync --locked --group dev
+export BIPME_DATABASE_URL='postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme'
+uv run alembic upgrade head
+uv run uvicorn bipme.api.app:app --reload
+```
+
+Run the worker in a separate terminal with the same database value:
+
+```bash
+cd apps/api
+export BIPME_DATABASE_URL='postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme'
+uv run python -m bipme.jobs
+```
+
+Windows PowerShell uses the same process environment contract:
+
+```powershell
+docker compose up -d --wait db
+Set-Location apps/api
+$env:BIPME_DATABASE_URL = 'postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme'
+uv sync --locked --group dev
+uv run alembic upgrade head
+uv run uvicorn bipme.api.app:app --reload
+```
+
+For private creator sign-in, also set `BIPME_CREATOR_ID` to an existing creator row and `BIPME_PRIVATE_LOGIN_SECRET` to a server-side secret of at least 32 bytes. No X OAuth settings are needed. In local development, the session lifetime defaults to 12 hours and insecure cookies are allowed only for loopback HTTP; production requires secure cookies over HTTPS. Never put this secret in a Vite variable or browser bundle.
+
+For example, in the API process environment (replace both placeholders; the secret must be unpredictable and at least 32 bytes):
+
+```bash
+export BIPME_CREATOR_ID='existing-creator-uuid'
+export BIPME_PRIVATE_LOGIN_SECRET='replace-with-a-generated-secret-of-at-least-32-bytes'
+```
+
+The API and worker share `apps/api/src/bipme` and the same environment-variable definitions, but run as separate processes. The baseline worker needs only `BIPME_DATABASE_URL`; no `apps/worker` package or duplicate worker example is needed. If scheduled X metric snapshots are enabled, give the worker only the additional encryption-key and snapshot settings it needs. X OAuth client secrets and unrelated API-only settings should not be copied into the worker environment.
+
+The service examples are templates, not runtime files. Create `apps/api/.env` only if it does not already exist, and restrict its permissions before adding secrets. In Bash:
+
+```bash
+if [ ! -e apps/api/.env ]; then install -m 600 apps/api/.env.example apps/api/.env; fi
+chmod 600 apps/api/.env
+set -a
+. ./apps/api/.env
+set +a
+```
+
+For a nonempty X token key map, keep JSON quoting intact in the file, for example `BIPME_TOKEN_ENCRYPTION_KEYS='{"v1":"<fernet-key>"}'`. The same single-quoted value works when sourcing in Bash. PowerShell's loader below removes those outer single quotes before setting the process value; re-running setup leaves an existing `.env` untouched:
+
+```powershell
+if (-not (Test-Path apps/api/.env)) {
+  Copy-Item apps/api/.env.example apps/api/.env
+}
+icacls apps/api/.env /inheritance:r /grant:r "$($env:USERNAME):(F)"
+Get-Content apps/api/.env | ForEach-Object {
+  if ($_ -match '^\s*([^#=][^=]*)=(.*)$') {
+    $value = $matches[2]
+    if ($value -match "^'(.*)'$") { $value = $matches[1] }
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $value, 'Process')
+  }
+}
+```
+
+Do not fill every value: blank values and disabled flags intentionally leave optional features unavailable. In production, inject only each process's required values through its secret manager or deployment environment. The root Compose file has fixed local-only PostgreSQL credentials and does not load the API `.env`; Brev Compose interpolation is separate and uses `infra/brev-embedding/.env.example`.
+
+The `REQUIRED` and `OPTIONAL` labels in `apps/api/.env.example` apply only to the named capability section. A required integration setting is needed only when that integration is enabled; it is not a prerequisite for unrelated API functionality. Optional settings have usable defaults, are tuning values, or are alternate/additional safeguards. The API can still start without X, remote embeddings, or GroqCloud configuration while those features remain disabled.
+
+X configuration is operation-specific: OAuth identity reads need their OAuth credentials, encryption key, identity price, and daily ceiling. History import, metric snapshots, and published-post verification each have separate permission, current-pricing, and spend-control prerequisites. Keep an operation's settings blank and its gate disabled when that operation is not approved or in use.
+
+The web app currently consumes no custom environment variables and has no web `.env.example`. Any future `VITE_` value is public browser configuration; never place database credentials, session secrets, X credentials, Brev tokens, or Groq keys in it.
+
+### Optional integrations
+
+- **Remote embeddings:** API only. Set `BIPME_EMBEDDING_PROVIDER=remote`, `BIPME_EMBEDDING_REMOTE_URL` to the private Brev HTTPS endpoint, `BIPME_EMBEDDING_REMOTE_TOKEN` to the server-side bearer token, and optionally `BIPME_EMBEDDING_TIMEOUT_SECONDS` (default 10, valid above 0 through 60). The Brev side uses `BIPME_EMBEDDING_TOKEN`; provision the matching token separately in both hosts. Keep the pinned E5 model/revision unchanged. Remote failure does not fall back to local inference, and a process restart is required after changing API settings. See [COD-421 setup](#cod-421-private-brev-embeddings).
+- **GroqCloud synthesis:** GroqCloud is the selected V1 generative AI provider. The backend can start without a Groq key while synthesis remains disabled. When enabling synthesis, provide `GROQ_API_KEY`, set `BIPME_REPORT_SYNTHESIS_ENABLED=true`, and configure positive `BIPME_REPORT_MAX_REQUEST_COST_USD` and `BIPME_REPORT_MAX_DAILY_COST_USD` limits. The selected `BIPME_REPORT_MODEL` and `BIPME_REPORT_PRICING_MODEL` have defaults; token limits, timeout, retries, concurrency, input/output price rates, and pricing version also have defaults and may be tuned. Verify current model pricing and provider/source-processing rights before enabling. The daily budget is in-memory per process, not a deployment-wide ceiling. These settings do not currently connect synthesis to the report API or persistence layer, and they do not grant permission to send real X content.
+- **X OAuth:** the API requires `BIPME_X_OAUTH_ENABLED=true`, an existing `BIPME_CREATOR_ID`, `BIPME_X_CLIENT_ID`, sensitive `BIPME_X_CLIENT_SECRET`, numeric `BIPME_X_ALLOWED_USER_ID`, exact `BIPME_X_REDIRECT_URI`, `BIPME_APP_ORIGIN`, `BIPME_TOKEN_ENCRYPTION_KEYS` plus `BIPME_ACTIVE_TOKEN_KEY_VERSION`, and verified positive `BIPME_X_IDENTITY_READ_ESTIMATED_COST_USD` and `BIPME_X_DAILY_COST_LIMIT_USD`. Production also requires `BIPME_ENVIRONMENT=production` and `BIPME_AUTH_COOKIE_SECURE=true`. Verify account entitlement, requested scopes, current pricing, processing rights, and enforceable caps before turning it on; see [Security](security.md#cod-344--x-access-and-feasibility-gate-research-checked-7-nov-2026).
+- **X history import:** in addition to OAuth identity/key readiness, it requires `BIPME_X_HISTORY_IMPORT_ENABLED=true`, `BIPME_X_ACCOUNT_ENTITLEMENT_VERIFIED=true`, `BIPME_X_HISTORY_DATA_RIGHTS_VERIFIED=true`, `BIPME_X_HISTORY_REQUEST_COST_USD`, `BIPME_X_HISTORY_RESULT_COST_USD`, `BIPME_X_HISTORY_PRICING_OBSERVED_AT`, `BIPME_X_HISTORY_PRICING_EXPIRES_AT`, `BIPME_X_HISTORY_PRICING_SOURCE`, `BIPME_X_DAILY_COST_LIMIT_USD`, and positive `BIPME_X_HISTORY_OPERATION_LIMIT_USD` and `BIPME_X_HISTORY_IMPORT_LIMIT_USD`. `BIPME_X_HISTORY_TOTAL_LIMIT_USD` is optional in the current code but should be configured as an additional hard cap. Keep disabled until entitlement, rights, prices, and limits are verified.
+- **X metric snapshots:** requires `BIPME_X_METRIC_SNAPSHOT_ENABLED=true`, `BIPME_X_ACCOUNT_ENTITLEMENT_VERIFIED=true`, either `BIPME_X_METRIC_SNAPSHOT_DATA_RIGHTS_VERIFIED=true` or the supported `BIPME_X_HISTORY_DATA_RIGHTS_VERIFIED=true`, `BIPME_X_ALLOWED_USER_ID`, `BIPME_X_METRIC_SNAPSHOT_REQUEST_COST_USD`, `BIPME_X_METRIC_SNAPSHOT_PER_POST_LIMIT_USD`, current `BIPME_X_METRIC_SNAPSHOT_PRICING_OBSERVED_AT`, `BIPME_X_METRIC_SNAPSHOT_PRICING_EXPIRES_AT`, `BIPME_X_METRIC_SNAPSHOT_PRICING_SOURCE`, and a positive `BIPME_X_DAILY_COST_LIMIT_USD` (the code also accepts `BIPME_X_PUBLICATION_DAILY_COST_LIMIT_USD` as a fallback). `BIPME_X_METRIC_SNAPSHOT_TOTAL_LIMIT_USD` and `BIPME_X_METRIC_SNAPSHOT_OPERATION_LIMIT_USD` are optional in the current validator; configure them for defense in depth. The API scheduler and worker are separate processes: the worker also needs `BIPME_DATABASE_URL`, `BIPME_TOKEN_ENCRYPTION_KEYS`, and `BIPME_ACTIVE_TOKEN_KEY_VERSION` to decrypt the connection and execute a scheduled read.
+- **Published-post verification:** requires `BIPME_X_PUBLICATION_LINK_ENABLED=true`, verified `BIPME_X_PUBLICATION_ACCOUNT_ENTITLEMENT_VERIFIED` and `BIPME_X_PUBLICATION_DATA_RIGHTS_VERIFIED`, `BIPME_X_ALLOWED_USER_ID`, `BIPME_X_PUBLICATION_READ_ESTIMATED_COST_USD`, `BIPME_X_PUBLICATION_PRICING_OBSERVED_AT`, `BIPME_X_PUBLICATION_PRICING_EXPIRES_AT`, `BIPME_X_PUBLICATION_PRICING_SOURCE`, and positive `BIPME_X_PUBLICATION_DAILY_COST_LIMIT_USD`. Total, operation, and import caps are optional in the current validator; configure them where supported. This route uses the API process and connected creator-owned X account.
+- **Local history report processing:** independently gated by `BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED=true` and a valid `BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT` timestamp. This is not OAuth or external synthesis; platform rights still need a separate decision.
+
+All X feature gates and prices remain false or blank in the template. Do not infer entitlement or costs from consent, test fixtures, or previous prices; see [COD-349 verification notes](#cod-349-one-account-history-verification) before any live read.
+
 ## Local database
 
 ```bash
@@ -22,19 +113,7 @@ The `--wait` flag waits for the configured PostgreSQL health check to pass befor
 
 The local service exposes PostgreSQL on `127.0.0.1:5432` with **development-only** credentials in `compose.yaml`. Never reuse them outside local development. The volume persists between restarts.
 
-The scaffold's Alembic configuration reads `BIPME_DATABASE_URL` **from the process environment**. Merely copying `.env.example` does **not** currently auto-load it. Authentication secrets and creator IDs are also read from the process environment; keep real values out of Git.
-
-Linux/macOS Bash:
-
-```bash
-export BIPME_DATABASE_URL='postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme'
-```
-
-Windows PowerShell:
-
-```powershell
-$env:BIPME_DATABASE_URL = 'postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme'
-```
+Alembic, the API's database-backed routes, and the worker read `BIPME_DATABASE_URL` **from their process environment**. Set it in each process that needs database access; copying `.env.example` does not load it. To use a different database, override this process value. Authentication secrets and creator IDs are also process environment values; keep real values out of Git.
 
 ## Start the API
 
@@ -49,6 +128,14 @@ Run a separate durable job worker with the same database URL:
 
 ```powershell
 cd apps/api
+uv run python -m bipme.jobs
+```
+
+For Windows PowerShell, use a separate terminal and set the same database variable before starting the worker:
+
+```powershell
+Set-Location apps/api
+$env:BIPME_DATABASE_URL = 'postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme'
 uv run python -m bipme.jobs
 ```
 
