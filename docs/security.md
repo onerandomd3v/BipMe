@@ -196,10 +196,17 @@ COD-363 implements the monitoring gate with the existing COD-347 ledger and COD-
 worker: every candidate window is receipt-idempotent, every provider call is preceded by a
 creator-scoped reservation, and the reservation estimate covers the adapter's bounded retry
 envelope. A separate per-post ceiling is checked under the same creator lock as global/daily/
-operation ceilings. Connection state, token expiry, read scopes and the allowlisted numeric X
-identity are revalidated immediately before the request. A provider response is committed as
-sanitized ledger evidence before observation rows are written; crashes or ambiguous responses
-therefore stop in reconciliation instead of issuing a potentially billable duplicate. Missing
+operation ceilings. The producer constructs the registered Procrastinate dispatcher
+using the same runtime factory as the worker. After the reservation commits, the reader
+locks and revalidates the current canonical post (owner, platform, availability,
+assessment attachment and original identity) as well as the X connection, current token
+expiry, read scopes and allowlisted numeric user ID. The post row lock remains held
+through the provider call, preventing concurrent deletion from overtaking the check.
+A provider 404 does not prove deletion: the receipt moves to needs_reconciliation,
+and canonical post availability is left unchanged until a separate authorized
+reconciliation. A provider response is committed as sanitized ledger evidence before
+observation rows are written; crashes or ambiguous responses therefore stop in
+reconciliation instead of issuing a potentially billable duplicate. Missing
 fields remain explicit `missing`/`invalid` rows, while windows skipped because they are no longer
 actionable remain cancelled receipts and never receive synthetic observation times. The adapter
 has no publish/write operation and all tests use synthetic providers.
