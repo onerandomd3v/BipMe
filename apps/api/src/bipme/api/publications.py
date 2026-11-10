@@ -41,7 +41,7 @@ from bipme.persistence.models import (
 )
 
 router = APIRouter(prefix="/api/v1/creators/me", tags=["publications"])
-_POST_ID = re.compile(r"^[0-9]{1,32}$")
+_POST_ID = re.compile(r"^[1-9][0-9]{0,19}$")
 _HANDLE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
 VersionMatchState = Literal["match", "mismatch", "unknown"]
 
@@ -68,6 +68,8 @@ class PublicationLinkResponse(StrictModel):
     external_post_id: str
     published_at: datetime
     version_match_state: VersionMatchState
+    linkage_state: Literal["linked"] = "linked"
+    linked_at: datetime | None = None
 
 
 def get_x_publication_verifier(
@@ -83,7 +85,9 @@ def get_x_publication_verifier(
 
 def parse_x_post_id(value: str) -> str:
     """Accept a numeric ID or a strict HTTPS x.com/twitter.com status URL."""
-    if _POST_ID.fullmatch(value):
+    if any(ord(c) < 33 or ord(c) > 126 for c in value) or "\\" in value:
+        raise ApiError(422, "invalid_post_reference", "The X post URL or ID is invalid.")
+    if _POST_ID.fullmatch(value) and int(value) <= 2**64 - 1:
         return value
     try:
         parsed = urlsplit(value)
@@ -101,12 +105,14 @@ def parse_x_post_id(value: str) -> str:
         or hostname not in {"x.com", "twitter.com"}
     ):
         raise ApiError(422, "invalid_post_reference", "The X post URL or ID is invalid.")
+    if "//" in parsed.path:
+        raise ApiError(422, "invalid_post_reference", "The X post URL or ID is invalid.")
     parts = [part for part in parsed.path.split("/") if part]
     if len(parts) != 3 or parts[1].lower() != "status" or not _HANDLE.fullmatch(parts[0]):
         if len(parts) != 3 or parts[0].lower() != "i" or parts[1].lower() != "status":
             raise ApiError(422, "invalid_post_reference", "The X post URL or ID is invalid.")
     post_id = parts[2]
-    if not _POST_ID.fullmatch(post_id):
+    if not _POST_ID.fullmatch(post_id) or int(post_id) > 2**64 - 1:
         raise ApiError(422, "invalid_post_reference", "The X post URL or ID is invalid.")
     return post_id
 
@@ -125,20 +131,29 @@ def _version_match_state(
     assessment: DraftAssessment, evidence: PublishedPostEvidence
 ) -> VersionMatchState:
     metadata = assessment.decision_snapshot.get("_cod361_linking")
-    if not isinstance(metadata, dict) or not isinstance(evidence.text, str):
+    if not isinstance(metadata, dict) or (
+        evidence.text is None and evidence.text_fingerprint is None
+    ):
         return "unknown"
     expected_text = metadata.get("assessed_text_fingerprint")
     expected_topology = metadata.get("topology")
     expected_media = metadata.get("media_present")
     if not isinstance(expected_text, str) or not isinstance(expected_topology, str):
         return "unknown"
-    if _text_fingerprint(evidence.text) != expected_text:
+    actual_text = evidence.text_fingerprint or (
+        _text_fingerprint(evidence.text) if evidence.text is not None else None
+    )
+    if actual_text != expected_text:
         return "mismatch"
     if evidence.topology != expected_topology:
         return "mismatch"
     if not isinstance(expected_media, bool) or evidence.media_present is None:
         return "unknown"
-    return "match" if evidence.media_present == expected_media else "mismatch"
+    if evidence.media_present != expected_media:
+        return "mismatch"
+    if expected_media or expected_topology != "original" or metadata.get("thread_role") is not None:
+        return "unknown"
+    return "match"
 
 
 def _response(assessment: DraftAssessment, post: CanonicalPost) -> PublicationLinkResponse:
@@ -155,6 +170,7 @@ def _response(assessment: DraftAssessment, post: CanonicalPost) -> PublicationLi
     assert post.source_assessment_id == assessment.id
     assert post.version_match_state in {"match", "mismatch", "unknown"}
     return PublicationLinkResponse(
+        linked_at=(post.provenance or {}).get("publication_link", {}).get("linked_at"),
         assessment_id=assessment.id,
         assessed_at=assessment.assessed_at,
         assessed_fingerprint=assessment.content_fingerprint,
@@ -251,6 +267,12 @@ def link_publication(
                 "publication_verification_unavailable",
                 "Published post verification is unavailable.",
             )
+        if evidence.published_at.tzinfo is None or evidence.published_at > now:
+            raise ApiError(
+                503,
+                "publication_verification_unavailable",
+                "Publication time could not be verified.",
+            )
         if evidence.published_at < assessment.assessed_at:
             raise ApiError(
                 422,
@@ -282,8 +304,18 @@ def link_publication(
                 CreatorPlatformIdentity.platform == "x",
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
-        if locked_connection is None:
+        if (
+            locked_connection is None
+            or locked_connection.revoked_at is not None
+            or not {"tweet.read", "users.read"}.issubset(locked_connection.scopes)
+            or locked_connection.encrypted_access_token is None
+            or (
+                locked_connection.access_token_expires_at is not None
+                and locked_connection.access_token_expires_at <= now
+            )
+        ):
             raise ApiError(403, "x_account_unavailable", "The authorized X account is unavailable.")
         identity = db.get(CreatorPlatformIdentity, locked_connection.creator_identity_id)
         authorized_user_id = getattr(verifier, "authorized_user_id", None)
@@ -301,6 +333,28 @@ def link_publication(
                 "The published X post is not owned by the authorized account.",
             )
 
+        # The verifier commits its usage record and releases the initial post lock.
+        # Reload under a fresh fence before writing; another assessment may have
+        # claimed an already-imported post while verification was in progress.
+        if existing is not None:
+            existing = db.scalar(
+                select(CanonicalPost)
+                .where(
+                    CanonicalPost.id == existing.id,
+                    CanonicalPost.creator_id == creator.creator_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if existing is None:
+                raise ApiError(409, "published_post_changed", "Publication evidence changed.")
+            if existing.source_assessment_id == locked_assessment.id:
+                response.status_code = 200
+                return _response(locked_assessment, existing)
+            if existing.source_assessment_id is not None:
+                raise ApiError(
+                    409, "published_post_already_linked", "The published X post is already linked."
+                )
         state = _version_match_state(locked_assessment, evidence)
         if existing is None:
             existing = CanonicalPost(
@@ -329,6 +383,23 @@ def link_publication(
             existing.topology = evidence.topology
             existing.reply_to_external_post_id = evidence.reply_to_external_post_id
             existing.quoted_external_post_id = evidence.quoted_external_post_id
+        existing.source = "x_authorized_publication_verification"
+        existing.source_endpoint = "/2/tweets/{id}"
+        existing.source_observed_at = evidence.verified_at or now
+        if evidence.text is not None:
+            existing.text = evidence.text
+        existing.media_present = evidence.media_present
+        existing.provenance = {
+            **(existing.provenance or {}),
+            "publication_link": {
+                "linked_at": now.isoformat(),
+                "author_id": evidence.author_id,
+                "assessed_fingerprint": locked_assessment.content_fingerprint,
+                "published_text_fingerprint": evidence.text_fingerprint
+                or (_text_fingerprint(evidence.text) if evidence.text is not None else None),
+                "version_match_state": state,
+            },
+        }
         try:
             db.commit()
         except IntegrityError:
@@ -359,4 +430,41 @@ def link_publication(
         db.rollback()
         raise ApiError(
             503, "publication_store_unavailable", "The publication link could not be saved."
+        ) from None
+
+
+@router.get(
+    "/draft-assessments/{assessment_id}/publication",
+    response_model=PublicationLinkResponse,
+    responses={code: {"model": ErrorResponse} for code in (401, 403, 404, 503)},
+)
+def get_publication(
+    assessment_id: UUID,
+    creator: Annotated[AuthenticatedCreator, Depends(get_authenticated_creator)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> PublicationLinkResponse:
+    """Read the historical attachment without a provider request or active X grant."""
+    try:
+        assessment = db.scalar(
+            select(DraftAssessment).where(
+                DraftAssessment.id == assessment_id,
+                DraftAssessment.creator_id == creator.creator_id,
+            )
+        )
+        if assessment is None:
+            raise ApiError(404, "assessment_not_found", "The requested assessment was not found.")
+        post = db.scalar(
+            select(CanonicalPost).where(
+                CanonicalPost.creator_id == creator.creator_id,
+                CanonicalPost.source_assessment_id == assessment_id,
+            )
+        )
+        if post is None:
+            raise ApiError(
+                404, "publication_not_linked", "No publication is linked to this assessment."
+            )
+        return _response(assessment, post)
+    except SQLAlchemyError:
+        raise ApiError(
+            503, "publication_store_unavailable", "The publication link is unavailable."
         ) from None

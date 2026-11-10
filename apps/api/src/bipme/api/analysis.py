@@ -545,6 +545,7 @@ def analyze_draft(
                 **response.model_dump(mode="json"),
                 "_cod361_linking": {
                     "assessed_text_fingerprint": _assessed_text_fingerprint(request.text),
+                    "thread_role": request.thread_role,
                     "topology": request.topology,
                     "media_present": (
                         None if request.media_types is None else bool(request.media_types)

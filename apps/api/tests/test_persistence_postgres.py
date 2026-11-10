@@ -32,6 +32,7 @@ from bipme.api.dependencies import (
 )
 from bipme.api.publications import get_x_publication_verifier
 from bipme.integrations.x_publication import PublishedPostEvidence
+from bipme.integrations.x_read import XReadPost
 from bipme.intelligence.embeddings import EmbeddingIdentity
 from bipme.intelligence.post_profiles import (
     CreatorContextSnapshot,
@@ -78,6 +79,7 @@ from bipme.persistence.usage import (
     reserve_x_usage,
 )
 from bipme.persistence.vector_candidates import PostgresVectorCandidateSource
+from bipme.posts.history import CreatorHistoryImporter
 
 API_DIR = Path(__file__).parents[1]
 NOW = datetime(2026, 11, 8, 14, tzinfo=UTC)
@@ -105,7 +107,7 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
         command.upgrade(config, "head")
         connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0005_durable_jobs"
+            "0006_creator_history_import"
         )
         command.downgrade(config, "0001_enable_vector")
         connection.commit()
@@ -131,6 +133,7 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
             "creator_goal_revisions",
             "creator_processing_permissions",
             "creator_report_snapshots",
+            "creator_history_imports",
             "scheduled_jobs",
             "procrastinate_jobs",
             "procrastinate_workers",
@@ -138,6 +141,30 @@ def migrated_postgres() -> Iterator[tuple[Engine, str]]:
             "procrastinate_periodic_defers",
         }
         assert expected <= tables
+        history_columns = {
+            column["name"] for column in inspect(connection).get_columns("creator_history_imports")
+        }
+        assert {
+            "import_id",
+            "status",
+            "requested_posts",
+            "pages_read",
+            "imported_posts",
+            "next_page_available",
+            "error_code",
+            "provenance",
+        } <= history_columns
+        post_columns = {
+            column["name"] for column in inspect(connection).get_columns("canonical_posts")
+        }
+        assert {
+            "text",
+            "media_present",
+            "source",
+            "source_endpoint",
+            "source_observed_at",
+            "provenance",
+        } <= post_columns
         indexes = {index["name"] for index in inspect(connection).get_indexes("post_embeddings")}
         assert "ix_embeddings_e5_v1_cosine" in indexes
         assert "ix_posts_creator_published" in {
@@ -1128,7 +1155,7 @@ def test_migration_survives_clean_upgrade_downgrade_and_repeat_upgrade(
         connection.execute(text(f'SET search_path TO "{schema}", public'))
         connection.commit()
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0005_durable_jobs"
+            "0006_creator_history_import"
         )
 
 
@@ -1172,6 +1199,78 @@ def test_creator_scoped_ownership_and_post_ingestion_are_enforced(session: Sessi
                 )
             )
             session.flush()
+
+
+def test_concurrent_history_post_upserts_share_one_canonical_row(
+    migrated_postgres: tuple[Engine, str],
+) -> None:
+    """A duplicate canonical post is contained by the savepoint under real PostgreSQL."""
+    engine, schema = migrated_postgres
+    creator_id = uuid4()
+    post = XReadPost(
+        external_post_id="concurrent-history-post",
+        text="synthetic concurrent post",
+        published_at=NOW,
+        observed_at=NOW,
+        source="x_creator_authorized_history",
+        source_endpoint="/2/users/{id}/tweets",
+        topology="original",
+        media_present=False,
+        metrics={},
+    )
+    with engine.connect() as connection:
+        connection.execute(text(f'SET search_path TO "{schema}", public'))
+        connection.commit()
+        with Session(bind=connection) as db:
+            db.add(Creator(id=creator_id))
+            db.commit()
+
+    barrier = threading.Barrier(2)
+    outcomes: list[bool] = []
+    errors: list[BaseException] = []
+    lock = threading.Lock()
+
+    def worker() -> None:
+        connection = engine.connect()
+        connection.execute(text(f'SET search_path TO "{schema}", public'))
+        connection.commit()
+        db = Session(bind=connection)
+        try:
+            barrier.wait(timeout=10)
+            imported = CreatorHistoryImporter._upsert_post(
+                db, creator_id, "concurrent-import", post
+            )
+            db.commit()
+            with lock:
+                outcomes.append(imported)
+        except BaseException as exc:
+            with lock:
+                errors.append(exc)
+            db.rollback()
+        finally:
+            db.close()
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(worker) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=20)
+
+    assert errors == []
+    assert outcomes == [True, True] or outcomes == [True, False]
+    with engine.connect() as connection:
+        connection.execute(text(f'SET search_path TO "{schema}", public'))
+        connection.commit()
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM canonical_posts "
+                    "WHERE creator_id = :creator_id AND external_post_id = :external_post_id"
+                ),
+                {"creator_id": str(creator_id), "external_post_id": post.external_post_id},
+            )
+            == 1
+        )
 
 
 def test_outcome_snapshots_are_idempotent_and_preserve_zero_missing_and_time(
@@ -2003,7 +2102,7 @@ def test_postgres_manual_publication_link_preserves_immutable_assessment_and_own
         def verify(self, _db: Session, *, creator_id: UUID, post_id: str, now: datetime):
             assert creator_id == creator.id
             assert post_id == "987654321"
-            assert now == NOW
+            assert now == NOW + timedelta(minutes=10)
             return PublishedPostEvidence(
                 external_post_id=post_id,
                 author_id="987654321",
@@ -2016,7 +2115,7 @@ def test_postgres_manual_publication_link_preserves_immutable_assessment_and_own
     app = create_app()
     app.dependency_overrides[get_authenticated_creator] = lambda: AuthenticatedCreator(creator.id)
     app.dependency_overrides[get_db_session] = lambda: session
-    app.dependency_overrides[get_current_time] = lambda: NOW
+    app.dependency_overrides[get_current_time] = lambda: NOW + timedelta(minutes=10)
     app.dependency_overrides[get_x_publication_verifier] = lambda: FakeVerifier()
     response = TestClient(app).post(
         f"/api/v1/creators/me/draft-assessments/{assessment.id}/publication",
@@ -2093,7 +2192,7 @@ def test_postgres_duplicate_publication_links_resolve_to_one_attachment(
         app.dependency_overrides[get_authenticated_creator] = lambda: AuthenticatedCreator(
             creator.id
         )
-        app.dependency_overrides[get_current_time] = lambda: NOW
+        app.dependency_overrides[get_current_time] = lambda: NOW + timedelta(minutes=10)
         app.dependency_overrides[get_x_publication_verifier] = lambda: FakeVerifier()
 
         def override_db() -> Iterator[Session]:
@@ -2136,3 +2235,69 @@ def test_postgres_duplicate_publication_links_resolve_to_one_attachment(
         )
         is not None
     )
+
+
+def test_publication_verification_survives_attachment_rollback_without_second_paid_read(session):
+    from cryptography.fernet import Fernet
+
+    from bipme.auth.crypto import TokenCipher
+    from bipme.integrations.x_publication import XPublicationSettings, XPublishedPostVerifier
+
+    creator = _creator(session)
+    connection = _x_connection(session, creator)
+    identity = session.get(CreatorPlatformIdentity, connection.creator_identity_id)
+    cipher = TokenCipher({"v1": Fernet.generate_key().decode()}, "v1")
+    secret = cipher.encrypt("synthetic-token")
+    connection.encrypted_access_token = secret.envelope
+    connection.key_version = secret.key_version
+    session.commit()
+
+    class Provider:
+        max_request_attempts = 1
+        calls = 0
+
+        def published_post(self, *, access_token, post_id):
+            self.calls += 1
+            return PublishedPostEvidence(
+                external_post_id=post_id,
+                author_id=identity.external_creator_id,
+                text="synthetic publication",
+                published_at=NOW - timedelta(minutes=1),
+                media_present=False,
+            )
+
+    provider = Provider()
+    verifier = XPublishedPostVerifier(
+        provider=provider,
+        cipher=cipher,
+        settings=XPublicationSettings(
+            enabled=True,
+            account_entitlement_verified=True,
+            data_rights_verified=True,
+            allowed_user_id=identity.external_creator_id,
+            estimated_cost=Decimal("0.01"),
+            limits=XUsageLimits(Decimal("1"), Decimal("1"), Decimal("1"), None),
+            pricing_observed_at=NOW - timedelta(days=1),
+            pricing_expires_at=NOW + timedelta(days=1),
+            pricing_source="synthetic-verified-price",
+        ),
+    )
+    first = verifier.verify(session, creator_id=creator.id, post_id="999123456", now=NOW)
+    # The caller's later attachment transaction can fail; evidence already committed
+    # with the usage completion survives rollback and is reused by a reconstructed verifier.
+    session.rollback()
+    restarted = XPublishedPostVerifier(
+        provider=provider, cipher=cipher, settings=verifier._settings
+    )
+    second = restarted.verify(session, creator_id=creator.id, post_id="999123456", now=NOW)
+    assert provider.calls == 1
+    assert second.external_post_id == first.external_post_id
+    assert second.verified_at == first.verified_at == NOW
+    assert second.text is None and second.text_fingerprint is not None
+    usage = session.scalar(select(APIUsageLedger).where(APIUsageLedger.creator_id == creator.id))
+    assert (
+        usage is not None
+        and usage.request_metadata["publication_evidence"]["text_fingerprint"]
+        == second.text_fingerprint
+    )
+    assert "synthetic publication" not in str(usage.request_metadata)

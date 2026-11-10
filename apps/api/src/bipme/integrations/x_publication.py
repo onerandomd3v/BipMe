@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import re
 import time
-from dataclasses import dataclass
+import unicodedata
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
@@ -18,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from bipme.auth.crypto import TokenCipher, TokenEncryptionError
-from bipme.persistence.models import CreatorPlatformIdentity, XAccountConnection
+from bipme.persistence.models import APIUsageLedger, CreatorPlatformIdentity, XAccountConnection
 from bipme.persistence.usage import (
     UsageBudgetError,
     XUsageLimits,
@@ -51,6 +53,8 @@ class PublishedPostEvidence:
     media_present: bool | None = None
     reply_to_external_post_id: str | None = None
     quoted_external_post_id: str | None = None
+    text_fingerprint: str | None = None
+    verified_at: datetime | None = None
 
 
 class XPublishedPostProvider(Protocol):
@@ -218,6 +222,10 @@ class XPublicationSettings:
     estimated_cost: Decimal | None
     limits: XUsageLimits | None
 
+    pricing_observed_at: datetime | None = None
+    pricing_expires_at: datetime | None = None
+    pricing_source: str | None = None
+
     @classmethod
     def from_environment(cls) -> XPublicationSettings:
         def flag(name: str) -> bool:
@@ -233,6 +241,13 @@ class XPublicationSettings:
                 return None
             return value if value.is_finite() and value > 0 else None
 
+        def instant(name: str) -> datetime | None:
+            try:
+                value = datetime.fromisoformat(os.environ[name].replace("Z", "+00:00"))
+                return value if value.tzinfo is not None else None
+            except (ValueError, KeyError):
+                return None
+
         daily = money("BIPME_X_PUBLICATION_DAILY_COST_LIMIT_USD")
         limits = XUsageLimits(
             money("BIPME_X_PUBLICATION_TOTAL_COST_LIMIT_USD"),
@@ -241,6 +256,9 @@ class XPublicationSettings:
             money("BIPME_X_PUBLICATION_IMPORT_COST_LIMIT_USD"),
         )
         return cls(
+            pricing_observed_at=instant("BIPME_X_PUBLICATION_PRICING_OBSERVED_AT"),
+            pricing_expires_at=instant("BIPME_X_PUBLICATION_PRICING_EXPIRES_AT"),
+            pricing_source=os.getenv("BIPME_X_PUBLICATION_PRICING_SOURCE"),
             enabled=flag("BIPME_X_PUBLICATION_LINK_ENABLED"),
             account_entitlement_verified=flag("BIPME_X_PUBLICATION_ACCOUNT_ENTITLEMENT_VERIFIED"),
             data_rights_verified=flag("BIPME_X_PUBLICATION_DATA_RIGHTS_VERIFIED"),
@@ -284,6 +302,11 @@ class XPublishedPostVerifier:
             or not settings.data_rights_verified
             or not _USER_ID.fullmatch(settings.allowed_user_id or "")
             or settings.estimated_cost is None
+            or settings.pricing_observed_at is None
+            or settings.pricing_expires_at is None
+            or settings.pricing_observed_at > now
+            or settings.pricing_expires_at <= now
+            or not settings.pricing_source
             or settings.limits is None
             or not settings.limits.valid()
         ):
@@ -334,6 +357,26 @@ class XPublishedPostVerifier:
         except UsageBudgetError as exc:
             raise XPublicationUnavailable(exc.code) from None
         if reservation.already_reserved:
+            ledger = db.get(APIUsageLedger, reservation.ledger_id)
+            cached = (ledger.request_metadata if ledger is not None else {}).get(
+                "publication_evidence"
+            )
+            if isinstance(cached, dict):
+                try:
+                    cached = dict(cached)
+                    cached["published_at"] = datetime.fromisoformat(cached["published_at"])
+                    cached["verified_at"] = datetime.fromisoformat(cached["verified_at"])
+                    evidence = PublishedPostEvidence(text=None, **cached)
+                    if (
+                        evidence.author_id != settings.allowed_user_id
+                        or evidence.external_post_id != post_id
+                    ):
+                        raise ValueError()
+                    return evidence
+                except (ValueError, TypeError, KeyError):
+                    raise XPublicationUnavailable("cached_evidence_invalid") from None
+            # A reservation without committed evidence may have reached the provider.
+            # Never authorize another paid request to resolve an ambiguous outcome.
             raise XPublicationUnavailable("duplicate_request")
 
         locked = db.scalar(
@@ -345,6 +388,7 @@ class XPublishedPostVerifier:
                 XAccountConnection.state == "connected",
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if (
             locked is None
@@ -352,6 +396,17 @@ class XPublishedPostVerifier:
             and locked.access_token_expires_at <= now
             or not {"tweet.read", "users.read"}.issubset(set(locked.scopes))
             or locked.encrypted_access_token is None
+        ):
+            _complete_failure(db, reservation.ledger_id, now)
+            raise XPublicationUnavailable("connection_unavailable")
+        identity = db.get(
+            CreatorPlatformIdentity, locked.creator_identity_id, populate_existing=True
+        )
+        if (
+            identity is None
+            or identity.creator_id != creator_id
+            or identity.platform != "x"
+            or identity.external_creator_id != settings.allowed_user_id
         ):
             _complete_failure(db, reservation.ledger_id, now)
             raise XPublicationUnavailable("connection_unavailable")
@@ -367,6 +422,45 @@ class XPublishedPostVerifier:
         except Exception:
             _complete_failure(db, reservation.ledger_id, now)
             raise XPublicationUnavailable("provider_unavailable") from None
+        if evidence.author_id != settings.allowed_user_id:
+            _complete_failure(db, reservation.ledger_id, now)
+            raise XPublicationUnavailable("permission_denied")
+        if (
+            evidence.external_post_id != post_id
+            or evidence.published_at.tzinfo is None
+            or evidence.published_at > now
+        ):
+            _complete_failure(db, reservation.ledger_id, now)
+            raise XPublicationUnavailable("invalid_provider_response")
+        # Commit minimal verified evidence alongside request completion, before the
+        # caller's attachment transaction. This makes rollback/retry safe without a
+        # second paid read; no raw text or token is copied into ledger metadata.
+        ledger = db.get(APIUsageLedger, reservation.ledger_id)
+        if ledger is None:
+            raise XPublicationUnavailable("usage_controls_unavailable")
+        digest = None
+        if evidence.text is not None:
+            canonical = unicodedata.normalize(
+                "NFC", evidence.text.replace("\r\n", "\n").replace("\r", "\n")
+            )
+            digest = (
+                "sha256:"
+                + hashlib.sha256(b"bipme-published-text-v1\0" + canonical.encode()).hexdigest()
+            )
+        ledger.request_metadata = {
+            **ledger.request_metadata,
+            "publication_evidence": {
+                "external_post_id": evidence.external_post_id,
+                "author_id": evidence.author_id,
+                "published_at": evidence.published_at.isoformat(),
+                "topology": evidence.topology,
+                "media_present": evidence.media_present,
+                "reply_to_external_post_id": evidence.reply_to_external_post_id,
+                "quoted_external_post_id": evidence.quoted_external_post_id,
+                "text_fingerprint": digest,
+                "verified_at": now.isoformat(),
+            },
+        }
         try:
             complete_x_request(
                 db,
@@ -378,7 +472,7 @@ class XPublishedPostVerifier:
             )
         except UsageBudgetError as exc:
             raise XPublicationUnavailable(exc.code) from None
-        return evidence
+        return replace(evidence, text_fingerprint=digest, verified_at=now)
 
 
 def _complete_failure(db: Session, reservation_id: UUID, now: datetime) -> None:

@@ -193,3 +193,5 @@ COD-344 may be marked **Done** after the owner has confirmed the relevant develo
 - [Official X OAuth documentation](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code)
 - [Official X API pricing](https://docs.x.com/x-api/getting-started/pricing)
 - [Official X developer guidelines](https://docs.x.com/developer-guidelines)
+
+Publication reads additionally require explicit, current pricing timestamps/source. The final locked connection reload rechecks scopes, expiry, token presence and numeric identity after the durable usage reservation. Successfully committed verification digests can be reused without another provider call after link rollback; incomplete/ambiguous reservations still require reconciliation. This does not bypass revocation or grant new X permissions. Historical attachment status requires the private creator session and makes no X request. No live paid verification was performed during review.

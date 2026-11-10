@@ -135,7 +135,7 @@ def publication_api() -> Iterator[tuple[TestClient, sessionmaker[Session], FakeV
     verifier = FakeVerifier(evidence)
     app = create_app()
     app.dependency_overrides[get_authenticated_creator] = lambda: AuthenticatedCreator(CREATOR_ID)
-    app.dependency_overrides[get_current_time] = lambda: NOW
+    app.dependency_overrides[get_current_time] = lambda: NOW + timedelta(minutes=10)
     app.dependency_overrides[get_x_publication_verifier] = lambda: verifier
 
     def override_db() -> Iterator[Session]:
@@ -420,3 +420,163 @@ def test_cross_creator_and_already_linked_posts_are_not_reassigned(
     path = f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/publication"
     assert client.post(path, json={"post_url_or_id": "555555555"}).status_code == 404
     assert client.post(path, json={"post_url_or_id": "666666666"}).status_code == 409
+
+
+@pytest.mark.parametrize(
+    "reference",
+    ["https://x.com/a//status/123", "https://x.com/a/status/123\n", "https://x.com/a\\/status/123"],
+)
+def test_ambiguous_urls_are_rejected(reference):
+    with pytest.raises(ApiError):
+        parse_x_post_id(reference)
+
+
+@pytest.mark.parametrize(
+    "metadata", [{"media_present": True}, {"thread_role": "standalone"}, {"topology": "quote"}]
+)
+def test_same_text_does_not_verify_unobserved_media_thread_or_quote(metadata):
+    from bipme.api.publications import _version_match_state
+
+    assessment = _assessment()
+    assessment.decision_snapshot["_cod361_linking"].update(metadata)
+    evidence = PublishedPostEvidence(
+        external_post_id="123",
+        author_id="987654321",
+        text="Original draft",
+        published_at=NOW,
+        topology=metadata.get("topology", "original"),
+        media_present=metadata.get("media_present", False),
+    )
+    assert _version_match_state(assessment, evidence) == "unknown"
+
+
+def test_status_uses_private_ownership_without_provider_call(publication_api):
+    client, _factory, verifier = publication_api
+    path = f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/publication"
+    assert client.get(path).status_code == 404
+    first = client.post(path, json={"post_url_or_id": "123456789"})
+    assert first.status_code == 201
+    assert client.get(path).json() == first.json()
+    assert len(verifier.calls) == 1
+
+
+@pytest.mark.parametrize("state", ["mismatch", "unknown"])
+def test_persisted_publication_handoff_withholds_forecast_scoring(state):
+    from dataclasses import replace
+
+    from test_postmortems import _request
+
+    from bipme.intelligence.postmortems import build_postmortem
+    from bipme.posts.publications import postmortem_publication
+
+    request = _request()
+    post = CanonicalPost(
+        id=uuid4(),
+        creator_id=CREATOR_ID,
+        source_assessment_id=ASSESSMENT_ID,
+        published_at=request.published_post.published_at,
+        version_match_state=state,
+    )
+    mapped = postmortem_publication(post)
+    mapped = replace(
+        mapped,
+        creator_key=request.published_post.creator_key,
+        post_id=request.published_post.post_id,
+        source_assessment_id=request.published_post.source_assessment_id,
+    )
+    result = build_postmortem(replace(request, published_post=mapped))
+    assert result.version_state == "unverified"
+    assert all(
+        item.status == "version_unverified" and item.deviation_from_median is None
+        for item in result.metric_comparisons
+    )
+
+
+@pytest.mark.parametrize("value", ["0", "000123", "18446744073709551616"])
+def test_noncanonical_numeric_post_ids_are_rejected(value):
+    with pytest.raises(ApiError):
+        parse_x_post_id(value)
+
+
+def test_verifier_commit_cannot_overwrite_a_link_created_during_verification(publication_api):
+    client, factory, verifier = publication_api
+    with factory() as db:
+        db.add(_assessment(assessment_id=SECOND_ASSESSMENT_ID))
+        db.add(
+            CanonicalPost(
+                id=uuid4(),
+                creator_id=CREATOR_ID,
+                platform="x",
+                external_post_id="123456789",
+                published_at=NOW + timedelta(minutes=5),
+                availability="available",
+                topology="original",
+            )
+        )
+        db.commit()
+    original_verify = verifier.verify
+
+    def claim_during_verification(db, **kwargs):
+        # Equivalent to a competing transaction winning after the verifier's
+        # reservation commit has released the initial canonical-post fence.
+        post = db.scalar(select(CanonicalPost).where(CanonicalPost.external_post_id == "123456789"))
+        post.source_assessment_id = SECOND_ASSESSMENT_ID
+        post.version_match_state = "unknown"
+        db.commit()
+        return original_verify(db, **kwargs)
+
+    verifier.verify = claim_during_verification
+    result = client.post(
+        f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/publication",
+        json={"post_url_or_id": "123456789"},
+    )
+    assert result.status_code == 409
+    with factory() as db:
+        post = db.scalar(select(CanonicalPost).where(CanonicalPost.external_post_id == "123456789"))
+        assert post.source_assessment_id == SECOND_ASSESSMENT_ID
+
+
+def test_committed_digest_can_verify_text_without_retaining_raw_text_in_usage_metadata():
+    from bipme.api.publications import _version_match_state
+
+    evidence = PublishedPostEvidence(
+        external_post_id="123",
+        author_id="987654321",
+        text=None,
+        text_fingerprint=_text_fingerprint("Original draft"),
+        published_at=NOW,
+        topology="original",
+        media_present=False,
+    )
+    assert _version_match_state(_assessment(), evidence) == "match"
+
+
+@pytest.mark.parametrize("expires", [None, NOW - timedelta(seconds=1)])
+def test_missing_or_stale_price_fails_before_database_or_provider(expires):
+    class NeverCalled:
+        max_request_attempts = 1
+
+        def published_post(self, **kwargs):
+            raise AssertionError("must not call provider")
+
+    from decimal import Decimal
+
+    from bipme.persistence.usage import XUsageLimits
+
+    verifier = XPublishedPostVerifier(
+        provider=NeverCalled(),
+        cipher=TokenCipher({"v1": Fernet.generate_key().decode()}, "v1"),
+        settings=XPublicationSettings(
+            enabled=True,
+            account_entitlement_verified=True,
+            data_rights_verified=True,
+            allowed_user_id="987654321",
+            estimated_cost=Decimal("0.01"),
+            limits=XUsageLimits(Decimal("1"), Decimal("1"), Decimal("1"), None),
+            pricing_observed_at=NOW - timedelta(days=1),
+            pricing_expires_at=expires,
+            pricing_source="synthetic",
+        ),
+    )
+    with pytest.raises(XPublicationUnavailable, match="external_gate_unverified"):
+        verifier.verify(object(), creator_id=CREATOR_ID, post_id="123", now=NOW)
