@@ -19,6 +19,9 @@ const api = vi.hoisted(() => ({
   saveDataPermissions: vi.fn(),
   generateReport: vi.fn(),
   deleteReports: vi.fn(),
+  createDraftAssessment: vi.fn(),
+  draftAssessment: vi.fn(),
+  historyEvidence: vi.fn(),
   invalidate: null as (() => void) | null,
 }))
 
@@ -52,7 +55,7 @@ describe('App session boundary', () => {
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Analyze a Draft' }))
     expect(
-      await screen.findByText(/Draft analysis context is available/),
+      await screen.findByText('Find a grounded next experiment'),
     ).toBeInTheDocument()
     expect(
       screen.getByText(new RegExp(latestReportFixture.latest_report!.id)),
@@ -65,5 +68,18 @@ describe('App session boundary', () => {
     expect(
       screen.queryByText(new RegExp(latestReportFixture.latest_report!.id)),
     ).not.toBeInTheDocument()
+  })
+
+  it('does not resurrect a report handoff after leaving and returning to draft analysis', async () => {
+    window.history.replaceState(null, '', '/')
+    render(<App />)
+    await screen.findByText('Creator Intelligence Report')
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze a Draft' }))
+    expect(await screen.findByText(/Using report context/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }))
+    await screen.findByText('Creator Intelligence Report')
+    fireEvent.click(screen.getByRole('link', { name: 'Analyze a Draft' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('cannot submit')
+    expect(screen.queryByText(/Using report context/)).not.toBeInTheDocument()
   })
 })

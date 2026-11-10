@@ -58,6 +58,9 @@ type DataPermission = components['schemas']['DataPermissionResponse']
 type DataPermissionUpdate = components['schemas']['DataPermissionUpdate']
 type CreatorReport = components['schemas']['CreatorReportResponse']
 type CreatorReportState = components['schemas']['CreatorReportStateResponse']
+type DraftAnalysisRequest = components['schemas']['DraftAnalysisRequest']
+type DraftAnalysisResponse = components['schemas']['DraftAnalysisResponse']
+type EvidencePage = components['schemas']['EvidencePage']
 
 function numberHeader(response: Response, name: string) {
   const value = response.headers.get(name)
@@ -406,6 +409,54 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
         signal,
       )
       await unwrap(result, true)
+    },
+    async createDraftAssessment(
+      body: DraftAnalysisRequest,
+      idempotencyKey: string,
+      signal?: AbortSignal,
+    ): Promise<DraftAnalysisResponse> {
+      const result = await request(
+        () =>
+          client.POST('/api/v1/creators/me/draft-assessments', {
+            body,
+            params: { header: { 'Idempotency-Key': idempotencyKey } },
+            signal,
+          }),
+        signal,
+      )
+      return (await unwrap(result)) as DraftAnalysisResponse
+    },
+    async draftAssessment(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<DraftAnalysisResponse> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/draft-assessments/{assessment_id}', {
+            params: { path: { assessment_id: assessmentId } },
+            signal,
+          }),
+        signal,
+      )
+      return (await unwrap(result)) as DraftAnalysisResponse
+    },
+    async historyEvidence(
+      params: {
+        post_ids: string[]
+        assessment_id?: string | null
+        as_of?: string | null
+      },
+      signal?: AbortSignal,
+    ): Promise<EvidencePage> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/evidence', {
+            params: { query: params },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
     },
     getCsrfToken() {
       return csrfToken
