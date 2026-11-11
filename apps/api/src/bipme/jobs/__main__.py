@@ -6,6 +6,7 @@ import asyncio
 import signal
 import sys
 
+from bipme.jobs.metric_snapshots import HANDLER_NAME, build_metric_snapshot_handler
 from bipme.jobs.runtime import (
     JobRuntimeSettings,
     configure_windows_event_loop,
@@ -15,7 +16,11 @@ from bipme.jobs.runtime import (
 
 
 async def _run() -> None:
-    runtime = create_runtime(JobRuntimeSettings.from_env())
+    handler = build_metric_snapshot_handler()
+    runtime = create_runtime(
+        JobRuntimeSettings.from_env(),
+        handlers={HANDLER_NAME: handler} if handler is not None else None,
+    )
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     if sys.platform != "win32":

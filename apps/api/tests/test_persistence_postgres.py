@@ -21,7 +21,10 @@ from procrastinate.sync_psycopg_connector import SyncPsycopgConnector
 from sqlalchemy import Engine, create_engine, inspect, make_url, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from sqlalchemy.orm import Session
+from test_outlooks import observation
+from test_outlooks import request as outlook_request
 
+from bipme.api.analysis import _build_api_response
 from bipme.api.app import create_app
 from bipme.api.dependencies import (
     AuthenticatedCreator,
@@ -30,8 +33,12 @@ from bipme.api.dependencies import (
     get_db_session,
     get_embedder,
 )
+from bipme.api.publications import get_x_publication_verifier
+from bipme.api.schemas import AcceptedHypothesis
+from bipme.integrations.x_publication import PublishedPostEvidence
 from bipme.integrations.x_read import XReadPost
 from bipme.intelligence.embeddings import EmbeddingIdentity
+from bipme.intelligence.outlooks import build_distribution_outlook
 from bipme.intelligence.post_profiles import (
     CreatorContextSnapshot,
     PostProfileInput,
@@ -39,6 +46,7 @@ from bipme.intelligence.post_profiles import (
 )
 from bipme.intelligence.retrieval import VectorCandidateQuery
 from bipme.jobs.runtime import (
+    TASK_NAME,
     JobRuntime,
     JobRuntimeSettings,
     RetryableHandlerError,
@@ -49,7 +57,8 @@ from bipme.jobs.runtime import (
     create_runtime,
     run_worker_supervised,
 )
-from bipme.jobs.service import IdempotencyConflict, schedule_job
+from bipme.jobs.service import QUEUE, IdempotencyConflict, schedule_job
+from bipme.persistence.base import EncryptedTokenEnvelope
 from bipme.persistence.contracts import (
     comparable_candidate_from_records,
     pgvector_candidate_statement,
@@ -1270,6 +1279,195 @@ def test_concurrent_history_post_upserts_share_one_canonical_row(
         )
 
 
+def test_monitoring_read_validates_receipts_observations_and_decimal_precision(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    creator = _creator(session)
+    assessment_id = uuid4()
+    post = _post(
+        session,
+        creator.id,
+        published_at=NOW - timedelta(hours=1),
+    )
+    post.source = "x_authorized_publication_verification"
+    outlook = build_distribution_outlook(
+        outlook_request(
+            matches=(str(post.id),),
+            outcomes=(
+                observation(
+                    str(post.id),
+                    10.0,
+                    published_at=post.published_at,
+                    observed_at=post.published_at + timedelta(minutes=5),
+                ),
+            ),
+        )
+    )
+    outlook = outlook.__class__(**{**outlook.__dict__, "assessment_id": str(assessment_id)})
+    hypothesis = AcceptedHypothesis(
+        question="Will the post earn more impressions?",
+        metric="impressions",
+        metric_definition="impressions-v1",
+        unit="impressions",
+        window_kind="age_aligned",
+        window_key="age:15m",
+        expected_direction="higher",
+    )
+    snapshot = _build_api_response(
+        outlook,
+        assessed_at=NOW - timedelta(days=1),
+        accepted_hypothesis=hypothesis,
+    )
+    session.add(
+        DraftAssessment(
+            id=assessment_id,
+            creator_id=creator.id,
+            assessment_key="monitoring-pg-read",
+            assessed_at=NOW - timedelta(days=1),
+            content_fingerprint=outlook.content_fingerprint,
+            outlook_version="distribution-outlook-v1",
+            decision_snapshot=snapshot.model_dump(mode="json"),
+            accepted_hypothesis=hypothesis.model_dump(mode="json"),
+        )
+    )
+    session.flush()
+    post.source_assessment_id = assessment_id
+    session.flush()
+    session.add(
+        CreatorProcessingPermission(
+            creator_id=creator.id,
+            revision=1,
+            source_kind="personal_history",
+            allowed=True,
+            policy_version="synthetic-pg-read",
+            recorded_at=NOW - timedelta(days=1),
+        )
+    )
+    due_at = post.published_at + timedelta(minutes=15)
+    session.add(
+        ScheduledJob(
+            creator_id=creator.id,
+            idempotency_key=f"post-observation:{post.id}:age:15m",
+            handler_name="bipme.jobs.metric_snapshot",
+            arguments={
+                "post_id": str(post.id),
+                "external_post_id": post.external_post_id,
+                "window_key": "age:15m",
+                "window_seconds": 900,
+                "scheduled_at_epoch": int(due_at.timestamp()),
+            },
+            input_digest="a" * 64,
+            scheduled_at=due_at,
+            outcome="succeeded",
+            finished_at=due_at + timedelta(seconds=2),
+        )
+    )
+    session.add(
+        OutcomeObservationRecord(
+            post_id=post.id,
+            creator_id=creator.id,
+            published_at=post.published_at,
+            metric_name="impressions",
+            metric_definition="impressions-v1",
+            metric_unit="impressions",
+            metric_value=Decimal("1234567890.1234567890"),
+            state="observed",
+            window_kind="age_aligned",
+            window_key="age:15m",
+            observed_at=post.published_at + timedelta(minutes=16),
+            idempotency_key=f"x-post-observation:{post.id}:age:15m:impressions",
+            provenance={
+                "source": "x_authorized_post_metrics",
+                "endpoint": "/2/tweets/{id}",
+                "scheduled_at": due_at.isoformat(),
+                "window_key": "age:15m",
+                "observed_age_seconds": 16 * 60,
+            },
+        )
+    )
+    session.commit()
+
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED", "true")
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT", "2026-01-01T00:00:00Z")
+    client = _authorized_client(session, creator.id)
+    before = {
+        "scheduled_jobs": session.scalar(text("SELECT count(*) FROM scheduled_jobs")),
+        "outcome_observations": session.scalar(text("SELECT count(*) FROM outcome_observations")),
+        "api_usage_ledger": session.scalar(text("SELECT count(*) FROM api_usage_ledger")),
+    }
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{assessment_id}/monitoring")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    window = next(item for item in body["windows"] if item["window_key"] == "age:15m")
+    assert window["execution_state"] == "completed"
+    assert window["due_at"] == due_at.isoformat().replace("+00:00", "Z")
+    assert Decimal(window["observations"][0]["value"]) == Decimal("1234567890.1234567890")
+    assert {
+        "scheduled_jobs": session.scalar(text("SELECT count(*) FROM scheduled_jobs")),
+        "outcome_observations": session.scalar(text("SELECT count(*) FROM outcome_observations")),
+        "api_usage_ledger": session.scalar(text("SELECT count(*) FROM api_usage_ledger")),
+    } == before
+
+
+def test_monitoring_runner_identity_is_validated_in_postgres(session: Session) -> None:
+    from bipme.api.monitoring import _execution_state, _runner_status
+
+    creator = _creator(session)
+    app = App(connector=SyncPsycopgConnector())
+
+    @app.task(name=TASK_NAME, queue=QUEUE)
+    def dispatch(receipt_id: str) -> None:
+        del receipt_id
+
+    receipt = schedule_job(
+        session,
+        app,
+        creator_id=creator.id,
+        idempotency_key="monitoring:runner:identity",
+        handler_name="bipme.jobs.metric_snapshot",
+        arguments={"post_id": str(uuid4()), "window_key": "age:5m"},
+        scheduled_at=NOW,
+    )
+    runner_id = receipt.runner_job_id
+    assert runner_id is not None
+    session.commit()
+    assert _runner_status(session, receipt) == "todo"
+
+    def set_runner(column: str, value: object) -> None:
+        session.execute(
+            text(f"UPDATE procrastinate_jobs SET {column} = :value WHERE id = :id"),
+            {"value": value, "id": runner_id},
+        )
+        session.commit()
+        session.refresh(receipt)
+
+    set_runner("queue_name", "wrong-queue")
+    assert _runner_status(session, receipt) == "unknown"
+    set_runner("queue_name", QUEUE)
+
+    set_runner("task_name", "wrong.task")
+    assert _runner_status(session, receipt) == "unknown"
+    set_runner("task_name", TASK_NAME)
+
+    set_runner("args", '{"receipt_id":"wrong"}')
+    assert _runner_status(session, receipt) == "unknown"
+    set_runner("args", f'{{"receipt_id":"{receipt.id}"}}')
+
+    set_runner("args", "[]")
+    assert _runner_status(session, receipt) == "unknown"
+    set_runner("args", f'{{"receipt_id":"{receipt.id}"}}')
+
+    set_runner("status", "aborting")
+    assert _runner_status(session, receipt) == "aborting"
+    assert _execution_state(receipt, "aborting") == "unknown"
+    set_runner("status", "todo")
+
+    session.execute(text("DELETE FROM procrastinate_jobs WHERE id = :id"), {"id": runner_id})
+    session.commit()
+    session.refresh(receipt)
+    assert _runner_status(session, receipt) == "unknown"
+
+
 def test_outcome_snapshots_are_idempotent_and_preserve_zero_missing_and_time(
     session: Session,
 ) -> None:
@@ -2049,3 +2247,557 @@ def test_assessment_reads_are_creator_scoped_and_no_history_abstains(session: Se
     client_b = _authorized_client(session, creator_b.id)
     foreign = client_b.get(f"/api/v1/creators/me/draft-assessments/{payload['assessment_id']}")
     assert foreign.status_code == 404
+
+
+def test_postgres_manual_publication_link_preserves_immutable_assessment_and_owner(
+    session: Session,
+) -> None:
+    creator = _creator(session)
+    identity = CreatorPlatformIdentity(
+        id=uuid4(),
+        creator_id=creator.id,
+        platform="x",
+        external_creator_id="987654321",
+    )
+    session.add(identity)
+    session.flush()
+    session.add(
+        XAccountConnection(
+            id=uuid4(),
+            creator_id=creator.id,
+            creator_identity_id=identity.id,
+            platform="x",
+            state="connected",
+            scopes=["tweet.read", "users.read"],
+            encrypted_access_token=EncryptedTokenEnvelope.prefix + b"synthetic",
+            key_version="v1",
+            access_token_expires_at=NOW + timedelta(hours=1),
+        )
+    )
+    assessment = DraftAssessment(
+        id=uuid4(),
+        creator_id=creator.id,
+        assessment_key="postgres-cod361-assessment",
+        assessed_at=NOW,
+        content_fingerprint="sha256:" + "b" * 64,
+        outlook_version="outlook-v1",
+        decision_snapshot={
+            "_cod361_linking": {
+                "assessed_text_fingerprint": "sha256:" + "c" * 64,
+                "topology": "original",
+                "media_present": False,
+            }
+        },
+        accepted_hypothesis=None,
+    )
+    session.add(assessment)
+    session.commit()
+
+    class FakeVerifier:
+        def verify(self, _db: Session, *, creator_id: UUID, post_id: str, now: datetime):
+            assert creator_id == creator.id
+            assert post_id == "987654321"
+            assert now == NOW + timedelta(minutes=10)
+            return PublishedPostEvidence(
+                external_post_id=post_id,
+                author_id="987654321",
+                text="published copy",
+                published_at=NOW + timedelta(minutes=3),
+                topology="original",
+                media_present=False,
+            )
+
+    app = create_app()
+    app.dependency_overrides[get_authenticated_creator] = lambda: AuthenticatedCreator(creator.id)
+    app.dependency_overrides[get_db_session] = lambda: session
+    app.dependency_overrides[get_current_time] = lambda: NOW + timedelta(minutes=10)
+    app.dependency_overrides[get_x_publication_verifier] = lambda: FakeVerifier()
+    response = TestClient(app).post(
+        f"/api/v1/creators/me/draft-assessments/{assessment.id}/publication",
+        json={"post_url_or_id": "https://x.com/creator/status/987654321"},
+    )
+
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert payload["assessment_id"] == str(assessment.id)
+    assert payload["assessed_at"] == NOW.isoformat().replace("+00:00", "Z")
+    assert payload["external_post_id"] == "987654321"
+    assert payload["version_match_state"] == "mismatch"
+    post = session.scalar(
+        select(CanonicalPost).where(CanonicalPost.external_post_id == "987654321")
+    )
+    assert post is not None
+    assert post.source_assessment_id == assessment.id
+    assert post.creator_id == creator.id
+
+
+def test_postgres_duplicate_publication_links_resolve_to_one_attachment(
+    session: Session,
+    migrated_postgres: tuple[Engine, str],
+) -> None:
+    engine, schema = migrated_postgres
+    creator = _creator(session)
+    identity = CreatorPlatformIdentity(
+        id=uuid4(),
+        creator_id=creator.id,
+        platform="x",
+        external_creator_id="987654322",
+    )
+    session.add(identity)
+    session.flush()
+    session.add(
+        XAccountConnection(
+            id=uuid4(),
+            creator_id=creator.id,
+            creator_identity_id=identity.id,
+            platform="x",
+            state="connected",
+            scopes=["tweet.read", "users.read"],
+            encrypted_access_token=EncryptedTokenEnvelope.prefix + b"synthetic",
+            key_version="v1",
+            access_token_expires_at=NOW + timedelta(hours=1),
+        )
+    )
+    assessment = DraftAssessment(
+        id=uuid4(),
+        creator_id=creator.id,
+        assessment_key="postgres-cod361-concurrent-assessment",
+        assessed_at=NOW,
+        content_fingerprint="sha256:" + "d" * 64,
+        outlook_version="outlook-v1",
+        decision_snapshot={"_cod361_linking": {"topology": "original", "media_present": False}},
+    )
+    session.add(assessment)
+    session.commit()
+
+    class FakeVerifier:
+        authorized_user_id = "987654322"
+
+        def verify(self, _db: Session, *, creator_id: UUID, post_id: str, now: datetime):
+            del creator_id, now
+            return PublishedPostEvidence(
+                external_post_id=post_id,
+                author_id="987654322",
+                text="same synthetic post",
+                published_at=NOW + timedelta(minutes=4),
+            )
+
+    def request_once() -> tuple[int, str]:
+        app = create_app()
+        app.dependency_overrides[get_authenticated_creator] = lambda: AuthenticatedCreator(
+            creator.id
+        )
+        app.dependency_overrides[get_current_time] = lambda: NOW + timedelta(minutes=10)
+        app.dependency_overrides[get_x_publication_verifier] = lambda: FakeVerifier()
+
+        def override_db() -> Iterator[Session]:
+            connection = engine.connect()
+            connection.execute(text(f'SET search_path TO "{schema}", public'))
+            connection.commit()
+            db = Session(bind=connection, expire_on_commit=False)
+            try:
+                yield db
+            finally:
+                db.close()
+                connection.close()
+
+        app.dependency_overrides[get_db_session] = override_db
+        with TestClient(app) as client:
+            response = client.post(
+                f"/api/v1/creators/me/draft-assessments/{assessment.id}/publication",
+                json={"post_url_or_id": "987654323"},
+            )
+            return response.status_code, response.text
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(lambda _index: request_once(), range(2)))
+    assert sorted(status for status, _body in statuses) == [200, 201], statuses
+    assert (
+        session.scalar(
+            select(CanonicalPost).where(
+                CanonicalPost.creator_id == creator.id,
+                CanonicalPost.external_post_id == "987654323",
+            )
+        )
+        is not None
+    )
+    assert (
+        session.scalar(
+            select(CanonicalPost.id).where(
+                CanonicalPost.creator_id == creator.id,
+                CanonicalPost.source_assessment_id == assessment.id,
+            )
+        )
+        is not None
+    )
+
+
+def test_publication_verification_survives_attachment_rollback_without_second_paid_read(session):
+    from cryptography.fernet import Fernet
+
+    from bipme.auth.crypto import TokenCipher
+    from bipme.integrations.x_publication import XPublicationSettings, XPublishedPostVerifier
+
+    creator = _creator(session)
+    connection = _x_connection(session, creator)
+    identity = session.get(CreatorPlatformIdentity, connection.creator_identity_id)
+    cipher = TokenCipher({"v1": Fernet.generate_key().decode()}, "v1")
+    secret = cipher.encrypt("synthetic-token")
+    connection.encrypted_access_token = secret.envelope
+    connection.key_version = secret.key_version
+    session.commit()
+
+    class Provider:
+        max_request_attempts = 1
+        calls = 0
+
+        def published_post(self, *, access_token, post_id):
+            self.calls += 1
+            return PublishedPostEvidence(
+                external_post_id=post_id,
+                author_id=identity.external_creator_id,
+                text="synthetic publication",
+                published_at=NOW - timedelta(minutes=1),
+                media_present=False,
+            )
+
+    provider = Provider()
+    verifier = XPublishedPostVerifier(
+        provider=provider,
+        cipher=cipher,
+        settings=XPublicationSettings(
+            enabled=True,
+            account_entitlement_verified=True,
+            data_rights_verified=True,
+            allowed_user_id=identity.external_creator_id,
+            estimated_cost=Decimal("0.01"),
+            limits=XUsageLimits(Decimal("1"), Decimal("1"), Decimal("1"), None),
+            pricing_observed_at=NOW - timedelta(days=1),
+            pricing_expires_at=NOW + timedelta(days=1),
+            pricing_source="synthetic-verified-price",
+        ),
+    )
+    first = verifier.verify(session, creator_id=creator.id, post_id="999123456", now=NOW)
+    # The caller's later attachment transaction can fail; evidence already committed
+    # with the usage completion survives rollback and is reused by a reconstructed verifier.
+    session.rollback()
+    restarted = XPublishedPostVerifier(
+        provider=provider, cipher=cipher, settings=verifier._settings
+    )
+    second = restarted.verify(session, creator_id=creator.id, post_id="999123456", now=NOW)
+    assert provider.calls == 1
+    assert second.external_post_id == first.external_post_id
+    assert second.verified_at == first.verified_at == NOW
+    assert second.text is None and second.text_fingerprint is not None
+    usage = session.scalar(select(APIUsageLedger).where(APIUsageLedger.creator_id == creator.id))
+    assert (
+        usage is not None
+        and usage.request_metadata["publication_evidence"]["text_fingerprint"]
+        == second.text_fingerprint
+    )
+    assert "synthetic publication" not in str(usage.request_metadata)
+
+
+def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
+    migrated_postgres: tuple[Engine, str], session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A linked post gets durable candidate receipts and exact partial observations."""
+    from types import SimpleNamespace
+
+    from cryptography.fernet import Fernet
+
+    from bipme.auth.config import AuthSettings
+    from bipme.auth.crypto import TokenCipher
+    from bipme.integrations.x_metric_snapshots import (
+        XMetricSnapshot,
+        XMetricSnapshotReader,
+        XMetricSnapshotSettings,
+        XMetricSnapshotUnavailable,
+        XSnapshotMetric,
+    )
+    from bipme.jobs import metric_snapshots
+    from bipme.jobs.metric_snapshots import (
+        _persist_observations,
+        build_metric_snapshot_scheduler,
+        handle_metric_snapshot,
+    )
+
+    creator = _creator(session)
+    external_user_id = str(creator.id.int)[:18]
+    assessment = DraftAssessment(
+        id=uuid4(),
+        creator_id=creator.id,
+        assessment_key="cod363-assessment-001",
+        assessed_at=NOW - timedelta(hours=1),
+        content_fingerprint="sha256:" + "a" * 64,
+        outlook_version="distribution-outlook-v1",
+        decision_snapshot={"version": "distribution-outlook-v1"},
+    )
+    session.add(assessment)
+    session.flush()
+    identity = CreatorPlatformIdentity(
+        id=uuid4(),
+        creator_id=creator.id,
+        platform="x",
+        external_creator_id=external_user_id,
+    )
+    encryption_key = Fernet.generate_key().decode()
+    cipher = TokenCipher({"v1": encryption_key}, "v1")
+    encrypted = cipher.encrypt("synthetic-token")
+    connection = XAccountConnection(
+        id=uuid4(),
+        creator_id=creator.id,
+        creator_identity_id=identity.id,
+        platform="x",
+        state="connected",
+        scopes=["tweet.read", "users.read"],
+        encrypted_access_token=encrypted.envelope,
+        key_version=encrypted.key_version,
+        access_token_expires_at=NOW + timedelta(days=1),
+    )
+    post = CanonicalPost(
+        id=uuid4(),
+        creator_id=creator.id,
+        platform="x",
+        external_post_id="999123456",
+        published_at=NOW,
+        source_assessment_id=assessment.id,
+        availability="available",
+        topology="original",
+        source="x_authorized_publication_verification",
+        provenance={},
+    )
+    session.add_all((identity, connection, post))
+    session.flush()
+
+    class Provider:
+        max_request_attempts = 1
+
+        def post_metrics(self, *, access_token: str, post_id: str) -> XMetricSnapshot:
+            assert access_token == "synthetic-token"
+            return XMetricSnapshot(
+                external_post_id=post_id,
+                author_id=external_user_id,
+                published_at=NOW,
+                observed_at=NOW + timedelta(minutes=5),
+                metrics={
+                    "like_count": XSnapshotMetric(4, "synthetic likes"),
+                    "impression_count": XSnapshotMetric(
+                        None, "synthetic impressions", missing_reason="not_returned"
+                    ),
+                },
+            )
+
+    settings = XMetricSnapshotSettings(
+        enabled=True,
+        account_entitlement_verified=True,
+        data_rights_verified=True,
+        allowed_user_id=external_user_id,
+        estimated_cost=Decimal("0.001"),
+        limits=XUsageLimits(Decimal("1"), Decimal("1"), Decimal("1"), None),
+        per_post_limit=Decimal("0.01"),
+        pricing_observed_at=NOW - timedelta(hours=1),
+        pricing_expires_at=NOW + timedelta(hours=1),
+        pricing_source="synthetic:test",
+    )
+    reader = XMetricSnapshotReader(provider=Provider(), cipher=cipher, settings=settings)
+    # Use the actual producer builder instead of a manually registered dummy task.
+    engine, schema = migrated_postgres
+    database_url = engine.url.update_query_dict({"options": f"-csearch_path={schema},public"})
+    monkeypatch.setenv("BIPME_DATABASE_URL", database_url.render_as_string(hide_password=False))
+    monkeypatch.setattr(
+        AuthSettings,
+        "from_environment",
+        classmethod(
+            lambda _cls: SimpleNamespace(
+                token_encryption_ready=True,
+                token_encryption_keys={"v1": encryption_key},
+                active_token_key_version="v1",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        XMetricSnapshotSettings, "from_environment", classmethod(lambda _cls: settings)
+    )
+    monkeypatch.setattr(metric_snapshots, "HttpXPostMetricsProvider", Provider)
+    scheduler = build_metric_snapshot_scheduler()
+    assert scheduler is not None
+    assert TASK_NAME in scheduler.app.tasks
+    first = scheduler.schedule(
+        session,
+        creator_id=creator.id,
+        post_id=post.id,
+        required_x_connection_id=connection.id,
+        now=NOW,
+    )
+    second = scheduler.schedule(
+        session,
+        creator_id=creator.id,
+        post_id=post.id,
+        required_x_connection_id=connection.id,
+        now=NOW,
+    )
+    assert len(first) == len(second) == 8
+    assert len({job.id for job in first}) == 8
+    assert all(job.runner_job_id is not None for job in first)
+    assert (
+        session.scalar(
+            text("SELECT task_name FROM procrastinate_jobs WHERE id = :runner"),
+            {"runner": first[0].runner_job_id},
+        )
+        == TASK_NAME
+    )
+    scheduler.close()
+
+    evidence = reader.observe(
+        session,
+        creator_id=creator.id,
+        post=post,
+        window_key="age:5m",
+        scheduled_at=NOW + timedelta(minutes=5),
+        now=NOW + timedelta(minutes=5),
+    )
+    _persist_observations(session, first[0], post, "age:5m", NOW + timedelta(minutes=5), evidence)
+    session.commit()
+    rows = session.scalars(
+        select(OutcomeObservationRecord).where(
+            OutcomeObservationRecord.post_id == post.id,
+            OutcomeObservationRecord.window_key == "age:5m",
+        )
+    ).all()
+    assert {row.metric_name: row.state for row in rows} == {
+        "like_count": "observed",
+        "impression_count": "missing",
+    }
+    assert all(row.observed_at == NOW + timedelta(minutes=5) for row in rows)
+
+    tight_reader = XMetricSnapshotReader(
+        provider=Provider(),
+        cipher=cipher,
+        settings=XMetricSnapshotSettings(
+            **{**settings.__dict__, "per_post_limit": Decimal("0.001")}
+        ),
+    )
+    with pytest.raises(XMetricSnapshotUnavailable, match="budget_exhausted"):
+        tight_reader.observe(
+            session,
+            creator_id=creator.id,
+            post=post,
+            window_key="age:15m",
+            scheduled_at=NOW + timedelta(minutes=15),
+            now=NOW + timedelta(minutes=15),
+        )
+
+    class FailingProvider(Provider):
+        def post_metrics(self, *, access_token: str, post_id: str) -> XMetricSnapshot:
+            raise XMetricSnapshotUnavailable(
+                "provider_unavailable", ambiguous=True, request_count=1
+            )
+
+    failing_reader = XMetricSnapshotReader(
+        provider=FailingProvider(), cipher=cipher, settings=settings
+    )
+    with pytest.raises(XMetricSnapshotUnavailable) as failure:
+        failing_reader.observe(
+            session,
+            creator_id=creator.id,
+            post=post,
+            window_key="age:30m",
+            scheduled_at=NOW + timedelta(minutes=30),
+            now=NOW + timedelta(minutes=30),
+        )
+    assert failure.value.ambiguous
+    failed_ledger = session.scalar(
+        select(APIUsageLedger).where(APIUsageLedger.idempotency_key.endswith(":age:30m"))
+    )
+    assert failed_ledger is not None and failed_ledger.completed_at is not None
+    assert failed_ledger.request_metadata["response_received"] is False
+
+    # A competing transaction deletes the canonical post just after the
+    # ledger reservation commits. The provider must not be called.
+    from bipme.integrations import x_metric_snapshots as snapshot_module
+
+    provider_calls = []
+
+    class ForbiddenProvider(Provider):
+        def post_metrics(self, *, access_token: str, post_id: str) -> XMetricSnapshot:
+            provider_calls.append(post_id)
+            raise AssertionError("Deleted post must never reach external X")
+
+    real_reserve = snapshot_module.reserve_x_usage
+
+    def delete_after_reservation(db: Session, **kwargs):
+        reserved = real_reserve(db, **kwargs)
+        with engine.begin() as competing:
+            competing.execute(text(f'SET LOCAL search_path TO "{schema}", public'))
+            competing.execute(
+                text(
+                    "UPDATE canonical_posts SET availability = 'deleted', "
+                    "deleted_at = :deleted_at WHERE id = :id"
+                ),
+                {"id": post.id, "deleted_at": NOW + timedelta(minutes=15)},
+            )
+        return reserved
+
+    blocked_reader = XMetricSnapshotReader(
+        provider=ForbiddenProvider(), cipher=cipher, settings=settings
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(snapshot_module, "reserve_x_usage", delete_after_reservation)
+        with pytest.raises(XMetricSnapshotUnavailable, match="post_unavailable"):
+            blocked_reader.observe(
+                session,
+                creator_id=creator.id,
+                post=post,
+                window_key="age:15m",
+                scheduled_at=NOW + timedelta(minutes=15),
+                now=NOW + timedelta(minutes=15),
+            )
+    assert provider_calls == []
+    with engine.begin() as restoring:
+        restoring.execute(text(f'SET LOCAL search_path TO "{schema}", public'))
+        restoring.execute(
+            text(
+                "UPDATE canonical_posts SET availability = 'available', "
+                "deleted_at = NULL WHERE id = :id"
+            ),
+            {"id": post.id},
+        )
+    session.expire_all()
+    assert session.get(CanonicalPost, post.id).availability == "available"
+
+    connection.state = "revoked"
+    connection.encrypted_access_token = None
+    connection.encrypted_refresh_token = None
+    connection.access_token_expires_at = None
+    connection.revoked_at = NOW
+    session.commit()
+    with pytest.raises(XMetricSnapshotUnavailable, match="connection_unavailable"):
+        reader.observe(
+            session,
+            creator_id=creator.id,
+            post=post,
+            window_key="age:1h",
+            scheduled_at=NOW + timedelta(hours=1),
+            now=NOW + timedelta(minutes=45),
+        )
+
+    # A provider 404 does not authorize an uncommitted post deletion.
+    class MissingReader:
+        def observe(self, *_args, **_kwargs):
+            raise XMetricSnapshotUnavailable("post_not_found")
+
+    receipt = first[0]
+    receipt.arguments = {
+        **receipt.arguments,
+        "scheduled_at_epoch": int(datetime.now(UTC).timestamp()),
+    }
+    session.flush()
+    with pytest.raises(TerminalJobError) as missing:
+        handle_metric_snapshot(session, receipt, MissingReader())
+    assert missing.value.code == "post_not_found"
+    assert missing.value.outcome == "needs_reconciliation"
+    assert post.availability == "available"
+    assert not session.is_modified(post, include_collections=False)
+    session.rollback()
+    assert session.get(CanonicalPost, post.id).availability == "available"

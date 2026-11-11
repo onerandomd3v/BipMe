@@ -66,6 +66,8 @@ def reserve_x_usage(
     limits: XUsageLimits,
     now: datetime,
     import_id: str | None = None,
+    post_id: str | None = None,
+    per_post_limit: Decimal | None = None,
     request_metadata: dict[str, Any] | None = None,
 ) -> UsageReservation:
     """Atomically reserve estimated spend before an X request.
@@ -81,6 +83,8 @@ def reserve_x_usage(
         or estimated_cost <= 0
         or not operation.strip()
         or not idempotency_key.strip()
+        or (post_id is not None and not post_id.strip())
+        or (per_post_limit is not None and (not per_post_limit.is_finite() or per_post_limit <= 0))
     ):
         raise UsageBudgetError("usage_controls_unavailable")
     try:
@@ -109,6 +113,7 @@ def reserve_x_usage(
         daily = Decimal("0")
         operation_total = Decimal("0")
         import_total = Decimal("0")
+        post_total = Decimal("0")
         for row in ledger_rows:
             if row.estimated_cost is None and row.actual_cost is None:
                 raise UsageBudgetError("usage_controls_unavailable")
@@ -127,6 +132,8 @@ def reserve_x_usage(
                 operation_total += charged
             if import_id is not None and row.request_metadata.get("import_id") == import_id:
                 import_total += charged
+            if post_id is not None and row.request_metadata.get("post_id") == post_id:
+                post_total += charged
         if (
             (limits.total_usd is not None and totals + estimated_cost > limits.total_usd)
             or daily + estimated_cost > limits.daily_usd
@@ -139,6 +146,11 @@ def reserve_x_usage(
                 and limits.import_usd is not None
                 and import_total + estimated_cost > limits.import_usd
             )
+            or (
+                post_id is not None
+                and per_post_limit is not None
+                and post_total + estimated_cost > per_post_limit
+            )
         ):
             raise UsageBudgetError("budget_exhausted")
 
@@ -147,6 +159,8 @@ def reserve_x_usage(
         metadata["budget_period"] = "utc_day"
         if import_id is not None:
             metadata["import_id"] = import_id
+        if post_id is not None:
+            metadata["post_id"] = post_id
         reservation_id = uuid4()
         db.add(
             APIUsageLedger(

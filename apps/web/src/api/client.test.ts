@@ -85,6 +85,92 @@ describe('API client', () => {
     await expect(client.deleteReports()).resolves.toBeUndefined()
   })
 
+  it('uses the typed assessment and publication endpoints through MSW', async () => {
+    const client = createApiClient()
+    await client.session()
+    const assessmentId = '00000000-0000-4000-8000-000000000365'
+    await expect(client.draftAssessment(assessmentId)).resolves.toMatchObject({
+      assessment_id: assessmentId,
+      input_fingerprint: 'sha256:cod-365-fixture',
+    })
+    await expect(client.publication(assessmentId)).resolves.toMatchObject({
+      assessment_id: assessmentId,
+      version_match_state: 'unknown',
+    })
+    await expect(client.postmortem(assessmentId)).resolves.toMatchObject({
+      assessment_id: assessmentId,
+      state: 'publication_pending',
+      original_outlook: { assessment_id: assessmentId },
+    })
+    const monitoring = await client.monitoring(assessmentId)
+    expect(monitoring).toMatchObject({
+      assessment_id: assessmentId,
+      state: 'monitoring_partial',
+    })
+    expect(monitoring.windows[0]).toMatchObject({
+      window_key: '1h',
+      execution_state: 'not_scheduled',
+    })
+    await expect(
+      client.linkPublication(assessmentId, {
+        post_url_or_id: '1900000000000000001',
+      }),
+    ).resolves.toMatchObject({ assessment_id: assessmentId })
+  })
+
+  it('normalizes typed assessment and publication GET failures through MSW', async () => {
+    const assessmentId = '00000000-0000-4000-8000-000000000365'
+    server.use(
+      http.get(`*/api/v1/creators/me/draft-assessments/${assessmentId}`, () =>
+        HttpResponse.json(
+          { error: { code: 'assessment_unavailable', message: 'Unavailable' } },
+          { status: 503 },
+        ),
+      ),
+    )
+    const client = createApiClient()
+    await expect(client.draftAssessment(assessmentId)).rejects.toMatchObject({
+      status: 503,
+      code: 'assessment_unavailable',
+    })
+
+    server.resetHandlers()
+    server.use(
+      http.get(
+        `*/api/v1/creators/me/draft-assessments/${assessmentId}/publication`,
+        () => new HttpResponse('{not-json', { status: 200 }),
+      ),
+    )
+    await expect(client.publication(assessmentId)).rejects.toMatchObject({
+      status: 200,
+      code: 'malformed_response',
+    })
+
+    server.resetHandlers()
+    server.use(
+      http.get(
+        `*/api/v1/creators/me/draft-assessments/${assessmentId}/postmortem`,
+        () => new HttpResponse('{not-json', { status: 200 }),
+      ),
+    )
+    await expect(client.postmortem(assessmentId)).rejects.toMatchObject({
+      status: 200,
+      code: 'malformed_response',
+    })
+
+    server.resetHandlers()
+    server.use(
+      http.get(
+        `*/api/v1/creators/me/draft-assessments/${assessmentId}/monitoring`,
+        () => new HttpResponse('{not-json', { status: 200 }),
+      ),
+    )
+    await expect(client.monitoring(assessmentId)).rejects.toMatchObject({
+      status: 200,
+      code: 'malformed_response',
+    })
+  })
+
   it('uses same-origin cookies and returns typed health data', async () => {
     fetchMock.mockResolvedValue(response({ status: 'ok' }))
     const client = createApiClient(fetchMock)
@@ -101,7 +187,7 @@ describe('API client', () => {
       fetchMock.mockResolvedValueOnce(response(historyImport(status)))
       const client = createApiClient(fetchMock)
       await expect(
-        client.historyImportStatus('cod-357-test-import'),
+        client.historyImport('cod-357-test-import'),
       ).resolves.toMatchObject({
         import_id: 'cod-357-test-import',
         status,
@@ -157,10 +243,10 @@ describe('API client', () => {
       .mockResolvedValueOnce(response(historyImport('complete')))
     const client = createApiClient(fetchMock)
     await expect(
-      client.historyImportStatus('cod-357-test-import'),
+      client.historyImport('cod-357-test-import'),
     ).resolves.toMatchObject({ status: 'running' })
     await expect(
-      client.historyImportStatus('cod-357-test-import'),
+      client.historyImport('cod-357-test-import'),
     ).resolves.toMatchObject({ status: 'complete' })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -173,13 +259,11 @@ describe('API client', () => {
     fetchMock.mockResolvedValueOnce(response({ import_id: 'partial' }))
     const client = createApiClient(fetchMock)
     await expect(
-      client.historyImportStatus('cod-357-test-import'),
+      client.historyImport('cod-357-test-import'),
     ).rejects.toMatchObject({
       code: 'malformed_response',
     })
-    await expect(
-      client.historyImportStatus('../outside'),
-    ).rejects.toMatchObject({
+    await expect(client.historyImport('../outside')).rejects.toMatchObject({
       code: 'invalid_import_id',
     })
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -370,4 +454,73 @@ describe('API client', () => {
       ApiRequestError,
     )
   })
+})
+
+it('preserves all COD-359 history and baseline methods alongside draft methods', async () => {
+  const {
+    historyPostsFixture,
+    historyImportFixture,
+    baselineFixture,
+    draftAnalysisFixture,
+  } = await import('./fixtures')
+  const bodies = [
+    historyPostsFixture,
+    historyPostsFixture.items[0],
+    historyPostsFixture,
+    historyImportFixture,
+    historyImport('complete'),
+    baselineFixture,
+    draftAnalysisFixture,
+    draftAnalysisFixture,
+  ]
+  const requests: Request[] = []
+  const fetcher = vi.fn<typeof fetch>(async (input) => {
+    requests.push(input as Request)
+    return response(bodies[requests.length - 1])
+  })
+  const client = createApiClient(fetcher)
+  await expect(client.historyPosts({ limit: 2 })).resolves.toEqual(
+    historyPostsFixture,
+  )
+  await expect(client.historyPost('post-id')).resolves.toEqual(
+    historyPostsFixture.items[0],
+  )
+  await expect(
+    client.historyEvidence({ post_ids: ['post-id'] }),
+  ).resolves.toEqual(historyPostsFixture)
+  await expect(client.historyImports(2)).resolves.toEqual(historyImportFixture)
+  await expect(client.historyImport('import-id')).resolves.toEqual(
+    historyImport('complete'),
+  )
+  await expect(
+    client.baseline({
+      metric: 'replies',
+      definition: 'exact',
+      unit: 'count',
+      window_kind: 'age_aligned',
+      window_key: '24h',
+    }),
+  ).resolves.toEqual(baselineFixture)
+  await expect(
+    client.createDraftAssessment(
+      { text: 'Synthetic draft', topology: 'original', metric_preferences: [] },
+      'retry-key',
+    ),
+  ).resolves.toEqual(draftAnalysisFixture)
+  await expect(
+    client.draftAssessment(draftAnalysisFixture.assessment_id),
+  ).resolves.toEqual(draftAnalysisFixture)
+  expect(requests.map((r) => new URL(r.url).pathname)).toEqual([
+    '/api/v1/creators/me/history/posts',
+    '/api/v1/creators/me/history/posts/post-id',
+    '/api/v1/creators/me/history/evidence',
+    '/api/v1/creators/me/history/imports',
+    '/api/v1/creators/me/history/imports/import-id',
+    '/api/v1/creators/me/baseline',
+    '/api/v1/creators/me/draft-assessments',
+    `/api/v1/creators/me/draft-assessments/${draftAnalysisFixture.assessment_id}`,
+  ])
+  expect(new URL(requests[5].url).searchParams.get('definition')).toBe('exact')
+  expect(requests[6].headers.get('Idempotency-Key')).toBe('retry-key')
+  expect(requests[6].method).toBe('POST')
 })

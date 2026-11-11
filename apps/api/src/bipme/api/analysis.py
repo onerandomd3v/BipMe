@@ -54,7 +54,10 @@ from bipme.intelligence.retrieval import (
     VectorCandidateQuery,
     rank_comparable_candidates,
 )
-from bipme.persistence.contracts import outcome_observations_from_records
+from bipme.persistence.contracts import (
+    latest_observation_records,
+    outcome_observations_from_records,
+)
 from bipme.persistence.models import DraftAssessment as PersistedDraftAssessment
 from bipme.persistence.models import OutcomeObservationRecord
 from bipme.persistence.vector_candidates import PostgresVectorCandidateSource
@@ -134,45 +137,6 @@ def _same_metric_series(record: OutcomeObservationRecord, metric: MetricIdentity
     )
 
 
-def _latest_observation_records(
-    records: list[OutcomeObservationRecord], as_of: datetime
-) -> list[OutcomeObservationRecord]:
-    """Select one latest available snapshot per exact post and metric series."""
-    latest: dict[tuple[str, str, str, str, str, str], OutcomeObservationRecord] = {}
-    future: list[OutcomeObservationRecord] = []
-    for record in records:
-        if record.observed_at > as_of:
-            future.append(record)
-            continue
-        key = (
-            str(record.post_id),
-            record.metric_name,
-            record.metric_definition,
-            record.metric_unit,
-            record.window_kind,
-            record.window_key,
-        )
-        prior = latest.get(key)
-        if prior is None or (record.observed_at, str(record.id)) > (
-            prior.observed_at,
-            str(prior.id),
-        ):
-            latest[key] = record
-    return [latest[key] for key in sorted(latest)] + sorted(
-        future,
-        key=lambda record: (
-            str(record.post_id),
-            record.metric_name,
-            record.metric_definition,
-            record.metric_unit,
-            record.window_kind,
-            record.window_key,
-            record.observed_at,
-            str(record.id),
-        ),
-    )
-
-
 def _baseline_response(
     baseline: CreatorBaseline,
     metric: MetricIdentity,
@@ -236,7 +200,7 @@ def get_creator_baseline(
         window_key=window_key,
     )
     try:
-        records = _latest_observation_records(
+        records = latest_observation_records(
             _validate_series_support(session, creator.creator_id, identity, cutoff), cutoff
         )
         observations = outcome_observations_from_records(
@@ -284,6 +248,14 @@ def _content_fingerprint(request: DraftAnalysisRequest) -> str:
     return f"sha256:{digest}"
 
 
+def _assessed_text_fingerprint(text: str) -> str:
+    """Persist a non-reversible publishable-text fingerprint for COD-361 linking."""
+    digest = hashlib.sha256(
+        b"bipme-published-text-v1\0" + _canonical_text(text).encode("utf-8")
+    ).hexdigest()
+    return f"sha256:{digest}"
+
+
 def _canonical_text(value: str) -> str:
     """Normalize equivalent Unicode and newline encodings without trimming content."""
     return unicodedata.normalize("NFC", value.replace("\r\n", "\n").replace("\r", "\n"))
@@ -291,7 +263,9 @@ def _canonical_text(value: str) -> str:
 
 def _response_from_snapshot(snapshot: dict[str, object]) -> DraftAnalysisResponse:
     try:
-        return DraftAnalysisResponse.model_validate(snapshot)
+        public_snapshot = dict(snapshot)
+        public_snapshot.pop("_cod361_linking", None)
+        return DraftAnalysisResponse.model_validate(public_snapshot)
     except Exception as exc:
         raise ApiError(
             503, "assessment_snapshot_invalid", "The saved assessment is unavailable."
@@ -501,7 +475,7 @@ def analyze_draft(
             if match_ids
             else []
         )
-        records = _latest_observation_records(
+        records = latest_observation_records(
             [record for record in records if _metric_matches(record, request)], assessed_at
         )
         outcomes = outcome_observations_from_records(records, weights_by_post_id=weights)
@@ -531,7 +505,17 @@ def analyze_draft(
             assessed_at=assessed_at,
             content_fingerprint=fingerprint,
             outlook_version=OUTLOOK_ALGORITHM_VERSION,
-            decision_snapshot=response.model_dump(mode="json"),
+            decision_snapshot={
+                **response.model_dump(mode="json"),
+                "_cod361_linking": {
+                    "assessed_text_fingerprint": _assessed_text_fingerprint(request.text),
+                    "thread_role": request.thread_role,
+                    "topology": request.topology,
+                    "media_present": (
+                        None if request.media_types is None else bool(request.media_types)
+                    ),
+                },
+            },
             accepted_hypothesis=(
                 request.accepted_hypothesis.model_dump(mode="json")
                 if request.accepted_hypothesis

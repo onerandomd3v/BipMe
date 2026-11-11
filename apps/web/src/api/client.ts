@@ -58,8 +58,40 @@ type DataPermission = components['schemas']['DataPermissionResponse']
 type DataPermissionUpdate = components['schemas']['DataPermissionUpdate']
 type CreatorReport = components['schemas']['CreatorReportResponse']
 type CreatorReportState = components['schemas']['CreatorReportStateResponse']
-type CreatorHistoryImport = components['schemas']['HistoryImportResponse']
+type DraftAnalysisRequest = components['schemas']['DraftAnalysisRequest']
+type DraftAnalysisResponse = components['schemas']['DraftAnalysisResponse']
+type EvidencePage = components['schemas']['EvidencePage']
+type PostEvidence = components['schemas']['PostEvidence']
+type ImportPage = components['schemas']['ImportPage']
+type HistoryImportResponse = components['schemas']['HistoryImportResponse']
+type CreatorBaseline = components['schemas']['CreatorBaselineResponse']
+type PublicationLink = components['schemas']['PublicationLinkResponse']
+type PostmortemRead = components['schemas']['PostmortemReadResponse']
+type MonitoringRead = components['schemas']['MonitoringReadResponse']
+type CreatorHistoryImport = HistoryImportResponse
 type CreatorHistoryImportRequest = components['schemas']['HistoryImportRequest']
+
+export type HistoryPostsQuery = {
+  limit?: number
+  cursor?: string | null
+  as_of?: string | null
+  assessment_id?: string | null
+}
+
+export type HistoryEvidenceQuery = {
+  post_ids: string[]
+  as_of?: string | null
+  assessment_id?: string | null
+}
+
+export type BaselineQuery = {
+  metric: string
+  definition: string
+  unit: string
+  window_kind: 'mature_cumulative' | 'age_aligned'
+  window_key: string
+  as_of?: string | null
+}
 
 function numberHeader(response: Response, name: string) {
   const value = response.headers.get(name)
@@ -461,35 +493,6 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
       }
       return data
     },
-    async historyImportStatus(
-      importId: string,
-      signal?: AbortSignal,
-    ): Promise<CreatorHistoryImport> {
-      if (!/^[A-Za-z0-9._:-]{1,100}$/.test(importId)) {
-        throw new ApiRequestError({
-          code: 'invalid_import_id',
-          message: 'The history import identifier was invalid.',
-          status: null,
-        })
-      }
-      const result = await request(
-        () =>
-          client.GET('/api/v1/creators/me/history/imports/{import_id}', {
-            params: { path: { import_id: importId } },
-            signal,
-          }),
-        signal,
-      )
-      const data = await unwrap(result)
-      if (!isCreatorHistoryImport(data)) {
-        throw new ApiRequestError({
-          code: 'malformed_response',
-          message: 'The history import status response was invalid.',
-          status: result.response.status,
-        })
-      }
-      return data
-    },
     async generateReport(
       body: components['schemas']['CreatorReportRequest'],
       idempotencyKey: string,
@@ -526,6 +529,193 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
         signal,
       )
       await unwrap(result, true)
+    },
+    async createDraftAssessment(
+      body: DraftAnalysisRequest,
+      idempotencyKey: string,
+      signal?: AbortSignal,
+    ): Promise<DraftAnalysisResponse> {
+      const result = await request(
+        () =>
+          client.POST('/api/v1/creators/me/draft-assessments', {
+            body,
+            params: { header: { 'Idempotency-Key': idempotencyKey } },
+            signal,
+          }),
+        signal,
+      )
+      return (await unwrap(result)) as DraftAnalysisResponse
+    },
+    async draftAssessment(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<DraftAnalysisResponse> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/draft-assessments/{assessment_id}', {
+            params: { path: { assessment_id: assessmentId } },
+            signal,
+          }),
+        signal,
+      )
+      return (await unwrap(result)) as DraftAnalysisResponse
+    },
+    async postmortem(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<PostmortemRead> {
+      const result = await request(
+        () =>
+          client.GET(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/postmortem',
+            { params: { path: { assessment_id: assessmentId } }, signal },
+          ),
+        signal,
+      )
+      return (await unwrap(result)) as PostmortemRead
+    },
+    async monitoring(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<MonitoringRead> {
+      const result = await request(
+        () =>
+          client.GET(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/monitoring',
+            { params: { path: { assessment_id: assessmentId } }, signal },
+          ),
+        signal,
+      )
+      return (await unwrap(result)) as MonitoringRead
+    },
+    async publication(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<PublicationLink> {
+      const result = await request(
+        () =>
+          client.GET(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/publication',
+            { params: { path: { assessment_id: assessmentId } }, signal },
+          ),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async linkPublication(
+      assessmentId: string,
+      body: components['schemas']['PublicationLinkRequest'],
+      signal?: AbortSignal,
+    ): Promise<PublicationLink> {
+      const result = await request(
+        () =>
+          client.POST(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/publication',
+            { params: { path: { assessment_id: assessmentId } }, body, signal },
+          ),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async historyPosts(
+      params?: HistoryPostsQuery,
+      signal?: AbortSignal,
+    ): Promise<EvidencePage> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/posts', {
+            params: params ? { query: params } : undefined,
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async historyPost(
+      postId: string,
+      params?: Omit<HistoryPostsQuery, 'limit' | 'cursor'>,
+      signal?: AbortSignal,
+    ): Promise<PostEvidence> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/posts/{post_id}', {
+            params: { path: { post_id: postId }, query: params },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async historyEvidence(
+      params: HistoryEvidenceQuery,
+      signal?: AbortSignal,
+    ): Promise<EvidencePage> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/evidence', {
+            params: { query: params },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async historyImports(
+      limit?: number,
+      signal?: AbortSignal,
+    ): Promise<ImportPage> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/imports', {
+            params: limit === undefined ? undefined : { query: { limit } },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async historyImport(
+      importId: string,
+      signal?: AbortSignal,
+    ): Promise<CreatorHistoryImport> {
+      if (!/^[A-Za-z0-9._:-]{1,100}$/.test(importId)) {
+        throw new ApiRequestError({
+          code: 'invalid_import_id',
+          message: 'The history import identifier was invalid.',
+          status: null,
+        })
+      }
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/history/imports/{import_id}', {
+            params: { path: { import_id: importId } },
+            signal,
+          }),
+        signal,
+      )
+      const data = await unwrap(result)
+      if (!isCreatorHistoryImport(data)) {
+        throw new ApiRequestError({
+          code: 'malformed_response',
+          message: 'The history import status response was invalid.',
+          status: result.response.status,
+        })
+      }
+      return data
+    },
+    async baseline(
+      params: BaselineQuery,
+      signal?: AbortSignal,
+    ): Promise<CreatorBaseline> {
+      const result = await request(
+        () =>
+          client.GET('/api/v1/creators/me/baseline', {
+            params: { query: params },
+            signal,
+          }),
+        signal,
+      )
+      return unwrap(result)
     },
     getCsrfToken() {
       return csrfToken

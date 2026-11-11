@@ -259,6 +259,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/creators/me/draft-assessments/{assessment_id}/monitoring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read creator-scoped monitoring receipts and observations
+         * @description Reads only the authenticated creator's persisted assessment, publication, durable monitoring receipts and outcome observations. This GET never calls X, enqueues work, reserves usage or mutates persisted state.
+         */
+        get: operations["read_monitoring_api_v1_creators_me_draft_assessments__assessment_id__monitoring_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creators/me/draft-assessments/{assessment_id}/postmortem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a creator-authenticated evidence-aware publication postmortem
+         * @description Evaluates only the immutable saved Outlook, the creator's linked publication, and persisted eligible metric observations. This GET makes no provider calls, schedules no work and performs no writes. A missing publication is reported as publication_pending; missing observations and historical evidence are explicit states in the response.
+         */
+        get: operations["read_postmortem_api_v1_creators_me_draft_assessments__assessment_id__postmortem_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creators/me/draft-assessments/{assessment_id}/publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Publication
+         * @description Read the historical attachment without a provider request or active X grant.
+         */
+        get: operations["get_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_get"];
+        put?: never;
+        /**
+         * Attach a manually published X post to an immutable Outlook
+         * @description Verify and attach one creator-owned publication without changing the Outlook.
+         */
+        post: operations["link_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creators/me/history/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Batch Posts */
+        get: operations["batch_posts_api_v1_creators_me_history_evidence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creators/me/history/imports": {
         parameters: {
             query?: never;
@@ -266,7 +347,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Imports */
+        get: operations["list_imports_api_v1_creators_me_history_imports_get"];
         put?: never;
         /** Start History Import */
         post: operations["start_history_import_api_v1_creators_me_history_imports_post"];
@@ -285,6 +367,40 @@ export interface paths {
         };
         /** Get History Import */
         get: operations["get_history_import_api_v1_creators_me_history_imports__import_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creators/me/history/posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Posts */
+        get: operations["list_posts_api_v1_creators_me_history_posts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creators/me/history/posts/{post_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Post */
+        get: operations["get_post_api_v1_creators_me_history_posts__post_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -829,6 +945,20 @@ export interface components {
         ErrorResponse: {
             error: components["schemas"]["ErrorDetail"];
         };
+        /** EvidencePage */
+        EvidencePage: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Assessment Id */
+            assessment_id: string | null;
+            /** Items */
+            items: components["schemas"]["PostEvidence"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -889,6 +1019,43 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ImportPage */
+        ImportPage: {
+            /** Items */
+            items: components["schemas"]["ImportStatus"][];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** ImportStatus */
+        ImportStatus: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Import Id */
+            import_id: string;
+            /** Imported Posts */
+            imported_posts: number;
+            /** Next Page Available */
+            next_page_available: boolean;
+            /** Pages Read */
+            pages_read: number;
+            /** Requested Posts */
+            requested_posts: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "authorized_x_api" | "archive" | "unknown";
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "complete" | "partial" | "unavailable";
+        };
         /** MetricEvidenceResponse */
         MetricEvidenceResponse: {
             /** Coverage */
@@ -936,6 +1103,52 @@ export interface components {
              */
             window_kind: "mature_cumulative" | "age_aligned";
         };
+        /** MetricObservationEvidence */
+        MetricObservationEvidence: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Metric Definition */
+            metric_definition: string;
+            /** Metric Name */
+            metric_name: string;
+            /** Metric Unit */
+            metric_unit: string;
+            /** Metric Value */
+            metric_value: string | null;
+            /** Observed Age Seconds */
+            observed_age_seconds: number;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            provenance: components["schemas"]["ObservationProvenance"];
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "authorized_x_api" | "archive" | "unknown";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "observed" | "missing" | "invalid";
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "mature_cumulative" | "age_aligned";
+        };
         /**
          * MetricPreference
          * @description Exact outcome series requested for a draft analysis.
@@ -955,10 +1168,454 @@ export interface components {
              */
             window_kind: "mature_cumulative" | "age_aligned";
         };
+        /** MonitoringObservationResponse */
+        MonitoringObservationResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Metric */
+            metric: string;
+            /** Metric Definition */
+            metric_definition: string;
+            /** Missing Reason */
+            missing_reason?: ("not_returned" | "invalid_value") | null;
+            /** Observed Age Seconds */
+            observed_age_seconds: number;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "authorized_x_api" | "unknown";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "observed" | "missing" | "invalid";
+            /** Unit */
+            unit: string;
+            /** Value */
+            value: string | null;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "mature_cumulative" | "age_aligned";
+        };
+        /** MonitoringPublicationResponse */
+        MonitoringPublicationResponse: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "available" | "unavailable" | "deleted";
+            /**
+             * Canonical Post Id
+             * Format: uuid
+             */
+            canonical_post_id: string;
+            /** External Post Id */
+            external_post_id: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Version Match State
+             * @enum {string}
+             */
+            version_match_state: "match" | "mismatch" | "unknown";
+        };
+        /** MonitoringReadResponse */
+        MonitoringReadResponse: {
+            /**
+             * Assessed At
+             * Format: date-time
+             */
+            assessed_at: string;
+            /**
+             * Assessment Id
+             * Format: uuid
+             */
+            assessment_id: string;
+            /**
+             * Limitations
+             * @default []
+             */
+            limitations: string[];
+            original_outlook: components["schemas"]["DraftAnalysisResponse"];
+            published_post: components["schemas"]["MonitoringPublicationResponse"] | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "publication_pending" | "publication_unavailable" | "monitoring_unavailable" | "monitoring_pending" | "monitoring_running" | "monitoring_partial" | "monitoring_complete" | "needs_reconciliation";
+            /** Windows */
+            windows: components["schemas"]["MonitoringWindowResponse"][];
+        };
+        /** MonitoringWindowResponse */
+        MonitoringWindowResponse: {
+            /**
+             * Due At
+             * Format: date-time
+             */
+            due_at: string;
+            /**
+             * Execution State
+             * @enum {string}
+             */
+            execution_state: "not_scheduled" | "pending" | "running" | "completed" | "skipped" | "missed" | "cancelled" | "unavailable" | "rate_limited" | "budget_blocked" | "needs_reconciliation" | "failed" | "unknown";
+            /** Failure Code */
+            failure_code: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Measurement State
+             * @enum {string}
+             */
+            measurement_state: "not_available" | "partial" | "available";
+            /** Observations */
+            observations: components["schemas"]["MonitoringObservationResponse"][];
+            /** Receipt Id */
+            receipt_id: string | null;
+            /** Scheduled At */
+            scheduled_at: string | null;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @default age_aligned
+             * @constant
+             */
+            window_kind: "age_aligned";
+        };
+        /** ObservationProvenance */
+        ObservationProvenance: {
+            /** Missing Reason */
+            missing_reason?: ("not_returned" | "invalid_value" | "unavailable") | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "authorized_x_api" | "archive" | "unknown";
+        };
+        /** PostEvidence */
+        PostEvidence: {
+            /**
+             * Disclosure
+             * @enum {string}
+             */
+            disclosure: "permitted" | "permission_required" | "source_policy_blocked" | "not_known_at_cutoff";
+            /**
+             * Freshness
+             * @enum {string}
+             */
+            freshness: "recorded" | "unknown" | "not_known_at_cutoff";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Observations */
+            observations: components["schemas"]["MetricObservationEvidence"][];
+            /** Observations Truncated */
+            observations_truncated: boolean;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "authorized_x_api" | "archive" | "unknown";
+            /** Source Observed At */
+            source_observed_at: string | null;
+            /** Source Url */
+            source_url: string | null;
+            /** Text */
+            text: string | null;
+        };
+        /** PostmortemEvaluationResponse */
+        PostmortemEvaluationResponse: {
+            /**
+             * Assessment Id
+             * Format: uuid
+             */
+            assessment_id: string;
+            hypothesis_evaluation: components["schemas"]["PostmortemHypothesisResponse"] | null;
+            /** Limitations */
+            limitations: string[];
+            /** Metric Comparisons */
+            metric_comparisons: components["schemas"]["PostmortemMetricResponse"][];
+            /** Observed Outcomes */
+            observed_outcomes: components["schemas"]["PostmortemObservationResponse"][];
+            original_outlook: components["schemas"]["DraftAnalysisResponse"];
+            /**
+             * Published Post Id
+             * Format: uuid
+             */
+            published_post_id: string;
+            /** Version */
+            version: string;
+            /**
+             * Version State
+             * @enum {string}
+             */
+            version_state: "verified" | "unverified";
+        };
+        /** PostmortemHypothesisResponse */
+        PostmortemHypothesisResponse: {
+            /** Comparison Post Ids */
+            comparison_post_ids: string[];
+            /** Effective Sample Size */
+            effective_sample_size: number;
+            /** Historical Median */
+            historical_median: number | null;
+            hypothesis: components["schemas"]["AcceptedHypothesis"];
+            /** Limitations */
+            limitations: string[];
+            /** Matched Sample Count */
+            matched_sample_count: number;
+            /** Metric */
+            metric: string;
+            /** Metric Definition */
+            metric_definition: string;
+            /** Observed Value */
+            observed_value: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "supported" | "contradicted" | "inconclusive";
+            /** Unit */
+            unit: string;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "mature_cumulative" | "age_aligned";
+        };
+        /** PostmortemMetricResponse */
+        PostmortemMetricResponse: {
+            /** Comparison Observations */
+            comparison_observations: components["schemas"]["PostmortemObservationResponse"][];
+            /** Comparison Post Ids */
+            comparison_post_ids: string[];
+            /** Deviation From Median */
+            deviation_from_median: number | null;
+            /** Effective Sample Size */
+            effective_sample_size: number;
+            /** Historical Median */
+            historical_median: number | null;
+            /** Limitations */
+            limitations: string[];
+            /** Matched Sample Count */
+            matched_sample_count: number;
+            /** Metric */
+            metric: string;
+            /** Metric Definition */
+            metric_definition: string;
+            /** Observation Age Seconds */
+            observation_age_seconds: number | null;
+            /** Observed At */
+            observed_at: string | null;
+            /** Observed Value */
+            observed_value: number | null;
+            reference_range: components["schemas"]["PostmortemRangeResponse"] | null;
+            /** Relative Percentile */
+            relative_percentile: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "scored" | "unavailable" | "version_unverified";
+            /** Unit */
+            unit: string;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "mature_cumulative" | "age_aligned";
+            /** Within Reference Range */
+            within_reference_range: boolean | null;
+        };
+        /** PostmortemObservationResponse */
+        PostmortemObservationResponse: {
+            /** Metric */
+            metric: string;
+            /** Metric Definition */
+            metric_definition: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /**
+             * Post Id
+             * Format: uuid
+             */
+            post_id: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "observed" | "missing";
+            /** Unit */
+            unit: string;
+            /** Value */
+            value: number | null;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "mature_cumulative" | "age_aligned";
+        };
+        /** PostmortemPublicationResponse */
+        PostmortemPublicationResponse: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "available" | "unavailable" | "deleted";
+            /**
+             * Canonical Post Id
+             * Format: uuid
+             */
+            canonical_post_id: string;
+            /** External Post Id */
+            external_post_id: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Version Match State
+             * @enum {string}
+             */
+            version_match_state: "match" | "mismatch" | "unknown";
+        };
+        /** PostmortemRangeResponse */
+        PostmortemRangeResponse: {
+            /** Comparable Post Ids */
+            comparable_post_ids: string[];
+            /** Effective Sample Size */
+            effective_sample_size: number;
+            /** Kind */
+            kind: string;
+            /** Lower P25 */
+            lower_p25: number;
+            /** Median P50 */
+            median_p50: number;
+            /** Upper P75 */
+            upper_p75: number;
+        };
+        /** PostmortemReadResponse */
+        PostmortemReadResponse: {
+            /**
+             * Assessed At
+             * Format: date-time
+             */
+            assessed_at: string;
+            /**
+             * Assessment Id
+             * Format: uuid
+             */
+            assessment_id: string;
+            /**
+             * Limitations
+             * @default []
+             */
+            limitations: string[];
+            original_outlook: components["schemas"]["DraftAnalysisResponse"];
+            postmortem: components["schemas"]["PostmortemEvaluationResponse"] | null;
+            published_post: components["schemas"]["PostmortemPublicationResponse"] | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "publication_pending" | "publication_unavailable" | "evidence_unavailable" | "monitoring_pending" | "insufficient_evidence" | "version_unverified" | "evaluated";
+        };
         /** PrivateLoginRequest */
         PrivateLoginRequest: {
             /** Secret */
             secret: string;
+        };
+        /**
+         * PublicationLinkRequest
+         * @description A canonical X URL or numeric post ID; provider timestamps are authoritative.
+         */
+        PublicationLinkRequest: {
+            /** Post Url Or Id */
+            post_url_or_id: string;
+        };
+        /** PublicationLinkResponse */
+        PublicationLinkResponse: {
+            accepted_hypothesis: components["schemas"]["AcceptedHypothesis"] | null;
+            /**
+             * Assessed At
+             * Format: date-time
+             */
+            assessed_at: string;
+            /** Assessed Fingerprint */
+            assessed_fingerprint: string;
+            /**
+             * Assessment Id
+             * Format: uuid
+             */
+            assessment_id: string;
+            /**
+             * Canonical Post Id
+             * Format: uuid
+             */
+            canonical_post_id: string;
+            /** External Post Id */
+            external_post_id: string;
+            /**
+             * Linkage State
+             * @default linked
+             * @constant
+             */
+            linkage_state: "linked";
+            /** Linked At */
+            linked_at?: string | null;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Version Match State
+             * @enum {string}
+             */
+            version_match_state: "match" | "mismatch" | "unknown";
         };
         /** RelevanceComponentsResponse */
         RelevanceComponentsResponse: {
@@ -1809,6 +2466,444 @@ export interface operations {
             };
         };
     };
+    read_monitoring_api_v1_creators_me_draft_assessments__assessment_id__monitoring_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitoringReadResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    read_postmortem_api_v1_creators_me_draft_assessments__assessment_id__postmortem_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostmortemReadResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationLinkResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    link_publication_api_v1_creators_me_draft_assessments__assessment_id__publication_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicationLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationLinkResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationLinkResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    batch_posts_api_v1_creators_me_history_evidence_get: {
+        parameters: {
+            query: {
+                post_ids: string[];
+                as_of?: string | null;
+                assessment_id?: string | null;
+            };
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidencePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_imports_api_v1_creators_me_history_imports_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     start_history_import_api_v1_creators_me_history_imports_post: {
         parameters: {
             query?: never;
@@ -1873,6 +2968,150 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_posts_api_v1_creators_me_history_posts_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                as_of?: string | null;
+                assessment_id?: string | null;
+            };
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidencePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_post_api_v1_creators_me_history_posts__post_id__get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+                assessment_id?: string | null;
+            };
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostEvidence"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

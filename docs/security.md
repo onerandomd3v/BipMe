@@ -17,13 +17,13 @@
 - Resolve the authenticated X account ID server-side and compare with the explicitly configured allowlist. Reject any other identity even if OAuth succeeded.
 - Maintain an application session **server side** and send an HttpOnly, Secure (HTTPS), appropriately SameSite-scoped session cookie. Protect mutating routes against CSRF.
 - Encrypt X access and refresh tokens at rest, avoid printing tokens in logs/traces, rotate keys where feasible and handle revocation/disconnect.
-- Store all secrets outside Git; `.env.example` contains placeholders or local-only database examples. Never check in a real `.env`.
+- Store all secrets outside Git; `apps/api/.env.example` and `infra/brev-embedding/.env.example` contain placeholders only. Never check in a real `.env`. The web app has no environment example because it currently consumes no app-specific configuration.
 
 ### COD-346 implementation boundary
 
 - `POST /api/auth/private/session` verifies a server-provisioned high-entropy `BIPME_PRIVATE_LOGIN_SECRET` for the single configured `BIPME_CREATOR_ID`. This private BipMe identity path supports archive-only use without X OAuth and does not create public signup or creator records. The browser receives only a random session cookie; the database stores its SHA-256 digest, creator, method, expiry and revocation time.
 - Session cookies are HttpOnly and SameSite=Lax, use `__Host-` naming with Secure/Path=/ in production, and fail closed if production cookie security or creator configuration is absent. Set `BIPME_AUTH_COOKIE_SECURE=false` only for local loopback HTTP development. Session lifetime is bounded by configuration. `GET /api/auth/session` returns a session-derived CSRF token, and unsafe operations require it in `X-CSRF-Token`; logout revokes the database session and clears its cookie.
-- X authorization is opt-in and requires `BIPME_X_OAUTH_ENABLED=true`, a confidential client ID/secret, exact callback URI, app origin, immutable numeric account allowlist, and token-encryption key ring. `.env.example` keeps OAuth disabled. The authorization start stores hashed state/browser nonce and encrypted PKCE verifier in `oauth_authorization_transactions`; state is browser-bound, expires after ten minutes, and is marked consumed before the callback processes consent or exchanges a code. The callback validates the exact callback URI, requires the read-only scope set, resolves the account through the provider and rejects an ID outside the immutable allowlist.
+- X authorization is opt-in and requires `BIPME_X_OAUTH_ENABLED=true`, a confidential client ID/secret, exact callback URI, app origin, immutable numeric account allowlist, and token-encryption key ring. `apps/api/.env.example` keeps OAuth disabled. The authorization start stores hashed state/browser nonce and encrypted PKCE verifier in `oauth_authorization_transactions`; state is browser-bound, expires after ten minutes, and is marked consumed before the callback processes consent or exchanges a code. The callback validates the exact callback URI, requires the read-only scope set, resolves the account through the provider and rejects an ID outside the immutable allowlist.
 - X access/refresh tokens are encrypted using the `cryptography` Fernet implementation, tagged with the existing `BIPME-ENC` marker and a server-only key version. `BIPME_TOKEN_ENCRYPTION_KEYS` is a JSON map of key version to Fernet key; retain old keys while encrypted rows remain, set the new active version, and call the internal rewrap operation before retiring old keys. Refresh rotates encrypted values; disconnect attempts provider revocation and always clears local ciphertext.
 - All X network operations sit behind the replaceable `XOAuthProvider` and are mocked in CI. Do not enable OAuth or use real X credentials until COD-344 verifies account-specific configuration, numeric user ID, permissions and applicable rights. The code implements the contract; it does not establish those external gates.
 
@@ -67,6 +67,11 @@ Do not run a prelaunch multi-model benchmark. Require only focused smoke/unit te
 - Keep audit trails with evidence IDs, prompt/model/schema versions and policy decisions so explanations can be reproduced and deleted when source rights change.
 
 The pure COD-380 synthesis service is disabled by default and is not yet connected to a report API or persistence layer. Its built-in daily cost reservation is process-local and resets when the process restarts; use a shared durable budget implementation before enabling it across production workers. Current tests use synthetic fixtures and mocked provider responses only. They do not verify real X processing rights, provider-transfer rights, Groq account access, quotas, retention terms or billing configuration.
+### COD-421 remote embedding boundary
+
+Remote inference is opt-in through `BIPME_EMBEDDING_PROVIDER=remote`; the default remains local CPU inference. The remote adapter accepts only the pinned E5 model/revision/vector identity, uses HTTPS with a bearer secret, bounds request and response body sizes, batch size, concurrency and timeouts, and maps provider failures to a generic API 503. It does not automatically fall back to local inference: operators may explicitly switch the configured provider to `local` if that is an approved operating decision. The inference service must remain loopback-bound on the Brev VM behind a private, access-controlled TLS overlay. Never use a Brev browser tunnel or public Funnel as unattended backend transport, expose Jupyter, or place the token in Git, request logs, exception text or issue comments.
+
+The COD-421 Brev checkpoint in Linear is owner-reported: an L4 instance was provisioned at a displayed USD 1.49/hour with USD 68.63 credits, but credit expiry, storage cost and enforceable billing/stop controls were not verified. A stopped instance and active private connection were also not independently verified in this workspace. Do not start GPU compute or assume these displayed figures remain current without the owner rechecking the console. The repository's inference tests and mocked HTTP tests use synthetic strings only; they do not authorize processing real X-derived text. Existing COD-344 source-processing and any applicable third-party transfer/processor permissions remain gates before real creator text can reach either the local or remote embedding model.
 
 ## Data handling
 
@@ -94,6 +99,7 @@ The pure COD-380 synthesis service is disabled by default and is not yet connect
 - The baseline, draft-assessment and assessment-read routes use a `creator/me` boundary and accept no creator ID from the client. Every persistence query scopes by the server-verified creator UUID, including assessment lookup and historical post/outcome retrieval.
 - COD-346's session dependency accepts only a live, unexpired, unrevoked server-side session for the configured creator; it does not accept a client-supplied creator ID or an environment-selected identity as an authorization shortcut. Missing production configuration returns `503 authentication_not_configured`. OAuth remains optional for private archive-only sessions.
 - Analysis persists a versioned response snapshot and fingerprint but not the draft's raw text. The fingerprint is deterministic and binds canonicalized text plus descriptive/metric-selection inputs. The optional accepted hypothesis is creator-supplied at assessment creation; the database enforces snapshot immutability.
+- COD-361 manual publication linking accepts only strict HTTPS X status references and obtains the post author, publication time and comparison evidence from a read-only official-provider adapter. It rechecks the connected creator-owned identity while holding the connection lock, reserves a bounded retry cost before the call, and fails closed for missing entitlement, data-rights approval, revoked/expired access, missing read scopes or uncertain usage controls. The immutable assessment ID/time/fingerprint/hypothesis are projected into the link response; the published version is `match`, `mismatch` or `unknown`. A changed post is never silently treated as the assessed draft, and only `match` is eligible for downstream forecast evaluation.
 - Embedding or database failures map to safe structured errors. Request bodies, stored content, access tokens and internal exception text are not returned in errors. Metric outcomes are read only after retrieval and never influence candidate selection/ranking.
 
 ## COD-344 — X access and feasibility gate (research checked 7 Nov 2026)
@@ -186,9 +192,32 @@ COD-344 may be marked **Done** after the owner has confirmed the relevant develo
 - **Before monitoring:** idempotent jobs, missing-window handling, no fabricated observation timestamps, explicit cost model.
 - **Before any external deployment:** HTTPS, secure secret management, least privilege, access control, and relevant X requirements.
 
+COD-363 implements the monitoring gate with the existing COD-347 ledger and COD-362 durable
+worker: every candidate window is receipt-idempotent, every provider call is preceded by a
+creator-scoped reservation, and the reservation estimate covers the adapter's bounded retry
+envelope. A separate per-post ceiling is checked under the same creator lock as global/daily/
+operation ceilings. The producer constructs the registered Procrastinate dispatcher
+using the same runtime factory as the worker. After the reservation commits, the reader
+locks and revalidates the current canonical post (owner, platform, availability,
+assessment attachment and original identity) as well as the X connection, current token
+expiry, read scopes and allowlisted numeric user ID. The post row lock remains held
+through the provider call, preventing concurrent deletion from overtaking the check.
+A provider 404 does not prove deletion: the receipt moves to needs_reconciliation,
+and canonical post availability is left unchanged until a separate authorized
+reconciliation. A provider response is committed as sanitized ledger evidence before
+observation rows are written; crashes or ambiguous responses therefore stop in
+reconciliation instead of issuing a potentially billable duplicate. Missing
+fields remain explicit `missing`/`invalid` rows, while windows skipped because they are no longer
+actionable remain cancelled receipts and never receive synthetic observation times. The adapter
+has no publish/write operation and all tests use synthetic providers.
+
 ## References
 
 - [Architecture](architecture.md), [Product](product.md), [Development](development.md)
 - [Official X OAuth documentation](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code)
 - [Official X API pricing](https://docs.x.com/x-api/getting-started/pricing)
 - [Official X developer guidelines](https://docs.x.com/developer-guidelines)
+
+Publication reads additionally require explicit, current pricing timestamps/source. The final locked connection reload rechecks scopes, expiry, token presence and numeric identity after the durable usage reservation. Successfully committed verification digests can be reused without another provider call after link rollback; incomplete/ambiguous reservations still require reconciliation. This does not bypass revocation or grant new X permissions. Historical attachment status requires the private creator session and makes no X request. No live paid verification was performed during review.
+
+COD-420 stored evidence reads require the existing private creator session and bind creator ownership in every SQL lookup. Deleted/unavailable posts are hidden in lists/batches and indistinguishable from missing records in detail. Current permission/policy checks conservatively withhold text, URLs and observations when revoked, absent or unclear; archive classification alone grants no display rights. Unknown provenance/source labels are never echoed. Only typed, whitelisted observation source/missingness fields are exposed; the existing import-detail GET also redacts its provenance dictionary. Cursors are validated positions and confer no authority. These endpoints perform no external requests, billable reservations, writes or intelligence processing.
