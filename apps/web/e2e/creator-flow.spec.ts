@@ -16,12 +16,101 @@ import {
 } from '../src/api/fixtures'
 
 const assessmentId = draftAssessmentFixture.assessment_id
+const SYNTHETIC_DEMO_LABEL =
+  'Synthetic demonstration data — not live X evidence'
+const syntheticLatestReportFixture = {
+  ...latestReportFixture,
+  latest_report: {
+    ...latestReportFixture.latest_report,
+    authorization_basis: 'synthetic_demo_fixture',
+    coverage_note: SYNTHETIC_DEMO_LABEL,
+  },
+}
+const syntheticImportFixture = {
+  ...historyImportFixture,
+  items: historyImportFixture.items.map((item) => ({
+    ...item,
+    source: 'synthetic_demo' as const,
+  })),
+}
+const syntheticHistoryFixture = {
+  ...historyPostsFixture,
+  items: historyPostsFixture.items.map((item) => ({
+    ...item,
+    source: 'synthetic_demo' as const,
+    observations: item.observations.map((observation) => ({
+      ...observation,
+      source: 'synthetic_demo' as const,
+      provenance: { source: 'synthetic_demo' as const },
+    })),
+  })),
+}
+const syntheticMonitoringFixture = {
+  ...monitoringFixture,
+  limitations: [SYNTHETIC_DEMO_LABEL],
+  windows: monitoringFixture.windows.map((window) => ({
+    ...window,
+    observations: window.observations.map((observation) => ({
+      ...observation,
+      source: 'synthetic_demo' as const,
+    })),
+  })),
+}
+const evaluatedPostmortemFixture = {
+  state: 'evaluated' as const,
+  assessment_id: draftAssessmentFixture.assessment_id,
+  assessed_at: draftAssessmentFixture.assessed_at,
+  published_post: {
+    availability: 'available' as const,
+    canonical_post_id: publicationLinkFixture.canonical_post_id,
+    external_post_id: publicationLinkFixture.external_post_id,
+    published_at: publicationLinkFixture.published_at,
+    version_match_state: 'match' as const,
+  },
+  original_outlook: draftAssessmentFixture,
+  postmortem: {
+    assessment_id: draftAssessmentFixture.assessment_id,
+    published_post_id: publicationLinkFixture.canonical_post_id,
+    version: 'postmortem-v1',
+    version_state: 'verified' as const,
+    limitations: [],
+    hypothesis_evaluation: null,
+    observed_outcomes: [],
+    metric_comparisons: [
+      {
+        metric: 'likes',
+        metric_definition: 'public_likes_v1',
+        unit: 'likes',
+        window_key: 'age:24h',
+        window_kind: 'age_aligned' as const,
+        status: 'scored' as const,
+        observed_at: '2026-11-11T12:00:00Z',
+        observed_value: 12,
+        historical_median: 10,
+        deviation_from_median: 2,
+        relative_percentile: 0.7,
+        within_reference_range: true,
+        effective_sample_size: 3,
+        matched_sample_count: 3,
+        comparison_post_ids: [],
+        comparison_observations: [],
+        reference_range: null,
+        limitations: [],
+      },
+    ],
+  },
+  limitations: [],
+}
 
 type MockOptions = {
   authenticated?: boolean
   importPage?: typeof historyImportFixture
+  latestReport?: typeof latestReportFixture
+  privateSessionSucceeds?: boolean
   publicationLinked?: boolean
-  monitoring?: typeof monitoringFixture
+  monitoring?: unknown
+  postmortem?: unknown
+  historyPosts?: unknown
 }
 
 async function json(route: Route, body: unknown, status = 200) {
@@ -36,9 +125,14 @@ async function installApiMocks(page: Page, options: MockOptions = {}) {
   const {
     authenticated = true,
     importPage = historyImportFixture,
+    latestReport = latestReportFixture,
+    privateSessionSucceeds = false,
     publicationLinked = false,
     monitoring = monitoringFixture,
+    postmortem = postmortemFixture,
+    historyPosts = historyPostsFixture,
   } = options
+  let isAuthenticated = authenticated
 
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
@@ -56,15 +150,30 @@ async function installApiMocks(page: Page, options: MockOptions = {}) {
     const method = route.request().method()
     const path = url.pathname
     if (path === '/api/health') return json(route, healthFixture)
+    if (path === '/api/auth/private/session' && method === 'POST') {
+      if (!privateSessionSucceeds)
+        return json(
+          route,
+          {
+            error: {
+              code: 'authentication_required',
+              message: 'Private sign-in secret rejected.',
+            },
+          },
+          401,
+        )
+      isAuthenticated = true
+      return json(route, sessionFixture)
+    }
     if (path === '/api/auth/session') {
       return json(
         route,
-        authenticated
+        isAuthenticated
           ? sessionFixture
           : { authenticated: false, csrf_token: '' },
       )
     }
-    if (!authenticated) {
+    if (!isAuthenticated) {
       return json(
         route,
         {
@@ -81,13 +190,13 @@ async function installApiMocks(page: Page, options: MockOptions = {}) {
     if (path === '/api/v1/creators/me/data-permissions')
       return json(route, permissionFixture)
     if (path === '/api/v1/creators/me/report/latest')
-      return json(route, latestReportFixture)
+      return json(route, latestReport)
     if (path === '/api/v1/creators/me/report' && method === 'POST')
       return json(route, latestReportFixture.latest_report, 201)
     if (path === '/api/v1/creators/me/history/imports')
       return json(route, importPage)
     if (path === '/api/v1/creators/me/history/posts')
-      return json(route, historyPostsFixture)
+      return json(route, historyPosts)
     if (path === '/api/v1/creators/me/history/evidence')
       return json(route, evidenceFixture)
     if (path === '/api/v1/creators/me/baseline')
@@ -119,7 +228,7 @@ async function installApiMocks(page: Page, options: MockOptions = {}) {
     }
     if (path.endsWith('/publication') && method === 'POST')
       return json(route, publicationLinkFixture, 201)
-    if (path.endsWith('/postmortem')) return json(route, postmortemFixture)
+    if (path.endsWith('/postmortem')) return json(route, postmortem)
     if (path.endsWith('/monitoring')) return json(route, monitoring)
     return json(
       route,
@@ -144,6 +253,60 @@ test('denies private workspace access when the session is unauthenticated', asyn
   ).toBeVisible()
   await expect(
     page.getByText('No private BipMe session is active in this browser.'),
+  ).toBeVisible()
+})
+
+test('shows the server-backed private sign-in failure state', async ({
+  page,
+}) => {
+  await installApiMocks(page, { authenticated: false })
+  await page.goto('/')
+  await page.getByLabel('Private sign-in secret').fill('a'.repeat(32))
+  await page.getByRole('button', { name: 'Sign in privately' }).click()
+  await expect(
+    page.getByText('The private sign-in secret was rejected.'),
+  ).toBeVisible()
+  await expect(page.getByLabel('Private sign-in secret')).toHaveValue('')
+})
+
+test('uses the server-backed private session to enter the synthetic walkthrough', async ({
+  page,
+}) => {
+  await installApiMocks(page, {
+    authenticated: false,
+    privateSessionSucceeds: true,
+    latestReport: syntheticLatestReportFixture,
+  })
+  await page.goto('/')
+  await page.getByLabel('Private sign-in secret').fill('a'.repeat(32))
+  await page.getByRole('button', { name: 'Sign in privately' }).click()
+  await expect(page.getByText('Private session active')).toBeVisible()
+  await expect(
+    page.getByText(SYNTHETIC_DEMO_LABEL, { exact: true }).first(),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('heading', {
+      name: 'A grounded view of what you can learn next',
+    }),
+  ).toBeVisible()
+})
+
+test('labels synthetic history only when backend provenance identifies it', async ({
+  page,
+}) => {
+  await installApiMocks(page, {
+    importPage: syntheticImportFixture,
+    historyPosts: syntheticHistoryFixture,
+  })
+  await page.goto('/content-history')
+  await expect(
+    page.getByRole('heading', { name: 'Content History', exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByText(SYNTHETIC_DEMO_LABEL, { exact: true }).first(),
+  ).toBeVisible()
+  await expect(
+    page.getByText('A disclosed synthetic history post.'),
   ).toBeVisible()
 })
 
@@ -204,7 +367,7 @@ test('renders partial history import and missing evidence without inventing valu
   })
   await page.goto('/content-history')
   await expect(
-    page.getByRole('heading', { name: 'Your Content History' }),
+    page.getByRole('heading', { name: 'Content History', exact: true }),
   ).toBeVisible()
   await expect(
     page.getByText('Partial import', { exact: true }).first(),
@@ -231,6 +394,8 @@ test('attaches a publication and renders monitoring lifecycle plus postmortem bo
     page.getByText('No receipt was scheduled for this window.'),
   ).toBeVisible()
   await expect(page.getByText('budget blocked')).toBeVisible()
+  await expect(page.getByText(/Execution:\s*completed/)).toBeVisible()
+  await expect(page.getByText(/impressions:/)).toBeVisible()
   await page
     .getByLabel('X post URL or numeric post ID')
     .fill('https://x.com/example/status/1900000000000000001')
@@ -244,5 +409,24 @@ test('attaches a publication and renders monitoring lifecycle plus postmortem bo
   ).toBeVisible()
   await expect(
     page.getByText('No eligible postmortem result was returned'),
+  ).toBeVisible()
+})
+
+test('renders evaluated postmortem results and evidence limitations', async ({
+  page,
+}) => {
+  await installApiMocks(page, {
+    publicationLinked: true,
+    postmortem: evaluatedPostmortemFixture,
+    monitoring: syntheticMonitoringFixture,
+  })
+  await page.goto(`/post-monitoring?assessment_id=${assessmentId}`)
+  await expect(page.getByText('Evaluation state: evaluated')).toBeVisible()
+  await expect(page.getByText('12 likes; scored')).toBeVisible()
+  await expect(
+    page.getByText(SYNTHETIC_DEMO_LABEL, { exact: true }).first(),
+  ).toBeVisible()
+  await expect(
+    page.getByText(/Postmortem conclusions remain evidence-aware/),
   ).toBeVisible()
 })
