@@ -8,6 +8,7 @@ from bipme.api.creator_reports import router as creator_reports_router
 from bipme.api.errors import install_error_handlers
 from bipme.api.evidence import router as evidence_router
 from bipme.api.history import router as history_router
+from bipme.api.monitoring import router as monitoring_router
 from bipme.api.postmortems import router as postmortems_router
 from bipme.api.publications import router as publications_router
 
@@ -20,6 +21,7 @@ def create_app() -> FastAPI:
     app.include_router(creator_reports_router)
     app.include_router(publications_router)
     app.include_router(postmortems_router)
+    app.include_router(monitoring_router)
     app.include_router(history_router)
     app.include_router(evidence_router)
     install_error_handlers(app)
