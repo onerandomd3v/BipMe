@@ -7,6 +7,7 @@ import {
   historyPostsFixture,
 } from './api/fixtures'
 import { CreatorHistoryDashboard } from './CreatorHistoryDashboard'
+import { SYNTHETIC_DEMO_LABEL } from './syntheticDemo'
 
 function fakeClient(
   overrides: Partial<
@@ -150,6 +151,35 @@ describe('CreatorHistoryDashboard states', () => {
     expect(
       screen.getByText(/No eligible series is available/),
     ).toBeInTheDocument()
+  })
+
+  it('accepts backend synthetic provenance and labels the history view', async () => {
+    const client = fakeClient({
+      historyImports: vi.fn().mockResolvedValue({
+        ...historyImportFixture,
+        items: historyImportFixture.items.map((item) => ({
+          ...item,
+          source: 'synthetic_demo' as const,
+        })),
+      }),
+      historyPosts: vi.fn().mockResolvedValue({
+        ...historyPostsFixture,
+        items: historyPostsFixture.items.map((post) => ({
+          ...post,
+          source: 'synthetic_demo' as const,
+          observations: post.observations.map((observation) => ({
+            ...observation,
+            source: 'synthetic_demo' as const,
+            provenance: {
+              ...observation.provenance,
+              source: 'synthetic_demo' as const,
+            },
+          })),
+        })),
+      }),
+    })
+    render(<CreatorHistoryDashboard client={client} />)
+    expect(await screen.findByText(SYNTHETIC_DEMO_LABEL)).toBeInTheDocument()
   })
 
   it('selects among exact metric identities and queries the selected series', async () => {

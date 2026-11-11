@@ -19,6 +19,7 @@ import {
   stringList,
 } from './dashboardModel'
 import type { DraftAnalysisContext } from './dashboardModel'
+import { hasSyntheticProvenance, SyntheticDemoNotice } from './syntheticDemo'
 
 type ProfileState = components['schemas']['CreatorProfileStateResponse']
 type Profile = components['schemas']['CreatorProfileResponse']
@@ -815,6 +816,12 @@ export function CreatorDashboard({
         <div className="form-error" role="alert" tabIndex={-1} ref={errorRef}>
           {apiProblemMessage(error)}
         </div>
+      )}
+      {hasSyntheticProvenance(report) && (
+        <SyntheticDemoNotice>
+          This report and its evidence come from the backend-isolated demo
+          creator.
+        </SyntheticDemoNotice>
       )}
       <section className="report-hero" aria-labelledby="report-title">
         <div>

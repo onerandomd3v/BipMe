@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { components } from './api/generated/schema'
 import { ApiRequestError, apiClient, type ApiClient } from './api/client'
 import type { DraftAnalysisContext } from './dashboardModel'
+import { hasSyntheticProvenance, SyntheticDemoNotice } from './syntheticDemo'
 
 type DraftRequest = components['schemas']['DraftAnalysisRequest']
 type DraftResponse = components['schemas']['DraftAnalysisResponse']
@@ -35,7 +36,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
-const SOURCES = ['authorized_x_api', 'archive', 'unknown'] as const
+const SOURCES = [
+  'authorized_x_api',
+  'archive',
+  'unknown',
+  'synthetic_demo',
+] as const
 const DISCLOSURES = [
   'permitted',
   'permission_required',
@@ -633,6 +639,11 @@ function ResultView({
   const hypothesis = response.suggested_hypothesis
   return (
     <div className="draft-results">
+      {hasSyntheticProvenance({ response, evidence }) && (
+        <SyntheticDemoNotice>
+          The assessment and comparable evidence use the isolated backend seed.
+        </SyntheticDemoNotice>
+      )}
       <div className="draft-result-actions">
         <p className="form-hint">Assessment {response.assessment_id}</p>
         <button

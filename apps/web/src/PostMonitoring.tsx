@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { ApiRequestError, apiClient, type ApiClient } from './api/client'
 import type { components } from './api/generated/schema'
 import { apiProblemMessage } from './dashboardModel'
+import { hasSyntheticProvenance, SyntheticDemoNotice } from './syntheticDemo'
 
 type Assessment = components['schemas']['DraftAnalysisResponse']
 type Publication = components['schemas']['PublicationLinkResponse']
@@ -369,7 +370,9 @@ function isMonitoringObservation(
     isFiniteNumber(value.observed_age_seconds) &&
     typeof value.window_key === 'string' &&
     ['mature_cumulative', 'age_aligned'].includes(String(value.window_kind)) &&
-    ['authorized_x_api', 'unknown'].includes(String(value.source)) &&
+    ['authorized_x_api', 'unknown', 'synthetic_demo'].includes(
+      String(value.source),
+    ) &&
     (value.missing_reason === null ||
       value.missing_reason === undefined ||
       ['not_returned', 'invalid_value'].includes(String(value.missing_reason))),
@@ -955,6 +958,17 @@ export function PostMonitoring({
 
   return (
     <div className="monitoring-stack">
+      {hasSyntheticProvenance({
+        assessment,
+        publication,
+        monitoring,
+        postmortem,
+      }) && (
+        <SyntheticDemoNotice>
+          This assessment, publication link and monitoring record use the
+          isolated backend seed.
+        </SyntheticDemoNotice>
+      )}
       <section className="workspace-card" aria-labelledby="assessment-title">
         <div className="workspace-card__header">
           <div className="workspace-card__mark" aria-hidden="true">
