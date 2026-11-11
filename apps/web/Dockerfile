@@ -12,7 +12,7 @@ RUN pnpm build
 
 FROM nginx/nginx-unprivileged:stable-alpine AS runtime
 
-ENV NGINX_ENVSUBST_FILTER=^BIPME_API_UPSTREAM$
+ENV NGINX_ENVSUBST_FILTER=BIPME_API_UPSTREAM
 
 COPY --from=build --chown=nginx:nginx /workspace/apps/web/dist/ /usr/share/nginx/html/
 COPY apps/web/nginx/default.conf.template /etc/nginx/templates/default.conf.template
