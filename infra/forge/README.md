@@ -279,8 +279,9 @@ restarting DB cleanly with the same PVC, then comparing counts and readiness.
 ## Demo activation and inference boundary
 
 COD-424 merged at `78d3fa0ac8b9f27015cdd6a1045c8ca1b55b8106`; its seeder and synthetic
-embedding identity remain unchanged. COD-425's web walkthrough is separate work.
-Infrastructure can be released before it; do not claim a complete demo from health.
+embedding identity remain unchanged. COD-425's web walkthrough subsequently merged
+in PR #62; it remains a separate implementation, incorporated from main without
+changes here. Do not claim a complete demo from health alone.
 
 Base configuration selects remote embeddings **without a URL/token**. The existing
 dependency returns sanitized `503 embedding_unavailable`; it neither downloads a
@@ -345,7 +346,9 @@ interactive administration session, update both fields of bipme-db, then restart
 API/worker. Changing POSTGRES_PASSWORD alone **does not** alter an initialized DB.
 Never print values in command arguments, SQL logs, CI logs or support messages.
 
-Initial evidence: manifest budget and offline validations are automated; no Forge
+Initial evidence: manifest budget and offline validations are automated. Local Docker
+image builds on 11 Nov 2026 were blocked by upstream layer-download EOF/TLS timeouts;
+CI runs the actual-image smoke tests independently. No Forge
 runtime, PVC binding, gateway, network isolation, restart durability, inference or
 quota consumption has been measured. Local Docker smoke measurements are useful
 only as startup evidence; they do not establish Forge's p95/load behavior.

@@ -46,6 +46,16 @@ def main():
                    "--network-alias", "api.team17.svc.cluster.local",
                    "--mount", f"type=bind,src={stub},dst=/stub.py,readonly",
                    "python:3.13-alpine", "python", "/stub.py")
+            for attempt in range(30):
+                ready = subprocess.run(["docker", "exec", api, "python", "-c",
+                    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"],
+                    capture_output=True)
+                if ready.returncode == 0:
+                    break
+                if attempt == 29:
+                    print(docker("logs", api))  # Synthetic echo stub only; never application logs.
+                    raise AssertionError("Synthetic upstream did not start")
+                time.sleep(1)
             docker("run", "-d", "--name", web, "--network", network,
                    "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
                    "--memory=96m", "--cpus=0.2",
