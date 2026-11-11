@@ -122,7 +122,10 @@ def main() -> None:
             not re.search(r"(?i)(DATABASE_URL|GROQ_API_KEY|TOKEN_ENCRYPTION|X_CLIENT_SECRET)", environment),
             "A backend secret setting is present in the image environment.",
         )
-        require("BIPME_API_UPSTREAM" not in environment, "The runtime API upstream was baked into the image.")
+        require(
+            not re.search(r"(?:^|[\", ])BIPME_API_UPSTREAM=", environment),
+            "The runtime API upstream was baked into the image.",
+        )
         dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
         require("**/.env" in dockerignore and "**/.env.*" in dockerignore, "Docker build context does not exclude service environment files.")
 
@@ -258,9 +261,27 @@ def main() -> None:
 
         print("Frontend container smoke checks passed.")
     finally:
-        subprocess.run(["docker", "rm", "--force", container_name], cwd=ROOT, check=False, stdout=subprocess.DEVNULL)
-        subprocess.run(["docker", "rm", "--force", api_name], cwd=ROOT, check=False, stdout=subprocess.DEVNULL)
-        subprocess.run(["docker", "network", "rm", network_name], cwd=ROOT, check=False, stdout=subprocess.DEVNULL)
+        subprocess.run(
+            ["docker", "rm", "--force", container_name],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["docker", "rm", "--force", api_name],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["docker", "network", "rm", network_name],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
 
 if __name__ == "__main__":
