@@ -81,6 +81,11 @@ describe('API client', () => {
       assessment_id: assessmentId,
       version_match_state: 'unknown',
     })
+    await expect(client.postmortem(assessmentId)).resolves.toMatchObject({
+      assessment_id: assessmentId,
+      state: 'publication_pending',
+      original_outlook: { assessment_id: assessmentId },
+    })
     await expect(
       client.linkPublication(assessmentId, {
         post_url_or_id: '1900000000000000001',
@@ -112,6 +117,18 @@ describe('API client', () => {
       ),
     )
     await expect(client.publication(assessmentId)).rejects.toMatchObject({
+      status: 200,
+      code: 'malformed_response',
+    })
+
+    server.resetHandlers()
+    server.use(
+      http.get(
+        `*/api/v1/creators/me/draft-assessments/${assessmentId}/postmortem`,
+        () => new HttpResponse('{not-json', { status: 200 }),
+      ),
+    )
+    await expect(client.postmortem(assessmentId)).rejects.toMatchObject({
       status: 200,
       code: 'malformed_response',
     })
@@ -312,4 +329,73 @@ describe('API client', () => {
       ApiRequestError,
     )
   })
+})
+
+it('preserves all COD-359 history and baseline methods alongside draft methods', async () => {
+  const {
+    historyPostsFixture,
+    historyImportFixture,
+    baselineFixture,
+    draftAnalysisFixture,
+  } = await import('./fixtures')
+  const bodies = [
+    historyPostsFixture,
+    historyPostsFixture.items[0],
+    historyPostsFixture,
+    historyImportFixture,
+    historyImportFixture.items[0],
+    baselineFixture,
+    draftAnalysisFixture,
+    draftAnalysisFixture,
+  ]
+  const requests: Request[] = []
+  const fetcher = vi.fn<typeof fetch>(async (input) => {
+    requests.push(input as Request)
+    return response(bodies[requests.length - 1])
+  })
+  const client = createApiClient(fetcher)
+  await expect(client.historyPosts({ limit: 2 })).resolves.toEqual(
+    historyPostsFixture,
+  )
+  await expect(client.historyPost('post-id')).resolves.toEqual(
+    historyPostsFixture.items[0],
+  )
+  await expect(
+    client.historyEvidence({ post_ids: ['post-id'] }),
+  ).resolves.toEqual(historyPostsFixture)
+  await expect(client.historyImports(2)).resolves.toEqual(historyImportFixture)
+  await expect(client.historyImport('import-id')).resolves.toEqual(
+    historyImportFixture.items[0],
+  )
+  await expect(
+    client.baseline({
+      metric: 'replies',
+      definition: 'exact',
+      unit: 'count',
+      window_kind: 'age_aligned',
+      window_key: '24h',
+    }),
+  ).resolves.toEqual(baselineFixture)
+  await expect(
+    client.createDraftAssessment(
+      { text: 'Synthetic draft', topology: 'original', metric_preferences: [] },
+      'retry-key',
+    ),
+  ).resolves.toEqual(draftAnalysisFixture)
+  await expect(
+    client.draftAssessment(draftAnalysisFixture.assessment_id),
+  ).resolves.toEqual(draftAnalysisFixture)
+  expect(requests.map((r) => new URL(r.url).pathname)).toEqual([
+    '/api/v1/creators/me/history/posts',
+    '/api/v1/creators/me/history/posts/post-id',
+    '/api/v1/creators/me/history/evidence',
+    '/api/v1/creators/me/history/imports',
+    '/api/v1/creators/me/history/imports/import-id',
+    '/api/v1/creators/me/baseline',
+    '/api/v1/creators/me/draft-assessments',
+    `/api/v1/creators/me/draft-assessments/${draftAnalysisFixture.assessment_id}`,
+  ])
+  expect(new URL(requests[5].url).searchParams.get('definition')).toBe('exact')
+  expect(requests[6].headers.get('Idempotency-Key')).toBe('retry-key')
+  expect(requests[6].method).toBe('POST')
 })

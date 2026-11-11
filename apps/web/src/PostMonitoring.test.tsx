@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -47,7 +48,7 @@ const assessment = {
 const publication = {
   assessment_id: assessmentId,
   assessed_at: assessment.assessed_at,
-  assessed_fingerprint: 'sha256:fixture',
+  assessed_fingerprint: assessment.input_fingerprint,
   accepted_hypothesis: null,
   canonical_post_id: '00000000-0000-4000-8000-000000000366',
   external_post_id: '1900000000000000001',
@@ -56,6 +57,52 @@ const publication = {
   linkage_state: 'linked',
   linked_at: '2026-11-10T13:01:00Z',
 } satisfies components['schemas']['PublicationLinkResponse']
+
+const evaluatedPostmortem = {
+  state: 'evaluated',
+  assessment_id: assessmentId,
+  assessed_at: assessment.assessed_at,
+  published_post: {
+    availability: 'available',
+    canonical_post_id: publication.canonical_post_id,
+    external_post_id: publication.external_post_id,
+    published_at: publication.published_at,
+    version_match_state: 'match',
+  },
+  original_outlook: assessment,
+  postmortem: {
+    assessment_id: assessmentId,
+    published_post_id: publication.canonical_post_id,
+    version: 'postmortem-v1',
+    version_state: 'verified',
+    limitations: [],
+    hypothesis_evaluation: null,
+    observed_outcomes: [],
+    metric_comparisons: [
+      {
+        metric: 'likes',
+        metric_definition: 'public_likes_v1',
+        unit: 'likes',
+        window_key: 'age:24h',
+        window_kind: 'age_aligned',
+        status: 'scored',
+        observed_at: '2026-11-11T12:00:00Z',
+        observed_value: 12,
+        historical_median: 10,
+        deviation_from_median: 2,
+        relative_percentile: 0.7,
+        within_reference_range: true,
+        effective_sample_size: 3,
+        matched_sample_count: 3,
+        comparison_post_ids: [],
+        comparison_observations: [],
+        reference_range: null,
+        limitations: [],
+      },
+    ],
+  },
+  limitations: [],
+}
 
 function client(overrides: Partial<ApiClient> = {}) {
   return {
@@ -67,6 +114,15 @@ function client(overrides: Partial<ApiClient> = {}) {
         message: 'No publication is linked.',
       }),
     ),
+    postmortem: vi.fn().mockResolvedValue({
+      state: 'publication_pending',
+      assessment_id: assessmentId,
+      assessed_at: assessment.assessed_at,
+      published_post: null,
+      original_outlook: assessment,
+      postmortem: null,
+      limitations: ['No linked publication is available yet.'],
+    }),
     linkPublication: vi.fn().mockResolvedValue(publication),
     ...overrides,
   } as unknown as ApiClient
@@ -86,11 +142,7 @@ describe('PostMonitoring', () => {
     expect(
       await screen.findByText('Original Distribution Outlook'),
     ).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        /not available through an authenticated creator HTTP contract/,
-      ),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Monitoring receipts.*COD-422/)).toBeInTheDocument()
     const input = screen.getByLabelText('X post URL or numeric post ID')
     fireEvent.input(input, {
       target: { value: 'https://x.com/example/status/1900000000000000001' },
@@ -193,6 +245,7 @@ describe('PostMonitoring', () => {
         screen.queryByText(publication.external_post_id),
       ).not.toBeInTheDocument()
       expect(getFake.linkPublication).not.toHaveBeenCalled()
+      cleanup()
 
       const postFake = client({
         linkPublication: vi.fn().mockResolvedValue({
@@ -222,6 +275,41 @@ describe('PostMonitoring', () => {
       expect(postFake.linkPublication).toHaveBeenCalledTimes(1)
     },
   )
+
+  it('renders a typed evaluated postmortem with actual timestamps and units', async () => {
+    const fake = client({
+      publication: vi.fn().mockResolvedValue(publication),
+      postmortem: vi.fn().mockResolvedValue(evaluatedPostmortem),
+    })
+    render(<PostMonitoring assessmentId={assessmentId} client={fake} />)
+    expect(
+      await screen.findByText('Postmortem and observations'),
+    ).toBeInTheDocument()
+    expect(await screen.findByText('12 likes; scored')).toBeInTheDocument()
+    expect(screen.getByText(/Measurement:/).parentElement).toHaveTextContent(
+      '11 Nov 2026',
+    )
+    expect(screen.getByText(/Monitoring receipts.*COD-422/)).toBeInTheDocument()
+  })
+
+  it('rejects a postmortem whose immutable original outlook does not match', async () => {
+    const fake = client({
+      postmortem: vi.fn().mockResolvedValue({
+        ...evaluatedPostmortem,
+        original_outlook: {
+          ...assessment,
+          input_fingerprint: 'sha256:wrong-outlook',
+        },
+      }),
+    })
+    render(<PostMonitoring assessmentId={assessmentId} client={fake} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'does not match this assessment',
+    )
+    expect(
+      screen.getByText('Original Distribution Outlook'),
+    ).toBeInTheDocument()
+  })
 
   it.each([
     [401, 'authentication_required', 'Authentication failed.'],
@@ -505,7 +593,11 @@ describe('PostMonitoring', () => {
     )
     view.rerender(<PostMonitoring assessmentId={secondId} client={fake} />)
     expect(await screen.findByText(secondId)).toBeInTheDocument()
-    resolve?.(assessment)
+    await act(async () => {
+      resolve?.(assessment)
+    })
+    expect(screen.getByText(secondId)).toBeInTheDocument()
+    expect(screen.queryByText(assessmentId)).not.toBeInTheDocument()
     expect(
       screen.queryByText('Post monitoring is unavailable'),
     ).not.toBeInTheDocument()

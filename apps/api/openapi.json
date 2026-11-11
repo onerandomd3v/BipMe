@@ -1973,6 +1973,597 @@
         "title": "PostEvidence",
         "type": "object"
       },
+      "PostmortemEvaluationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "hypothesis_evaluation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostmortemHypothesisResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "metric_comparisons": {
+            "items": {
+              "$ref": "#/components/schemas/PostmortemMetricResponse"
+            },
+            "title": "Metric Comparisons",
+            "type": "array"
+          },
+          "observed_outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/PostmortemObservationResponse"
+            },
+            "title": "Observed Outcomes",
+            "type": "array"
+          },
+          "original_outlook": {
+            "$ref": "#/components/schemas/DraftAnalysisResponse"
+          },
+          "published_post_id": {
+            "format": "uuid",
+            "title": "Published Post Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "version_state": {
+            "enum": [
+              "verified",
+              "unverified"
+            ],
+            "title": "Version State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "version_state",
+          "assessment_id",
+          "published_post_id",
+          "original_outlook",
+          "observed_outcomes",
+          "metric_comparisons",
+          "hypothesis_evaluation",
+          "limitations"
+        ],
+        "title": "PostmortemEvaluationResponse",
+        "type": "object"
+      },
+      "PostmortemHypothesisResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison_post_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Comparison Post Ids",
+            "type": "array"
+          },
+          "effective_sample_size": {
+            "title": "Effective Sample Size",
+            "type": "number"
+          },
+          "historical_median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historical Median"
+          },
+          "hypothesis": {
+            "$ref": "#/components/schemas/AcceptedHypothesis"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "matched_sample_count": {
+            "title": "Matched Sample Count",
+            "type": "integer"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "metric_definition": {
+            "title": "Metric Definition",
+            "type": "string"
+          },
+          "observed_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Value"
+          },
+          "status": {
+            "enum": [
+              "supported",
+              "contradicted",
+              "inconclusive"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "window_key": {
+            "title": "Window Key",
+            "type": "string"
+          },
+          "window_kind": {
+            "enum": [
+              "mature_cumulative",
+              "age_aligned"
+            ],
+            "title": "Window Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "hypothesis",
+          "metric",
+          "metric_definition",
+          "unit",
+          "window_kind",
+          "window_key",
+          "observed_value",
+          "historical_median",
+          "matched_sample_count",
+          "effective_sample_size",
+          "comparison_post_ids",
+          "limitations"
+        ],
+        "title": "PostmortemHypothesisResponse",
+        "type": "object"
+      },
+      "PostmortemMetricResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison_observations": {
+            "items": {
+              "$ref": "#/components/schemas/PostmortemObservationResponse"
+            },
+            "title": "Comparison Observations",
+            "type": "array"
+          },
+          "comparison_post_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Comparison Post Ids",
+            "type": "array"
+          },
+          "deviation_from_median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deviation From Median"
+          },
+          "effective_sample_size": {
+            "title": "Effective Sample Size",
+            "type": "number"
+          },
+          "historical_median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historical Median"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "matched_sample_count": {
+            "title": "Matched Sample Count",
+            "type": "integer"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "metric_definition": {
+            "title": "Metric Definition",
+            "type": "string"
+          },
+          "observation_age_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Age Seconds"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "observed_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Value"
+          },
+          "reference_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostmortemRangeResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relative_percentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relative Percentile"
+          },
+          "status": {
+            "enum": [
+              "scored",
+              "unavailable",
+              "version_unverified"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "window_key": {
+            "title": "Window Key",
+            "type": "string"
+          },
+          "window_kind": {
+            "enum": [
+              "mature_cumulative",
+              "age_aligned"
+            ],
+            "title": "Window Kind",
+            "type": "string"
+          },
+          "within_reference_range": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Within Reference Range"
+          }
+        },
+        "required": [
+          "metric",
+          "metric_definition",
+          "unit",
+          "window_kind",
+          "window_key",
+          "status",
+          "observed_value",
+          "observed_at",
+          "observation_age_seconds",
+          "reference_range",
+          "deviation_from_median",
+          "within_reference_range",
+          "relative_percentile",
+          "matched_sample_count",
+          "effective_sample_size",
+          "comparison_post_ids",
+          "limitations",
+          "historical_median",
+          "comparison_observations"
+        ],
+        "title": "PostmortemMetricResponse",
+        "type": "object"
+      },
+      "PostmortemObservationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "metric_definition": {
+            "title": "Metric Definition",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "post_id": {
+            "format": "uuid",
+            "title": "Post Id",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "observed",
+              "missing"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "window_key": {
+            "title": "Window Key",
+            "type": "string"
+          },
+          "window_kind": {
+            "enum": [
+              "mature_cumulative",
+              "age_aligned"
+            ],
+            "title": "Window Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "post_id",
+          "metric",
+          "metric_definition",
+          "unit",
+          "state",
+          "value",
+          "published_at",
+          "observed_at",
+          "window_kind",
+          "window_key"
+        ],
+        "title": "PostmortemObservationResponse",
+        "type": "object"
+      },
+      "PostmortemPublicationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable",
+              "deleted"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "canonical_post_id": {
+            "format": "uuid",
+            "title": "Canonical Post Id",
+            "type": "string"
+          },
+          "external_post_id": {
+            "title": "External Post Id",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "version_match_state": {
+            "enum": [
+              "match",
+              "mismatch",
+              "unknown"
+            ],
+            "title": "Version Match State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "canonical_post_id",
+          "external_post_id",
+          "published_at",
+          "availability",
+          "version_match_state"
+        ],
+        "title": "PostmortemPublicationResponse",
+        "type": "object"
+      },
+      "PostmortemRangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "comparable_post_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Comparable Post Ids",
+            "type": "array"
+          },
+          "effective_sample_size": {
+            "title": "Effective Sample Size",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "lower_p25": {
+            "title": "Lower P25",
+            "type": "number"
+          },
+          "median_p50": {
+            "title": "Median P50",
+            "type": "number"
+          },
+          "upper_p75": {
+            "title": "Upper P75",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "lower_p25",
+          "median_p50",
+          "upper_p75",
+          "comparable_post_ids",
+          "effective_sample_size"
+        ],
+        "title": "PostmortemRangeResponse",
+        "type": "object"
+      },
+      "PostmortemReadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assessed_at": {
+            "format": "date-time",
+            "title": "Assessed At",
+            "type": "string"
+          },
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "original_outlook": {
+            "$ref": "#/components/schemas/DraftAnalysisResponse"
+          },
+          "postmortem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostmortemEvaluationResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_post": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostmortemPublicationResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": [
+              "publication_pending",
+              "publication_unavailable",
+              "evidence_unavailable",
+              "monitoring_pending",
+              "insufficient_evidence",
+              "version_unverified",
+              "evaluated"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "assessment_id",
+          "assessed_at",
+          "published_post",
+          "original_outlook",
+          "postmortem"
+        ],
+        "title": "PostmortemReadResponse",
+        "type": "object"
+      },
       "PrivateLoginRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3350,6 +3941,106 @@
         "summary": "Read one of the authenticated creator's immutable assessments",
         "tags": [
           "creator analysis"
+        ]
+      }
+    },
+    "/api/v1/creators/me/draft-assessments/{assessment_id}/postmortem": {
+      "get": {
+        "description": "Evaluates only the immutable saved Outlook, the creator's linked publication, and persisted eligible metric observations. This GET makes no provider calls, schedules no work and performs no writes. A missing publication is reported as publication_pending; missing observations and historical evidence are explicit states in the response.",
+        "operationId": "read_postmortem_api_v1_creators_me_draft_assessments__assessment_id__postmortem_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostmortemReadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Read a creator-authenticated evidence-aware publication postmortem",
+        "tags": [
+          "postmortems"
         ]
       }
     },

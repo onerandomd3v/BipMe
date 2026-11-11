@@ -6,9 +6,10 @@ import {
   type MouseEvent,
 } from 'react'
 import { ApiRequestError, apiClient } from './api/client'
-import { CreatorDashboard } from './CreatorDashboard'
 import { CreatorHistoryDashboard } from './CreatorHistoryDashboard'
 import { PostMonitoring } from './PostMonitoring'
+import { CreatorDashboard } from './CreatorDashboard'
+import { DraftAnalysis } from './DraftAnalysis'
 import type { DraftAnalysisContext } from './dashboardModel'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
@@ -124,7 +125,14 @@ function useView() {
     setLocationKey(`${window.location.pathname}${window.location.search}`)
   }
 
-  return { view, navigate, locationKey }
+  const navigateToMonitoring = (assessmentId: string) => {
+    const destination = `/post-monitoring?assessment_id=${encodeURIComponent(assessmentId)}`
+    window.history.pushState(null, '', destination)
+    setView('monitoring')
+    setLocationKey(destination)
+  }
+
+  return { view, navigate, navigateToMonitoring, locationKey }
 }
 
 const stateMessages: Record<
@@ -241,7 +249,7 @@ function DevelopmentStatePreview() {
 }
 
 export function App() {
-  const { view, navigate, locationKey } = useView()
+  const { view, navigate, navigateToMonitoring, locationKey } = useView()
   const [health, setHealth] = useState<ApiHealth>('checking')
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('checking')
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -259,6 +267,10 @@ export function App() {
       setDraftContext(null)
     })
   }, [])
+
+  useEffect(() => {
+    if (view !== 'draft') setDraftContext(null)
+  }, [view])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -541,6 +553,16 @@ export function App() {
                 setDraftContext(context)
                 navigate('draft')
               }}
+              onSessionExpired={() => {
+                setSessionStatus('unauthenticated')
+                setDraftContext(null)
+              }}
+            />
+          ) : view === 'draft' && sessionStatus === 'authenticated' ? (
+            <DraftAnalysis
+              context={draftContext}
+              onViewMonitoring={navigateToMonitoring}
+              onBackToDashboard={() => navigate('dashboard')}
               onSessionExpired={() => {
                 setSessionStatus('unauthenticated')
                 setDraftContext(null)

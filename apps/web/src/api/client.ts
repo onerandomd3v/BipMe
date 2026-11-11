@@ -58,13 +58,15 @@ type DataPermission = components['schemas']['DataPermissionResponse']
 type DataPermissionUpdate = components['schemas']['DataPermissionUpdate']
 type CreatorReport = components['schemas']['CreatorReportResponse']
 type CreatorReportState = components['schemas']['CreatorReportStateResponse']
+type DraftAnalysisRequest = components['schemas']['DraftAnalysisRequest']
+type DraftAnalysisResponse = components['schemas']['DraftAnalysisResponse']
 type EvidencePage = components['schemas']['EvidencePage']
 type PostEvidence = components['schemas']['PostEvidence']
 type ImportPage = components['schemas']['ImportPage']
 type HistoryImportResponse = components['schemas']['HistoryImportResponse']
 type CreatorBaseline = components['schemas']['CreatorBaselineResponse']
-type DraftAssessment = components['schemas']['DraftAnalysisResponse']
 type PublicationLink = components['schemas']['PublicationLinkResponse']
+type PostmortemRead = components['schemas']['PostmortemReadResponse']
 
 export type HistoryPostsQuery = {
   limit?: number
@@ -436,10 +438,26 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
       )
       await unwrap(result, true)
     },
+    async createDraftAssessment(
+      body: DraftAnalysisRequest,
+      idempotencyKey: string,
+      signal?: AbortSignal,
+    ): Promise<DraftAnalysisResponse> {
+      const result = await request(
+        () =>
+          client.POST('/api/v1/creators/me/draft-assessments', {
+            body,
+            params: { header: { 'Idempotency-Key': idempotencyKey } },
+            signal,
+          }),
+        signal,
+      )
+      return (await unwrap(result)) as DraftAnalysisResponse
+    },
     async draftAssessment(
       assessmentId: string,
       signal?: AbortSignal,
-    ): Promise<DraftAssessment> {
+    ): Promise<DraftAnalysisResponse> {
       const result = await request(
         () =>
           client.GET('/api/v1/creators/me/draft-assessments/{assessment_id}', {
@@ -448,7 +466,21 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
           }),
         signal,
       )
-      return (await unwrap(result)) as DraftAssessment
+      return (await unwrap(result)) as DraftAnalysisResponse
+    },
+    async postmortem(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<PostmortemRead> {
+      const result = await request(
+        () =>
+          client.GET(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/postmortem',
+            { params: { path: { assessment_id: assessmentId } }, signal },
+          ),
+        signal,
+      )
+      return (await unwrap(result)) as PostmortemRead
     },
     async publication(
       assessmentId: string,

@@ -1,0 +1,76 @@
+name: bipme-api-worker
+
+x-metric-snapshot-settings: &metric-snapshot-settings
+  BIPME_TOKEN_ENCRYPTION_KEYS: ${BIPME_TOKEN_ENCRYPTION_KEYS:-}
+  BIPME_ACTIVE_TOKEN_KEY_VERSION: ${BIPME_ACTIVE_TOKEN_KEY_VERSION:-}
+  BIPME_X_ALLOWED_USER_ID: ${BIPME_X_ALLOWED_USER_ID:-}
+  BIPME_X_METRIC_SNAPSHOT_ENABLED: ${BIPME_X_METRIC_SNAPSHOT_ENABLED:-false}
+  BIPME_X_ACCOUNT_ENTITLEMENT_VERIFIED: ${BIPME_X_ACCOUNT_ENTITLEMENT_VERIFIED:-false}
+  BIPME_X_METRIC_SNAPSHOT_DATA_RIGHTS_VERIFIED: ${BIPME_X_METRIC_SNAPSHOT_DATA_RIGHTS_VERIFIED:-false}
+  BIPME_X_HISTORY_DATA_RIGHTS_VERIFIED: ${BIPME_X_HISTORY_DATA_RIGHTS_VERIFIED:-false}
+  BIPME_X_METRIC_SNAPSHOT_REQUEST_COST_USD: ${BIPME_X_METRIC_SNAPSHOT_REQUEST_COST_USD:-}
+  BIPME_X_METRIC_SNAPSHOT_TOTAL_LIMIT_USD: ${BIPME_X_METRIC_SNAPSHOT_TOTAL_LIMIT_USD:-}
+  BIPME_X_DAILY_COST_LIMIT_USD: ${BIPME_X_DAILY_COST_LIMIT_USD:-}
+  BIPME_X_PUBLICATION_DAILY_COST_LIMIT_USD: ${BIPME_X_PUBLICATION_DAILY_COST_LIMIT_USD:-}
+  BIPME_X_METRIC_SNAPSHOT_OPERATION_LIMIT_USD: ${BIPME_X_METRIC_SNAPSHOT_OPERATION_LIMIT_USD:-}
+  BIPME_X_METRIC_SNAPSHOT_PER_POST_LIMIT_USD: ${BIPME_X_METRIC_SNAPSHOT_PER_POST_LIMIT_USD:-}
+  BIPME_X_METRIC_SNAPSHOT_PRICING_OBSERVED_AT: ${BIPME_X_METRIC_SNAPSHOT_PRICING_OBSERVED_AT:-}
+  BIPME_X_METRIC_SNAPSHOT_PRICING_EXPIRES_AT: ${BIPME_X_METRIC_SNAPSHOT_PRICING_EXPIRES_AT:-}
+  BIPME_X_METRIC_SNAPSHOT_PRICING_SOURCE: ${BIPME_X_METRIC_SNAPSHOT_PRICING_SOURCE:-}
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bipme}
+      POSTGRES_USER: ${POSTGRES_USER:-bipme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the deployment environment}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+    volumes:
+      - bipme_postgres:/var/lib/postgresql/data
+
+  api:
+    image: ${BIPME_APP_IMAGE:-bipme-api:local}
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    command: ["uvicorn", "bipme.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file:
+      - path: ../../apps/api/.env
+        required: false
+    environment:
+      BIPME_DATABASE_URL: ${BIPME_DATABASE_URL:?Set BIPME_DATABASE_URL to the PostgreSQL service URL}
+      <<: *metric-snapshot-settings
+    depends_on:
+      db:
+        condition: service_healthy
+    init: true
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    stop_grace_period: 2m
+
+  worker:
+    image: ${BIPME_APP_IMAGE:-bipme-api:local}
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    command: ["python", "-m", "bipme.jobs"]
+    environment:
+      BIPME_DATABASE_URL: ${BIPME_DATABASE_URL:?Set BIPME_DATABASE_URL to the PostgreSQL service URL}
+      <<: *metric-snapshot-settings
+    depends_on:
+      db:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 2m
+
+volumes:
+  bipme_postgres:
