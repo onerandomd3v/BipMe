@@ -187,6 +187,10 @@ COD-344 may be marked **Done** after the owner has confirmed the relevant develo
 
 ## Verification gates
 
+### Synthetic demo isolation (COD-424)
+
+Synthetic demo ingestion is limited to fabricated local fixtures and an explicitly enabled development/demo environment with a dedicated creator and isolated PostgreSQL database. The CLI requires `--synthetic-demo`, rejects unknown/production environments and mixed databases, and reads only the allowlisted archive post entry as inert JSON. It does not execute archive JavaScript, call X, download or invoke embedding models, or send content to external services. Synthetic source identifiers and vector identity are distinct from authorized X records. The seeder does not grant creator consent. Archive counters are not observations; simulated monitoring observations retain their supplied timestamps. Production and real creator processing rights, consent and source gates remain unchanged.
+
 - **Before OAuth:** state/PKCE tests; allowlist enforcement; session cookies and CSRF coverage; token encryption and log-redaction tests.
 - **Before history import:** API price/permissions review, budget limits, safe pagination and failed/retry behavior tests.
 - **Before monitoring:** idempotent jobs, missing-window handling, no fabricated observation timestamps, explicit cost model.

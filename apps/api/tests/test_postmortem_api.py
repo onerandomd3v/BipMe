@@ -359,6 +359,35 @@ def test_unverified_publication_withholds_forecast_accuracy(
     assert comparison["matched_sample_count"] == 0
 
 
+def test_synthetic_demo_postmortem_is_authenticated_labeled_and_unverified(
+    postmortem_api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, factory = postmortem_api
+    monkeypatch.setenv("BIPME_ENVIRONMENT", "development")
+    monkeypatch.setenv("BIPME_SYNTHETIC_DEMO_ENABLED", "true")
+    monkeypatch.setenv("BIPME_SYNTHETIC_DEMO_CREATOR_ID", str(CREATOR_ID))
+    monkeypatch.setenv("BIPME_CREATOR_ID", str(CREATOR_ID))
+    monkeypatch.setenv("BIPME_EMBEDDING_PROVIDER", "synthetic_demo")
+    with factory.begin() as db:
+        posts = db.scalars(
+            select(CanonicalPost).where(CanonicalPost.creator_id == CREATOR_ID)
+        ).all()
+        for post in posts:
+            post.source = "synthetic_demo_fixture"
+            post.provenance = {"source": "synthetic_demo_fixture", "synthetic_demo": True}
+        target = db.get(CanonicalPost, PUBLISHED_ID)
+        assert target is not None
+        target.version_match_state = "unknown"
+
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/postmortem")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["state"] == "version_unverified"
+    assert body["postmortem"]["version_state"] == "unverified"
+    assert "Synthetic demonstration data — not live X evidence." in body["limitations"]
+
+
 def test_sparse_historical_evidence_is_explicitly_insufficient(postmortem_api) -> None:
     client, factory = postmortem_api
     with factory.begin() as db:
