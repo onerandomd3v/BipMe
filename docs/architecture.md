@@ -30,6 +30,8 @@ Submissions use a creator-scoped idempotency key and canonical input digest. A m
 
 ## Attention evidence and archive-first source boundary (planned; validation gated)
 
+**COD-424 synthetic demo boundary:** `bipme.devtools.synthetic_demo` is a CLI-only, development/demo-gated loader for supplied fabricated fixtures. It writes synthetic posts through existing persistence contracts with a distinct source and deterministic `synthetic_demo` embedding identity; it never invokes X, model providers, or external services. Archive counters are excluded from outcomes, while separately simulated observations retain only their explicit timestamps. Report and postmortem queries select either the isolated synthetic source pool or the existing authorized X pool, never both. The demo setting does not grant processing consent or relax authenticated creator/session checks. See [development setup](development.md#cod-424-isolated-synthetic-demo).
+
 **V1 direction (8 Nov 2026):** support one private, authenticated creator with self-declared niche, audience and outcome preferences; prioritize feasibility of a creator-supplied post-history archive. Optional official X API connection is for permitted ingestion refresh or budgeted post-publication snapshots. Archive-only activity must have a secure server-side BipMe session independent of X OAuth; until built, COD-358 routes remain fail-closed. See COD-369 (archive format/rights gate), COD-370 (archive importer), COD-371 (goals/attention features) and COD-372 (niche pilot).
 
 **Source-neutral, rights-aware ingestion boundary:**

@@ -1504,7 +1504,8 @@
             "enum": [
               "authorized_x_api",
               "archive",
-              "unknown"
+              "unknown",
+              "synthetic_demo"
             ],
             "title": "Source",
             "type": "string"
@@ -1744,7 +1745,8 @@
             "enum": [
               "authorized_x_api",
               "archive",
-              "unknown"
+              "unknown",
+              "synthetic_demo"
             ],
             "title": "Source",
             "type": "string"
@@ -2202,7 +2204,8 @@
             "enum": [
               "authorized_x_api",
               "archive",
-              "unknown"
+              "unknown",
+              "synthetic_demo"
             ],
             "title": "Source",
             "type": "string"
@@ -2261,10 +2264,22 @@
             "enum": [
               "authorized_x_api",
               "archive",
-              "unknown"
+              "unknown",
+              "synthetic_demo"
             ],
             "title": "Source",
             "type": "string"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label"
           },
           "source_observed_at": {
             "anyOf": [

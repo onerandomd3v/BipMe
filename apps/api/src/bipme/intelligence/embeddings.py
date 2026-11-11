@@ -13,6 +13,7 @@ from functools import lru_cache
 from importlib import import_module
 from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
+from uuid import UUID
 
 import httpx
 
@@ -313,8 +314,21 @@ def embedder_from_environment() -> TextEmbedder:
     provider = os.getenv("BIPME_EMBEDDING_PROVIDER", "local").strip().lower()
     if provider == "local":
         return e5_from_environment()
+    if provider == "synthetic_demo":
+        from bipme.api.source_policy import synthetic_demo_enabled_for
+        from bipme.devtools.synthetic_demo import SyntheticDemoEmbedder
+
+        try:
+            creator_id = UUID(os.getenv("BIPME_SYNTHETIC_DEMO_CREATOR_ID", ""))
+        except ValueError:
+            raise ValueError(
+                "synthetic demo embeddings require a configured demo creator"
+            ) from None
+        if not synthetic_demo_enabled_for(creator_id):
+            raise ValueError("synthetic demo embeddings are disabled for this environment")
+        return SyntheticDemoEmbedder()
     if provider != "remote":
-        raise ValueError("BIPME_EMBEDDING_PROVIDER must be 'local' or 'remote'")
+        raise ValueError("BIPME_EMBEDDING_PROVIDER must be 'local', 'remote', or 'synthetic_demo'")
     endpoint = os.getenv("BIPME_EMBEDDING_REMOTE_URL", "").strip()
     token = os.getenv("BIPME_EMBEDDING_REMOTE_TOKEN", "")
     return RemoteTextEmbedder(

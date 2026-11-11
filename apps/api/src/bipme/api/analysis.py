@@ -296,6 +296,9 @@ def _build_api_response(
     if not isinstance(outlook, DistributionOutlook):
         raise TypeError("outlook must be a DistributionOutlook")
     raw = json.loads(outlook.to_json())
+    limitations = list(raw["limitations"])
+    if str(raw["embedding_identity"]).startswith("bipme/synthetic-demo-hash-embedding@"):
+        limitations.append("Synthetic demonstration data — not live X evidence.")
     api_payload: dict[str, object] = {
         "assessment_id": outlook.assessment_id,
         "input_fingerprint": outlook.content_fingerprint,
@@ -318,7 +321,7 @@ def _build_api_response(
             accepted_hypothesis.model_dump(mode="json") if accepted_hypothesis else None
         ),
         "assumptions": raw["assumptions"],
-        "limitations": raw["limitations"],
+        "limitations": limitations,
         "exclusions": raw["exclusions"],
     }
     return DraftAnalysisResponse.model_validate(api_payload)

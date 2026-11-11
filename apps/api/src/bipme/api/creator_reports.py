@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, cast
@@ -37,6 +36,14 @@ from bipme.api.dependencies import (
 )
 from bipme.api.errors import ApiError
 from bipme.api.schemas import ErrorResponse
+from bipme.api.source_policy import (
+    SYNTHETIC_DEMO_SOURCE,
+    allowed_personal_history_sources,
+    synthetic_demo_enabled_for,
+)
+from bipme.api.source_policy import (
+    x_history_policy_verified_at as _x_history_policy_verified_at,
+)
 from bipme.intelligence.baselines import BaselineRequest, OutcomeObservation, build_creator_baseline
 from bipme.intelligence.content_patterns import PersonalPostProfile
 from bipme.intelligence.creator_goals import CREATOR_GOALS_VERSION, CreatorGoalsSnapshot
@@ -123,23 +130,6 @@ def _permission_response(
         if _x_history_policy_verified_at(datetime.now(UTC)) is not None
         else "blocked",
     )
-
-
-def _x_history_policy_verified_at(as_of: datetime) -> datetime | None:
-    """Require an enabled operator gate with an explicit, cutoff-safe review timestamp."""
-    value = os.getenv("BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED", "false").strip().lower()
-    if value not in {"1", "true", "yes", "on"}:
-        return None
-    raw_time = os.getenv("BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT")
-    if not raw_time:
-        return None
-    try:
-        verified_at = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if verified_at.tzinfo is None or verified_at.utcoffset() is None or verified_at > as_of:
-        return None
-    return verified_at.astimezone(UTC)
 
 
 def _require_creator(db: Session, creator_id: UUID, *, lock: bool = False) -> Creator:
@@ -437,15 +427,18 @@ def _make_evidence_bundle(
             "source_permission_required",
             "Personal-history processing has not been authorized.",
         )
-    elif _x_history_policy_verified_at(as_of) is None:
+    elif not allowed_personal_history_sources(creator_id, as_of):
         limitations.append(
-            "X-history processing remains blocked until COD-344 confirms data-use rights and an operator enables the source policy gate."
+            "Personal-history processing is unavailable because no enabled source policy permits this evidence."
         )
     else:
+        allowed_sources = allowed_personal_history_sources(creator_id, as_of)
+        synthetic_only = allowed_sources == frozenset({SYNTHETIC_DEMO_SOURCE})
         post_filter = (
             CanonicalPost.creator_id == creator_id,
             CanonicalPost.platform == "x",
             CanonicalPost.availability == "available",
+            CanonicalPost.source.in_(allowed_sources),
             CanonicalPost.published_at <= as_of,
         )
         post_count = (
@@ -549,12 +542,24 @@ def _make_evidence_bundle(
                         pool="personal",
                         observed_at=as_of,
                         source_version="canonical-post-v1:post-profile-v1:outcome-v1",
-                        authorization_basis="creator-opt-in+verified-operator-x-history-policy",
-                        coverage_note="Creator-owned canonical posts and stored observations only.",
+                        authorization_basis=(
+                            "synthetic_demo_fixture"
+                            if synthetic_only
+                            else "creator-opt-in+verified-operator-x-history-policy"
+                        ),
+                        coverage_note=(
+                            "Synthetic demonstration data — not live X evidence."
+                            if synthetic_only
+                            else "Creator-owned canonical posts and stored observations only."
+                        ),
                         authorization_verified=True,
                         authorization_verified_at=max(
                             permission.recorded_at,
-                            _x_history_policy_verified_at(as_of) or permission.recorded_at,
+                            (
+                                as_of
+                                if synthetic_only
+                                else _x_history_policy_verified_at(as_of) or permission.recorded_at
+                            ),
                         ),
                     ),
                 )
@@ -660,6 +665,7 @@ def _personal_baselines(
 
 
 def _permission_snapshot(
+    creator_id: UUID,
     permission: CreatorProcessingPermission | None,
     selected_sources: tuple[str, ...],
     as_of: datetime,
@@ -670,7 +676,7 @@ def _permission_snapshot(
     selected = PERSONAL_HISTORY_SOURCE in selected_sources
     included = bool(selected and permission and permission.allowed)
     policy_verified_at = _x_history_policy_verified_at(as_of)
-    policy_enabled = policy_verified_at is not None
+    policy_enabled = policy_verified_at is not None or synthetic_demo_enabled_for(creator_id)
     return {
         "personal_history": {
             "status": "not_selected"
@@ -822,6 +828,7 @@ def generate_creator_report(
             personal_profiles=profiles,
         )
         source_state = _permission_snapshot(
+            creator.creator_id,
             permission,
             selected_sources,
             now,

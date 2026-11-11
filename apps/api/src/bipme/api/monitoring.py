@@ -14,7 +14,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from bipme.api.creator_reports import _latest_permission, _x_history_policy_verified_at
+from bipme.api.creator_reports import _latest_permission
 from bipme.api.dependencies import (
     AuthenticatedCreator,
     get_authenticated_creator,
@@ -22,8 +22,8 @@ from bipme.api.dependencies import (
     get_db_session,
 )
 from bipme.api.errors import ApiError
-from bipme.api.evidence import KNOWN_X_SOURCES
 from bipme.api.schemas import DraftAnalysisResponse, ErrorResponse, StrictModel
+from bipme.api.source_policy import KNOWN_X_SOURCES, x_history_policy_verified_at
 from bipme.jobs.metric_snapshots import HANDLER_NAME, OBSERVATION_WINDOWS
 from bipme.jobs.service import QUEUE, TASK_NAME
 from bipme.persistence.models import (
@@ -406,7 +406,7 @@ def read_monitoring(
             permission
             and permission.allowed
             and permission.recorded_at <= now
-            and _x_history_policy_verified_at(now) is not None
+            and x_history_policy_verified_at(now) is not None
             and post.source in KNOWN_X_SOURCES
         )
         expected_keys = [

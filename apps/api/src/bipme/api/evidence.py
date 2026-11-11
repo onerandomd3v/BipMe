@@ -17,7 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.elements import ColumnElement
 
-from bipme.api.creator_reports import _latest_permission, _x_history_policy_verified_at
+from bipme.api.creator_reports import _latest_permission
 from bipme.api.dependencies import (
     AuthenticatedCreator,
     get_authenticated_creator,
@@ -26,6 +26,11 @@ from bipme.api.dependencies import (
 )
 from bipme.api.errors import ApiError
 from bipme.api.schemas import ErrorResponse, StrictModel
+from bipme.api.source_policy import (
+    KNOWN_X_SOURCES,
+    SYNTHETIC_DEMO_SOURCE,
+    allowed_personal_history_sources,
+)
 from bipme.persistence.models import (
     CanonicalPost,
     CreatorHistoryImport,
@@ -38,11 +43,10 @@ _ERRORS: dict[int | str, dict[str, Any]] = {
     code: {"model": ErrorResponse} for code in (401, 403, 404, 422, 503)
 }
 OBSERVATION_LIMIT = 50
-KNOWN_X_SOURCES = {"x_creator_authorized_history", "x_authorized_publication_verification"}
 
 
 class ObservationProvenance(StrictModel):
-    source: Literal["authorized_x_api", "archive", "unknown"]
+    source: Literal["authorized_x_api", "archive", "unknown", "synthetic_demo"]
     missing_reason: Literal["not_returned", "invalid_value", "unavailable"] | None = None
 
 
@@ -59,13 +63,13 @@ class MetricObservationEvidence(StrictModel):
     published_at: datetime
     observed_age_seconds: float
     provenance: ObservationProvenance
-    source: Literal["authorized_x_api", "archive", "unknown"]
+    source: Literal["authorized_x_api", "archive", "unknown", "synthetic_demo"]
 
 
 class PostEvidence(StrictModel):
     id: UUID
     published_at: datetime
-    source: Literal["authorized_x_api", "archive", "unknown"]
+    source: Literal["authorized_x_api", "archive", "unknown", "synthetic_demo"]
     text: str | None
     source_url: str | None
     disclosure: Literal[
@@ -75,6 +79,7 @@ class PostEvidence(StrictModel):
     freshness: Literal["recorded", "unknown", "not_known_at_cutoff"]
     observations: tuple[MetricObservationEvidence, ...]
     observations_truncated: bool
+    source_label: str | None = None
 
 
 class EvidencePage(StrictModel):
@@ -93,7 +98,7 @@ class ImportStatus(StrictModel):
     next_page_available: bool
     started_at: datetime
     completed_at: datetime | None
-    source: Literal["authorized_x_api", "archive", "unknown"]
+    source: Literal["authorized_x_api", "archive", "unknown", "synthetic_demo"]
 
 
 class ImportPage(StrictModel):
@@ -110,9 +115,11 @@ class Cursor(StrictModel):
     id: UUID
 
 
-def source_kind(source: str) -> Literal["authorized_x_api", "archive", "unknown"]:
+def source_kind(source: str) -> Literal["authorized_x_api", "archive", "unknown", "synthetic_demo"]:
     if source in KNOWN_X_SOURCES:
         return "authorized_x_api"
+    if source == SYNTHETIC_DEMO_SOURCE:
+        return "synthetic_demo"
     # This is a classification, not permission to process archive content. There
     # is currently no implemented source-specific archive display policy gate.
     return "archive" if source == "creator_provided_archive" else "unknown"
@@ -157,8 +164,8 @@ def build_evidence(
 ) -> tuple[PostEvidence, ...]:
     permission = _latest_permission(db, owner)
     granted = bool(permission and permission.allowed and permission.recorded_at <= now)
-    policy = _x_history_policy_verified_at(now) is not None
-    permitted_ids = [p.id for p in posts if granted and policy and p.source in KNOWN_X_SOURCES]
+    allowed_sources = allowed_personal_history_sources(owner, now)
+    permitted_ids = [p.id for p in posts if granted and p.source in allowed_sources]
     grouped: dict[UUID, list[OutcomeObservationRecord]] = {}
     if permitted_ids:
         # One indexed, bounded lateral lookup per selected post, in ONE DB query.
@@ -193,7 +200,7 @@ def build_evidence(
         ] = "permitted"
         if not granted:
             disclosure = "permission_required"
-        elif not policy or post.source not in KNOWN_X_SOURCES:
+        elif post.source not in allowed_sources:
             disclosure = "source_policy_blocked"
         elif (
             post.source_observed_at is None
@@ -257,6 +264,11 @@ def build_evidence(
                 freshness=freshness,
                 observations=observations,
                 observations_truncated=len(rows) > OBSERVATION_LIMIT,
+                source_label=(
+                    "Synthetic demonstration data — not live X evidence"
+                    if post.source == SYNTHETIC_DEMO_SOURCE
+                    else None
+                ),
             )
         )
     return tuple(result)

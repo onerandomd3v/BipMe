@@ -163,6 +163,28 @@ def test_actual_metrics_and_sanitization(runtime):
     assert "secret" not in result.text and "evil.test" not in result.text
 
 
+def test_synthetic_demo_source_is_labeled_and_uses_explicit_demo_gate(runtime, monkeypatch):
+    client, factory, _, owner, ids, _ = runtime
+    monkeypatch.setenv("BIPME_ENVIRONMENT", "development")
+    monkeypatch.setenv("BIPME_SYNTHETIC_DEMO_ENABLED", "true")
+    monkeypatch.setenv("BIPME_SYNTHETIC_DEMO_CREATOR_ID", str(owner))
+    monkeypatch.setenv("BIPME_CREATOR_ID", str(owner))
+    monkeypatch.setenv("BIPME_EMBEDDING_PROVIDER", "synthetic_demo")
+    with factory.begin() as db:
+        post = db.get(CanonicalPost, ids[0])
+        assert post is not None
+        post.source = "synthetic_demo_fixture"
+        post.provenance = {"synthetic_demo": True}
+
+    response = client.get(f"{ROOT}/posts/{ids[0]}")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["source"] == "synthetic_demo"
+    assert body["source_label"] == "Synthetic demonstration data — not live X evidence"
+    assert body["disclosure"] == "permitted"
+
+
 def test_isolation_deleted_unavailable_and_batch(runtime):
     client, _, _, _, ids, _ = runtime
     for post_id in [*ids[4:], uuid4()]:
