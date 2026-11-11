@@ -68,6 +68,8 @@ type CreatorBaseline = components['schemas']['CreatorBaselineResponse']
 type PublicationLink = components['schemas']['PublicationLinkResponse']
 type PostmortemRead = components['schemas']['PostmortemReadResponse']
 type MonitoringRead = components['schemas']['MonitoringReadResponse']
+type CreatorHistoryImport = HistoryImportResponse
+type CreatorHistoryImportRequest = components['schemas']['HistoryImportRequest']
 
 export type HistoryPostsQuery = {
   limit?: number
@@ -190,6 +192,40 @@ function isHealthResponse(value: unknown): value is Record<string, string> {
   )
 }
 
+function isXConnectionResponse(
+  value: unknown,
+): value is components['schemas']['XConnectionResponse'] {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    typeof (value as { connected?: unknown }).connected === 'boolean' &&
+    Array.isArray((value as { scopes?: unknown }).scopes) &&
+    (value as { scopes: unknown[] }).scopes.every(
+      (scope) => typeof scope === 'string',
+    ),
+  )
+}
+
+function isCreatorHistoryImport(value: unknown): value is CreatorHistoryImport {
+  if (!value || typeof value !== 'object') return false
+  const result = value as Record<string, unknown>
+  return (
+    typeof result.import_id === 'string' &&
+    typeof result.status === 'string' &&
+    typeof result.requested_posts === 'number' &&
+    typeof result.pages_read === 'number' &&
+    typeof result.imported_posts === 'number' &&
+    typeof result.next_page_available === 'boolean' &&
+    (typeof result.error_code === 'string' || result.error_code === null) &&
+    typeof result.source === 'string' &&
+    typeof result.started_at === 'string' &&
+    (typeof result.completed_at === 'string' || result.completed_at === null) &&
+    Boolean(result.provenance) &&
+    typeof result.provenance === 'object' &&
+    !Array.isArray(result.provenance)
+  )
+}
+
 export function createApiClient(fetchImplementation: typeof fetch = fetch) {
   let csrfToken: string | null = null
   const sessionInvalidationListeners = new Set<() => void>()
@@ -202,13 +238,12 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
   const invalidateSessionAfterAuthFailure = (error: unknown) => {
     if (!(error instanceof ApiRequestError)) return
     const confirmedSessionFailure =
-      error.status === 401 ||
-      (error.status === 403 &&
-        [
-          'csrf_validation_failed',
-          'session_invalid',
-          'session_expired',
-        ].includes(error.code))
+      [
+        'authentication_required',
+        'session_invalid',
+        'session_expired',
+      ].includes(error.code) ||
+      (error.status === 403 && error.code === 'csrf_validation_failed')
     if (confirmedSessionFailure) clearSessionState()
   }
 
@@ -347,6 +382,43 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
       csrfToken = data.csrf_token
       return data
     },
+    async xConnection(signal?: AbortSignal) {
+      const result = await request(
+        () => client.GET('/api/auth/x/connection', { signal }),
+        signal,
+      )
+      const data = await unwrap(result)
+      if (!isXConnectionResponse(data)) {
+        throw new ApiRequestError({
+          code: 'malformed_response',
+          message: 'The X connection response was invalid.',
+          status: result.response.status,
+        })
+      }
+      return data
+    },
+    async refreshXConnection(signal?: AbortSignal) {
+      const result = await request(
+        () => client.POST('/api/auth/x/refresh', { signal }),
+        signal,
+      )
+      const data = await unwrap(result)
+      if (!isXConnectionResponse(data)) {
+        throw new ApiRequestError({
+          code: 'malformed_response',
+          message: 'The X connection response was invalid.',
+          status: result.response.status,
+        })
+      }
+      return data
+    },
+    async disconnectXConnection(signal?: AbortSignal) {
+      const result = await request(
+        () => client.POST('/api/auth/x/disconnect', { signal }),
+        signal,
+      )
+      await unwrap(result, true)
+    },
     async logout(signal?: AbortSignal) {
       try {
         const result = await request(
@@ -401,6 +473,25 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
         signal,
       )
       return unwrap(result)
+    },
+    async startHistoryImport(
+      body: CreatorHistoryImportRequest,
+      signal?: AbortSignal,
+    ): Promise<CreatorHistoryImport> {
+      const result = await request(
+        () =>
+          client.POST('/api/v1/creators/me/history/imports', { body, signal }),
+        signal,
+      )
+      const data = await unwrap(result)
+      if (!isCreatorHistoryImport(data)) {
+        throw new ApiRequestError({
+          code: 'malformed_response',
+          message: 'The history import response was invalid.',
+          status: result.response.status,
+        })
+      }
+      return data
     },
     async generateReport(
       body: components['schemas']['CreatorReportRequest'],
@@ -586,7 +677,14 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
     async historyImport(
       importId: string,
       signal?: AbortSignal,
-    ): Promise<HistoryImportResponse> {
+    ): Promise<CreatorHistoryImport> {
+      if (!/^[A-Za-z0-9._:-]{1,100}$/.test(importId)) {
+        throw new ApiRequestError({
+          code: 'invalid_import_id',
+          message: 'The history import identifier was invalid.',
+          status: null,
+        })
+      }
       const result = await request(
         () =>
           client.GET('/api/v1/creators/me/history/imports/{import_id}', {
@@ -595,7 +693,15 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
           }),
         signal,
       )
-      return unwrap(result)
+      const data = await unwrap(result)
+      if (!isCreatorHistoryImport(data)) {
+        throw new ApiRequestError({
+          code: 'malformed_response',
+          message: 'The history import status response was invalid.',
+          status: result.response.status,
+        })
+      }
+      return data
     },
     async baseline(
       params: BaselineQuery,

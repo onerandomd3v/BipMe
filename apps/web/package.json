@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "generate:api": "node scripts/api-contract.mjs generate",
     "check:api": "node scripts/api-contract.mjs check",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "openapi-fetch": "0.17.0",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@playwright/test": "^1.65.0",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.0",
     "@types/node": "^24.0.0",

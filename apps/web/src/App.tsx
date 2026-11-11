@@ -1,10 +1,17 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
 } from 'react'
+import { ConnectionsPage } from './connections/ConnectionsPage'
+import {
+  StateNotice,
+  stateMessages,
+  type ViewState,
+} from './components/StateNotice'
 import { ApiRequestError, apiClient } from './api/client'
 import { CreatorHistoryDashboard } from './CreatorHistoryDashboard'
 import { PostMonitoring } from './PostMonitoring'
@@ -13,15 +20,8 @@ import { DraftAnalysis } from './DraftAnalysis'
 import type { DraftAnalysisContext } from './dashboardModel'
 
 type View = 'dashboard' | 'connections' | 'history' | 'draft' | 'monitoring'
-type ViewState =
-  | 'loading'
-  | 'unauthenticated'
-  | 'error'
-  | 'empty'
-  | 'rate-limited'
-  | 'insufficient-evidence'
 type ApiHealth = 'checking' | 'available' | 'unavailable'
-type SessionStatus =
+export type SessionStatus =
   'checking' | 'authenticated' | 'unauthenticated' | 'unavailable'
 
 type Page = {
@@ -53,7 +53,7 @@ const pages: Page[] = [
     description: 'Manage authorized sources for your creator history.',
     stateTitle: 'Sign-in required',
     stateBody:
-      'A private BipMe session is required to view or manage data sources. Sign-in is not available in this development interface.',
+      'Sign in to view your private session and manage optional data sources.',
   },
   {
     id: 'history',
@@ -135,71 +135,6 @@ function useView() {
   return { view, navigate, navigateToMonitoring, locationKey }
 }
 
-const stateMessages: Record<
-  ViewState,
-  { title: string; body: string; symbol: string }
-> = {
-  loading: {
-    title: 'Loading your workspace',
-    body: 'Please wait while the requested information is retrieved.',
-    symbol: '◌',
-  },
-  unauthenticated: {
-    title: 'Sign-in required',
-    body: 'A private BipMe session is required to access creator data. This interface does not provide sign-in.',
-    symbol: '↗',
-  },
-  error: {
-    title: 'We could not load this information',
-    body: 'The request failed. Your existing data has not been changed.',
-    symbol: '!',
-  },
-  empty: {
-    title: 'This view is not available yet',
-    body: 'This navigation shell does not load creator records, metrics or recommendations.',
-    symbol: '○',
-  },
-  'rate-limited': {
-    title: 'Request limit reached',
-    body: 'The data provider is temporarily limiting requests. Try again later; no automatic retry will be made.',
-    symbol: '↻',
-  },
-  'insufficient-evidence': {
-    title: 'Not enough evidence',
-    body: 'There are not enough eligible comparable observations to support a responsible recommendation.',
-    symbol: '?',
-  },
-}
-
-export function StateNotice({
-  state,
-  title,
-  body,
-}: {
-  state: ViewState
-  title?: string
-  body?: string
-}) {
-  const message = stateMessages[state]
-  const alert = state === 'error' || state === 'rate-limited'
-
-  return (
-    <section
-      className={`state-notice state-notice--${state}`}
-      role={alert ? 'alert' : 'status'}
-      aria-live={alert ? 'assertive' : 'polite'}
-    >
-      <span className="state-symbol" aria-hidden="true">
-        {message.symbol}
-      </span>
-      <div className="state-copy">
-        <h2>{title ?? message.title}</h2>
-        <p>{body ?? message.body}</p>
-      </div>
-    </section>
-  )
-}
-
 function DevelopmentStatePreview() {
   const [open, setOpen] = useState(false)
   const [state, setState] = useState<ViewState>('unauthenticated')
@@ -260,6 +195,10 @@ export function App() {
   const sidebarRef = useRef<HTMLElement>(null)
   const wasDrawerOpen = useRef(false)
   const page = pages.find((item) => item.id === view) ?? pages[0]
+  const handleSessionExpired = useCallback(() => {
+    setSessionStatus('unauthenticated')
+    setDraftContext(null)
+  }, [])
 
   useEffect(() => {
     return apiClient.subscribeSessionInvalidation(() => {
@@ -547,16 +486,18 @@ export function App() {
             <p className="intro">{page.description}</p>
           </div>
 
-          {view === 'dashboard' && sessionStatus === 'authenticated' ? (
+          {view === 'connections' ? (
+            <ConnectionsPage
+              sessionStatus={sessionStatus}
+              onSessionStatus={setSessionStatus}
+            />
+          ) : view === 'dashboard' && sessionStatus === 'authenticated' ? (
             <CreatorDashboard
               onAnalyzeDraft={(context) => {
                 setDraftContext(context)
                 navigate('draft')
               }}
-              onSessionExpired={() => {
-                setSessionStatus('unauthenticated')
-                setDraftContext(null)
-              }}
+              onSessionExpired={handleSessionExpired}
             />
           ) : view === 'draft' && sessionStatus === 'authenticated' ? (
             <DraftAnalysis

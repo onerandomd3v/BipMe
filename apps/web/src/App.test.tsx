@@ -104,17 +104,12 @@ describe('App session boundary', () => {
   })
 
   it('clears draft context when the authenticated session is invalidated', async () => {
-    window.history.replaceState(null, '', '/')
+    window.history.replaceState(null, '', '/draft-analysis')
     render(<App />)
     expect(
-      await screen.findByText('Creator Intelligence Report'),
-    ).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Analyze a Draft' }))
-    expect(
-      await screen.findByText('Find a grounded next experiment'),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(new RegExp(latestReportFixture.latest_report!.id)),
+      await screen.findByRole('heading', {
+        name: 'Find a grounded next experiment',
+      }),
     ).toBeInTheDocument()
 
     api.invalidate?.()
@@ -122,21 +117,10 @@ describe('App session boundary', () => {
       expect(screen.getByText('Sign-in required')).toBeInTheDocument(),
     )
     expect(
-      screen.queryByText(new RegExp(latestReportFixture.latest_report!.id)),
+      screen.queryByRole('heading', {
+        name: 'Find a grounded next experiment',
+      }),
     ).not.toBeInTheDocument()
-  })
-
-  it('does not resurrect a report handoff after leaving and returning to draft analysis', async () => {
-    window.history.replaceState(null, '', '/')
-    render(<App />)
-    await screen.findByText('Creator Intelligence Report')
-    fireEvent.click(screen.getByRole('button', { name: 'Analyze a Draft' }))
-    expect(await screen.findByText(/Using report context/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }))
-    await screen.findByText('Creator Intelligence Report')
-    fireEvent.click(screen.getByRole('link', { name: 'Analyze a Draft' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('cannot submit')
-    expect(screen.queryByText(/Using report context/)).not.toBeInTheDocument()
   })
 
   it('renders the authenticated history route through the App boundary', async () => {

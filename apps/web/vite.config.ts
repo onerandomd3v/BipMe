@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: './src/testSetup.ts',
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
   server: {
     proxy: {
