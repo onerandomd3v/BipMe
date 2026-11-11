@@ -12,11 +12,10 @@ RUN pnpm build
 
 FROM nginx/nginx-unprivileged:stable-alpine AS runtime
 
-ENV NGINX_ENVSUBST_FILTER=BIPME_API_UPSTREAM
-
 COPY --from=build --chown=nginx:nginx /workspace/apps/web/dist/ /usr/share/nginx/html/
 COPY apps/web/nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY apps/web/nginx/snippets/ /etc/nginx/snippets/
+COPY --chmod=755 apps/web/docker-entrypoint.sh /usr/local/bin/bipme-web-entrypoint
 
 USER nginx
 EXPOSE 8080
@@ -25,4 +24,5 @@ STOPSIGNAL SIGQUIT
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
 
+ENTRYPOINT ["/usr/local/bin/bipme-web-entrypoint"]
 CMD ["nginx", "-g", "daemon off;"]
