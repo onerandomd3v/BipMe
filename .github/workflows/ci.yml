@@ -161,6 +161,27 @@ jobs:
       - name: Build
         run: pnpm build
 
+  web-e2e-checks:
+    name: web-e2e-checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright creator-flow tests
+        run: pnpm test:e2e
+
   web-container-checks:
     name: web-container-checks
     runs-on: ubuntu-latest

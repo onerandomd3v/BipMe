@@ -548,13 +548,13 @@ export function CreatorDashboard({
   const cancelDeleteRef = useRef<HTMLButtonElement>(null)
   const deleteTriggerRef = useRef<HTMLButtonElement>(null)
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true
+    return () => {
       mounted.current = false
       mutationController.current?.abort()
-    },
-    [],
-  )
+    }
+  }, [])
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
