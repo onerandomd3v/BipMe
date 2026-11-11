@@ -1180,7 +1180,7 @@ export interface components {
             /** Metric Definition */
             metric_definition: string;
             /** Missing Reason */
-            missing_reason?: string | null;
+            missing_reason?: ("not_returned" | "invalid_value") | null;
             /** Observed Age Seconds */
             observed_age_seconds: number;
             /**
@@ -1206,7 +1206,7 @@ export interface components {
             /** Unit */
             unit: string;
             /** Value */
-            value: number | null;
+            value: string | null;
             /** Window Key */
             window_key: string;
             /**

@@ -1859,6 +1859,10 @@
           "missing_reason": {
             "anyOf": [
               {
+                "enum": [
+                  "not_returned",
+                  "invalid_value"
+                ],
                 "type": "string"
               },
               {
@@ -1907,7 +1911,7 @@
           "value": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"

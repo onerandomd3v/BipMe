@@ -21,7 +21,10 @@ from procrastinate.sync_psycopg_connector import SyncPsycopgConnector
 from sqlalchemy import Engine, create_engine, inspect, make_url, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from sqlalchemy.orm import Session
+from test_outlooks import observation
+from test_outlooks import request as outlook_request
 
+from bipme.api.analysis import _build_api_response
 from bipme.api.app import create_app
 from bipme.api.dependencies import (
     AuthenticatedCreator,
@@ -31,9 +34,11 @@ from bipme.api.dependencies import (
     get_embedder,
 )
 from bipme.api.publications import get_x_publication_verifier
+from bipme.api.schemas import AcceptedHypothesis
 from bipme.integrations.x_publication import PublishedPostEvidence
 from bipme.integrations.x_read import XReadPost
 from bipme.intelligence.embeddings import EmbeddingIdentity
+from bipme.intelligence.outlooks import build_distribution_outlook
 from bipme.intelligence.post_profiles import (
     CreatorContextSnapshot,
     PostProfileInput,
@@ -1272,6 +1277,136 @@ def test_concurrent_history_post_upserts_share_one_canonical_row(
             )
             == 1
         )
+
+
+def test_monitoring_read_validates_receipts_observations_and_decimal_precision(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    creator = _creator(session)
+    assessment_id = uuid4()
+    post = _post(
+        session,
+        creator.id,
+        published_at=NOW - timedelta(hours=1),
+    )
+    post.source = "x_authorized_publication_verification"
+    outlook = build_distribution_outlook(
+        outlook_request(
+            matches=(str(post.id),),
+            outcomes=(
+                observation(
+                    str(post.id),
+                    10.0,
+                    published_at=post.published_at,
+                    observed_at=post.published_at + timedelta(minutes=5),
+                ),
+            ),
+        )
+    )
+    outlook = outlook.__class__(**{**outlook.__dict__, "assessment_id": str(assessment_id)})
+    hypothesis = AcceptedHypothesis(
+        question="Will the post earn more impressions?",
+        metric="impressions",
+        metric_definition="impressions-v1",
+        unit="impressions",
+        window_kind="age_aligned",
+        window_key="age:15m",
+        expected_direction="higher",
+    )
+    snapshot = _build_api_response(
+        outlook,
+        assessed_at=NOW - timedelta(days=1),
+        accepted_hypothesis=hypothesis,
+    )
+    session.add(
+        DraftAssessment(
+            id=assessment_id,
+            creator_id=creator.id,
+            assessment_key="monitoring-pg-read",
+            assessed_at=NOW - timedelta(days=1),
+            content_fingerprint=outlook.content_fingerprint,
+            outlook_version="distribution-outlook-v1",
+            decision_snapshot=snapshot.model_dump(mode="json"),
+            accepted_hypothesis=hypothesis.model_dump(mode="json"),
+        )
+    )
+    session.flush()
+    post.source_assessment_id = assessment_id
+    session.flush()
+    session.add(
+        CreatorProcessingPermission(
+            creator_id=creator.id,
+            revision=1,
+            source_kind="personal_history",
+            allowed=True,
+            policy_version="synthetic-pg-read",
+            recorded_at=NOW - timedelta(days=1),
+        )
+    )
+    due_at = post.published_at + timedelta(minutes=15)
+    session.add(
+        ScheduledJob(
+            creator_id=creator.id,
+            idempotency_key=f"post-observation:{post.id}:age:15m",
+            handler_name="bipme.jobs.metric_snapshot",
+            arguments={
+                "post_id": str(post.id),
+                "external_post_id": post.external_post_id,
+                "window_key": "age:15m",
+                "window_seconds": 900,
+                "scheduled_at_epoch": int(due_at.timestamp()),
+            },
+            input_digest="a" * 64,
+            scheduled_at=due_at,
+            outcome="succeeded",
+            finished_at=due_at + timedelta(seconds=2),
+        )
+    )
+    session.add(
+        OutcomeObservationRecord(
+            post_id=post.id,
+            creator_id=creator.id,
+            published_at=post.published_at,
+            metric_name="impressions",
+            metric_definition="impressions-v1",
+            metric_unit="impressions",
+            metric_value=Decimal("1234567890.1234567890"),
+            state="observed",
+            window_kind="age_aligned",
+            window_key="age:15m",
+            observed_at=post.published_at + timedelta(minutes=16),
+            idempotency_key=f"x-post-observation:{post.id}:age:15m:impressions",
+            provenance={
+                "source": "x_authorized_post_metrics",
+                "endpoint": "/2/tweets/{id}",
+                "scheduled_at": due_at.isoformat(),
+                "window_key": "age:15m",
+                "observed_age_seconds": 16 * 60,
+            },
+        )
+    )
+    session.commit()
+
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED", "true")
+    monkeypatch.setenv("BIPME_X_HISTORY_REPORT_PROCESSING_VERIFIED_AT", "2026-01-01T00:00:00Z")
+    client = _authorized_client(session, creator.id)
+    before = {
+        "scheduled_jobs": session.scalar(text("SELECT count(*) FROM scheduled_jobs")),
+        "outcome_observations": session.scalar(text("SELECT count(*) FROM outcome_observations")),
+        "api_usage_ledger": session.scalar(text("SELECT count(*) FROM api_usage_ledger")),
+    }
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{assessment_id}/monitoring")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    window = next(item for item in body["windows"] if item["window_key"] == "age:15m")
+    assert window["execution_state"] == "completed"
+    assert window["due_at"] == due_at.isoformat().replace("+00:00", "Z")
+    assert Decimal(window["observations"][0]["value"]) == Decimal("1234567890.1234567890")
+    assert {
+        "scheduled_jobs": session.scalar(text("SELECT count(*) FROM scheduled_jobs")),
+        "outcome_observations": session.scalar(text("SELECT count(*) FROM outcome_observations")),
+        "api_usage_ledger": session.scalar(text("SELECT count(*) FROM api_usage_ledger")),
+    } == before
 
 
 def test_outcome_snapshots_are_idempotent_and_preserve_zero_missing_and_time(

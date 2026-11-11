@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated, Literal, cast
 from uuid import UUID
 
@@ -73,7 +74,7 @@ class MonitoringObservationResponse(StrictModel):
     metric: str = Field(min_length=1, max_length=100)
     metric_definition: str = Field(min_length=1, max_length=255)
     unit: str = Field(min_length=1, max_length=64)
-    value: float | None
+    value: Decimal | None
     state: Literal["observed", "missing", "invalid"]
     published_at: datetime
     observed_at: datetime
@@ -81,7 +82,7 @@ class MonitoringObservationResponse(StrictModel):
     window_kind: Literal["mature_cumulative", "age_aligned"]
     window_key: str = Field(min_length=1, max_length=100)
     source: Literal["authorized_x_api", "unknown"]
-    missing_reason: str | None = None
+    missing_reason: Literal["not_returned", "invalid_value"] | None = None
 
 
 class MonitoringWindowResponse(StrictModel):
@@ -126,6 +127,11 @@ _PUBLIC_FAILURE_CODES = {
     "handler_outcome_uncertain",
     "worker_lost_during_billable_operation",
 }
+
+_PUBLIC_MISSING_REASONS = {"not_returned", "invalid_value"}
+_METRIC_SOURCE = "x_authorized_post_metrics"
+_METRIC_SOURCE_ENDPOINT = "/2/tweets/{id}"
+_WINDOWS_BY_KEY = {window.key: window for window in OBSERVATION_WINDOWS}
 
 
 def _safe_failure_code(value: str | None) -> str | None:
@@ -199,31 +205,90 @@ def _publication(post: CanonicalPost) -> MonitoringPublicationResponse:
     )
 
 
-def _source(provenance: object) -> Literal["authorized_x_api", "unknown"]:
-    if isinstance(provenance, dict) and str(provenance.get("source", "")).startswith("x"):
-        return "authorized_x_api"
-    return "unknown"
-
-
 def _observation(
     row: OutcomeObservationRecord, post: CanonicalPost
 ) -> MonitoringObservationResponse:
     provenance = row.provenance if isinstance(row.provenance, dict) else {}
     raw_missing_reason = provenance.get("missing_reason")
+    missing_reason = (
+        cast(Literal["not_returned", "invalid_value"], raw_missing_reason)
+        if raw_missing_reason in _PUBLIC_MISSING_REASONS
+        else None
+    )
     return MonitoringObservationResponse(
         id=row.id,
         metric=row.metric_name,
         metric_definition=row.metric_definition,
         unit=row.metric_unit,
-        value=float(row.metric_value) if row.metric_value is not None else None,
+        value=row.metric_value,
         state=cast(Literal["observed", "missing", "invalid"], row.state),
         published_at=row.published_at,
         observed_at=row.observed_at,
         observed_age_seconds=(row.observed_at - post.published_at).total_seconds(),
-        window_kind=cast(Literal["mature_cumulative", "age_aligned"], row.window_kind),
+        window_kind="age_aligned",
         window_key=row.window_key,
-        source=_source(provenance),
-        missing_reason=str(raw_missing_reason) if raw_missing_reason is not None else None,
+        source="authorized_x_api",
+        missing_reason=missing_reason,
+    )
+
+
+def _valid_observation(row: OutcomeObservationRecord, post: CanonicalPost) -> bool:
+    """Accept only immutable, COD-363 age-aligned observations for this publication."""
+    provenance = row.provenance if isinstance(row.provenance, dict) else {}
+    window = _WINDOWS_BY_KEY.get(row.window_key)
+    if (
+        row.creator_id != post.creator_id
+        or row.post_id != post.id
+        or row.published_at != post.published_at
+        or row.window_kind != "age_aligned"
+        or window is None
+        or provenance.get("source") != _METRIC_SOURCE
+        or provenance.get("endpoint") != _METRIC_SOURCE_ENDPOINT
+        or provenance.get("window_key") != row.window_key
+    ):
+        return False
+    expected_key = f"x-post-observation:{post.id}:{row.window_key}:{row.metric_name}"
+    if row.idempotency_key != expected_key:
+        return False
+    try:
+        scheduled_at = datetime.fromisoformat(str(provenance["scheduled_at"]))
+    except (KeyError, TypeError, ValueError):
+        return False
+    if scheduled_at.tzinfo is None:
+        return False
+    due_at = post.published_at.astimezone(UTC) + window.offset
+    if scheduled_at.astimezone(UTC) != due_at:
+        return False
+    observed_age = provenance.get("observed_age_seconds")
+    if not isinstance(observed_age, (int, float, str)):
+        return False
+    try:
+        if abs(float(observed_age) - (row.observed_at - post.published_at).total_seconds()) > 1e-6:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return row.observed_at >= post.published_at
+
+
+def _valid_receipt(job: ScheduledJob, post: CanonicalPost, window_key: str) -> bool:
+    """Validate a durable receipt against the scheduler's canonical identity."""
+    window = _WINDOWS_BY_KEY[window_key]
+    args = job.arguments
+    if not isinstance(args, dict):
+        return False
+    due_at = post.published_at.astimezone(UTC) + window.offset
+    try:
+        scheduled_epoch = int(args["scheduled_at_epoch"])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
+    return (
+        job.handler_name == HANDLER_NAME
+        and job.idempotency_key == f"post-observation:{post.id}:{window.key}"
+        and args.get("post_id") == str(post.id)
+        and args.get("external_post_id") == post.external_post_id
+        and args.get("window_key") == window.key
+        and args.get("window_seconds") == window.seconds
+        and scheduled_epoch == int(due_at.timestamp())
     )
 
 
@@ -324,24 +389,29 @@ def read_monitoring(
             and _x_history_policy_verified_at(now) is not None
             and post.source in KNOWN_X_SOURCES
         )
+        expected_keys = [
+            f"post-observation:{post.id}:{window.key}" for window in OBSERVATION_WINDOWS
+        ]
         jobs = db.scalars(
             select(ScheduledJob)
             .where(
                 ScheduledJob.creator_id == creator.creator_id,
                 ScheduledJob.handler_name == HANDLER_NAME,
+                ScheduledJob.idempotency_key.in_(expected_keys),
             )
             .order_by(ScheduledJob.scheduled_at, ScheduledJob.id)
         ).all()
         jobs_by_window: dict[str, ScheduledJob] = {}
         limitations: list[str] = []
         for job in jobs:
-            if not isinstance(job.arguments, dict) or job.arguments.get("post_id") != str(post.id):
-                continue
-            window_key = job.arguments.get("window_key")
-            if not isinstance(window_key, str) or window_key not in {
-                item.key for item in OBSERVATION_WINDOWS
-            }:
+            window_key = (
+                job.arguments.get("window_key") if isinstance(job.arguments, dict) else None
+            )
+            if not isinstance(window_key, str) or window_key not in _WINDOWS_BY_KEY:
                 limitations.append("A stored monitoring receipt had an unrecognized window.")
+                continue
+            if not _valid_receipt(job, post, window_key):
+                limitations.append("A stored monitoring receipt failed integrity validation.")
                 continue
             jobs_by_window.setdefault(window_key, job)
 
@@ -353,6 +423,9 @@ def read_monitoring(
                     .where(
                         OutcomeObservationRecord.creator_id == creator.creator_id,
                         OutcomeObservationRecord.post_id == post.id,
+                        OutcomeObservationRecord.published_at == post.published_at,
+                        OutcomeObservationRecord.window_kind == "age_aligned",
+                        OutcomeObservationRecord.window_key.in_(tuple(_WINDOWS_BY_KEY)),
                     )
                     .order_by(
                         OutcomeObservationRecord.observed_at,
@@ -367,6 +440,9 @@ def read_monitoring(
 
         observations_by_window: dict[str, list[MonitoringObservationResponse]] = {}
         for row in rows:
+            if not _valid_observation(row, post):
+                limitations.append("A stored metric observation failed integrity validation.")
+                continue
             try:
                 observation = _observation(row, post)
             except (ValidationError, TypeError, ValueError):

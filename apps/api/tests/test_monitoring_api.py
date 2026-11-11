@@ -159,7 +159,16 @@ def monitoring_api(
             ("age:24h", "failed", "rate_limited"),
         )
         for index, (window_key, outcome, failure_code) in enumerate(windows):
-            due = NOW - timedelta(minutes=55 - index * 5)
+            window_seconds = {
+                "age:5m": 5 * 60,
+                "age:15m": 15 * 60,
+                "age:30m": 30 * 60,
+                "age:1h": 60 * 60,
+                "age:2h": 2 * 60 * 60,
+                "age:6h": 6 * 60 * 60,
+                "age:24h": 24 * 60 * 60,
+            }[window_key]
+            due = NOW - timedelta(hours=1) + timedelta(seconds=window_seconds)
             db.add(
                 ScheduledJob(
                     creator_id=CREATOR_ID,
@@ -169,7 +178,7 @@ def monitoring_api(
                         "post_id": str(POST_ID),
                         "external_post_id": "987654321",
                         "window_key": window_key,
-                        "window_seconds": 300,
+                        "window_seconds": window_seconds,
                         "scheduled_at_epoch": int(due.timestamp()),
                     },
                     input_digest=(f"{index:064x}"),
@@ -193,8 +202,16 @@ def monitoring_api(
                     window_kind="age_aligned",
                     window_key="age:15m",
                     observed_at=NOW - timedelta(minutes=40),
-                    idempotency_key="x-post-observation:post:age:15m:impressions",
-                    provenance={"source": "x", "scheduled_at": "not-the-observation-time"},
+                    idempotency_key=f"x-post-observation:{POST_ID}:age:15m:impressions",
+                    provenance={
+                        "source": "x_authorized_post_metrics",
+                        "endpoint": "/2/tweets/{id}",
+                        "scheduled_at": (
+                            NOW - timedelta(hours=1) + timedelta(minutes=15)
+                        ).isoformat(),
+                        "window_key": "age:15m",
+                        "observed_age_seconds": 20 * 60,
+                    },
                 ),
                 OutcomeObservationRecord(
                     post_id=POST_ID,
@@ -208,8 +225,17 @@ def monitoring_api(
                     window_kind="age_aligned",
                     window_key="age:15m",
                     observed_at=NOW - timedelta(minutes=40),
-                    idempotency_key="x-post-observation:post:age:15m:likes",
-                    provenance={"missing_reason": "not_returned"},
+                    idempotency_key=f"x-post-observation:{POST_ID}:age:15m:likes",
+                    provenance={
+                        "source": "x_authorized_post_metrics",
+                        "endpoint": "/2/tweets/{id}",
+                        "scheduled_at": (
+                            NOW - timedelta(hours=1) + timedelta(minutes=15)
+                        ).isoformat(),
+                        "window_key": "age:15m",
+                        "observed_age_seconds": 20 * 60,
+                        "missing_reason": "not_returned",
+                    },
                 ),
             )
         )
@@ -260,7 +286,7 @@ def test_monitoring_returns_windows_states_and_actual_observation_time(monitorin
     assert observations["impressions"]["observed_at"] == (
         NOW - timedelta(minutes=40)
     ).isoformat().replace("+00:00", "Z")
-    assert observations["impressions"]["value"] == 42.0
+    assert Decimal(observations["impressions"]["value"]) == Decimal("42")
     assert observations["likes"]["state"] == "missing"
     assert windows["age:30m"]["execution_state"] == "missed"
     assert windows["age:1h"]["execution_state"] == "budget_blocked"
@@ -333,6 +359,73 @@ def test_monitoring_ignores_malformed_receipts_without_inventing_window_state(
     body = response.json()
     assert "unrecognized window" in " ".join(body["limitations"])
     assert all(window["window_key"] != "unexpected-window" for window in body["windows"])
+
+
+def test_monitoring_validates_receipt_identity_and_due_time(monitoring_api) -> None:
+    client, factory = monitoring_api
+    with factory.begin() as db:
+        receipt = db.scalar(
+            select(ScheduledJob).where(
+                ScheduledJob.creator_id == CREATOR_ID,
+                ScheduledJob.idempotency_key == f"post-observation:{POST_ID}:age:15m",
+            )
+        )
+        assert receipt is not None
+        receipt.arguments = {**receipt.arguments, "window_seconds": 300}
+
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/monitoring")
+    assert response.status_code == 200
+    body = response.json()
+    window = next(item for item in body["windows"] if item["window_key"] == "age:15m")
+    assert window["execution_state"] == "not_scheduled"
+    assert window["receipt_id"] is None
+    assert "integrity validation" in " ".join(body["limitations"])
+
+
+def test_monitoring_allowlists_missing_reason_and_observation_identity(monitoring_api) -> None:
+    client, factory = monitoring_api
+    with factory.begin() as db:
+        observation_row = db.scalar(
+            select(OutcomeObservationRecord).where(OutcomeObservationRecord.metric_name == "likes")
+        )
+        assert observation_row is not None
+        observation_row.provenance = {
+            **observation_row.provenance,
+            "missing_reason": "provider-secret-detail",
+        }
+        db.add(
+            OutcomeObservationRecord(
+                post_id=POST_ID,
+                creator_id=CREATOR_ID,
+                published_at=NOW - timedelta(hours=1),
+                metric_name="retweets",
+                metric_definition="retweets-v1",
+                metric_unit="count",
+                metric_value=Decimal("9"),
+                state="observed",
+                window_kind="mature_cumulative",
+                window_key="age:15m",
+                observed_at=NOW - timedelta(minutes=40),
+                idempotency_key=f"x-post-observation:{POST_ID}:age:15m:retweets",
+                provenance={
+                    "source": "x_authorized_post_metrics",
+                    "endpoint": "/2/tweets/{id}",
+                    "scheduled_at": (NOW - timedelta(minutes=45)).isoformat(),
+                    "window_key": "age:15m",
+                    "observed_age_seconds": 20 * 60,
+                },
+            )
+        )
+
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/monitoring")
+    assert response.status_code == 200
+    body = response.json()
+    observations = next(item for item in body["windows"] if item["window_key"] == "age:15m")[
+        "observations"
+    ]
+    by_metric = {item["metric"]: item for item in observations}
+    assert by_metric["likes"]["missing_reason"] is None
+    assert "retweets" not in by_metric
 
 
 def test_monitoring_auth_failure_uses_standard_error_contract(monitoring_api) -> None:
