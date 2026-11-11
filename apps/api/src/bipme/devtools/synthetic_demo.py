@@ -379,7 +379,7 @@ def _ensure_goal(db: Session, creator_id: UUID, now: datetime) -> None:
                 recorded_at=now,
                 niche="synthetic software development",
                 intended_audience="synthetic independent developers",
-                priority_outcomes=["conversation", "useful replies"],
+                priority_outcomes=["conversation", "reach"],
                 preferred_styles=["technical_explainer", "tutorial"],
                 language="en",
             )

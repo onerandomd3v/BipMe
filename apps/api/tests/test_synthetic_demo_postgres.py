@@ -13,6 +13,8 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -24,6 +26,7 @@ from bipme.api.dependencies import (
     get_current_time,
     get_db_session,
 )
+from bipme.api.errors import ApiError
 from bipme.api.source_policy import SYNTHETIC_DEMO_SOURCE
 from bipme.devtools.synthetic_demo import (
     SyntheticDemoError,
@@ -304,6 +307,18 @@ def test_authenticated_report_draft_and_postmortem_paths_use_seeded_demo_evidenc
 
     current_time = SEEDED_AT + timedelta(days=1)
     app = create_app()
+
+    async def expose_error_type(_request: Request, exc: ApiError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": exc.code,
+                "context_type": type(exc.__context__).__name__,
+                "context_message": str(exc.__context__)[:300],
+            },
+        )
+
+    app.add_exception_handler(ApiError, expose_error_type)
 
     def db_session() -> Iterator[Session]:
         with factory() as db:
