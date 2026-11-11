@@ -46,6 +46,9 @@ async function mockSession(
 }
 
 async function openConnections(page: Page) {
+  await page.route('**/api/v1/creators/me/history/imports', (route) =>
+    route.fulfill({ json: { items: [], truncated: false } }),
+  )
   await page.goto('/connections')
   await expect(
     page.getByRole('heading', { name: 'Welcome to BipMe' }),
@@ -80,7 +83,10 @@ test('visits all six onboarding steps and supports back and continue', async ({
 }) => {
   const importRequests: string[] = []
   page.on('request', (request) => {
-    if (request.url().includes('/api/v1/creators/me/history/imports'))
+    if (
+      request.method() === 'POST' &&
+      request.url().includes('/api/v1/creators/me/history/imports')
+    )
       importRequests.push(request.url())
   })
   await mockSession(page)
@@ -100,9 +106,9 @@ test('visits all six onboarding steps and supports back and continue', async ({
   }
   await page.getByRole('button', { name: 'Back' }).click()
   await expect(page.getByRole('heading', { name: titles[4] })).toBeVisible()
-  await expect(page.getByText('Import unavailable')).toBeVisible()
+  await expect(page.getByText('No import has been started')).toBeVisible()
   await expect(
-    page.getByText(/No import has been started from this screen/),
+    page.getByText(/Starting or resuming provider work is unavailable/),
   ).toBeVisible()
   await expect(page.getByLabel('Development fixture (synthetic)')).toHaveCount(
     0,

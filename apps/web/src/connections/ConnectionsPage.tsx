@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { ApiRequestError, apiClient } from '../api/client'
+import type { components } from '../api/generated/schema'
 import {
   ApiResponseError,
   authApi,
@@ -7,6 +9,8 @@ import {
 } from '../auth/client'
 import { StateNotice, type ViewState } from '../components/StateNotice'
 import type { SessionStatus } from '../App'
+
+type HistoryImportStatus = components['schemas']['ImportStatus']
 
 type ImportState =
   'not-started' | 'in-progress' | 'partial' | 'failed' | 'completed'
@@ -153,6 +157,15 @@ export function ConnectionsPage({
   const [niche, setNiche] = useState('')
   const [audience, setAudience] = useState('')
   const [fixture, setFixture] = useState<ImportState>('not-started')
+  const [historyImports, setHistoryImports] = useState<
+    HistoryImportStatus[] | null
+  >(null)
+  const [historyImportError, setHistoryImportError] = useState<{
+    state: 'error' | 'rate-limited'
+    message: string
+  } | null>(null)
+  const [historyImportsBusy, setHistoryImportsBusy] = useState(false)
+  const [historyImportsRefresh, setHistoryImportsRefresh] = useState(0)
   const [connectionFixture, setConnectionFixture] =
     useState<ConnectionFixture>('none')
   const [notice, setNotice] = useState<string | null>(null)
@@ -186,6 +199,47 @@ export function ConnectionsPage({
       })
     return () => controller.abort()
   }, [sessionStatus, onSessionStatus])
+
+  useEffect(() => {
+    if (step !== 4 || sessionStatus !== 'authenticated') {
+      setHistoryImports(null)
+      setHistoryImportError(null)
+      setHistoryImportsBusy(false)
+      return
+    }
+    const controller = new AbortController()
+    setHistoryImportsBusy(true)
+    setHistoryImportError(null)
+    apiClient
+      .historyImports(20, controller.signal)
+      .then((result) => setHistoryImports(result.items))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        if (
+          error instanceof ApiRequestError &&
+          (error.status === 401 ||
+            error.code === 'authentication_required' ||
+            error.code === 'session_invalid')
+        ) {
+          onSessionStatus('unauthenticated')
+          return
+        }
+        setHistoryImportError({
+          state:
+            error instanceof ApiRequestError && error.status === 429
+              ? 'rate-limited'
+              : 'error',
+          message:
+            error instanceof ApiRequestError && error.status === 429
+              ? 'The import status service is rate limiting requests. Wait before checking again; BipMe will not retry automatically.'
+              : 'The server-reported import status is unavailable. No import was started or changed.',
+        })
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setHistoryImportsBusy(false)
+      })
+    return () => controller.abort()
+  }, [step, sessionStatus, historyImportsRefresh, onSessionStatus])
 
   useEffect(() => {
     if (
@@ -410,6 +464,17 @@ export function ConnectionsPage({
             ? 'Connected'
             : 'Not connected'
   const importState = importFixtures[fixture]
+  const latestHistoryImport = historyImports
+    ?.slice()
+    .sort(
+      (left, right) =>
+        Date.parse(right.started_at) - Date.parse(left.started_at),
+    )[0]
+
+  function refreshHistoryImportStatus() {
+    if (historyImportsBusy) return
+    setHistoryImportsRefresh((value) => value + 1)
+  }
 
   return (
     <div className="connections-page">
@@ -725,53 +790,125 @@ export function ConnectionsPage({
               </p>
               <div className="import-status-card">
                 <p className="card-kicker">Import status</p>
-                <StateNotice
-                  state={
-                    importState.state ??
-                    (importState.progress ? 'loading' : 'empty')
-                  }
-                  title={
-                    import.meta.env.DEV
-                      ? importState.title
-                      : 'Import unavailable'
-                  }
-                  body={
-                    import.meta.env.DEV
-                      ? importState.body
-                      : 'No import has been started from this screen. This UI will not request or retain creator history until its authorization, budget and deletion safeguards are ready.'
-                  }
-                />
-                {import.meta.env.DEV && fixture !== 'not-started' && (
-                  <div className="fixture-progress">
-                    <div className="fixture-progress__label">
-                      <span>Development fixture progress</span>
-                      <strong>{importState.progress ?? 0}%</strong>
-                    </div>
-                    <progress
-                      max="100"
-                      value={importState.progress ?? 0}
-                      aria-label="Synthetic import fixture progress"
-                    />
-                  </div>
-                )}
-                {import.meta.env.DEV && (
-                  <div className="fixture-selector">
-                    <label htmlFor="import-state-fixture">
-                      Development fixture (synthetic)
-                    </label>
-                    <select
-                      id="import-state-fixture"
-                      value={fixture}
-                      onChange={(event) =>
-                        setFixture(event.target.value as ImportState)
+                {historyImportError ? (
+                  <StateNotice
+                    state={historyImportError.state}
+                    title={
+                      historyImportError.state === 'rate-limited'
+                        ? 'Import status rate limited'
+                        : 'Import status unavailable'
+                    }
+                    body={historyImportError.message}
+                  />
+                ) : historyImportsBusy || historyImports === null ? (
+                  <StateNotice
+                    state="loading"
+                    title="Checking import status"
+                    body="Reading existing import records from the authenticated BipMe server. This check does not start or resume an import."
+                  />
+                ) : latestHistoryImport ? (
+                  <>
+                    <StateNotice
+                      state={
+                        latestHistoryImport.status === 'running'
+                          ? 'loading'
+                          : latestHistoryImport.status === 'partial'
+                            ? 'insufficient-evidence'
+                            : latestHistoryImport.status === 'unavailable'
+                              ? 'error'
+                              : 'empty'
                       }
-                    >
-                      {Object.keys(importFixtures).map((state) => (
-                        <option key={state} value={state}>
-                          {state.replaceAll('-', ' ')}
-                        </option>
-                      ))}
-                    </select>
+                      title={
+                        latestHistoryImport.status === 'running'
+                          ? 'Import in progress'
+                          : latestHistoryImport.status === 'partial'
+                            ? 'Partial import'
+                            : latestHistoryImport.status === 'unavailable'
+                              ? 'Import unavailable'
+                              : 'Import completed'
+                      }
+                      body={`The server reports ${latestHistoryImport.imported_posts} of ${latestHistoryImport.requested_posts} requested posts imported across ${latestHistoryImport.pages_read} pages. Source: ${latestHistoryImport.source}. Refreshing checks status only; it does not resume provider work.`}
+                    />
+                    {latestHistoryImport.status !== 'unavailable' &&
+                      latestHistoryImport.requested_posts > 0 && (
+                        <div className="fixture-progress">
+                          <div className="fixture-progress__label">
+                            <span>Server-reported imported posts</span>
+                            <strong>
+                              {latestHistoryImport.imported_posts} /{' '}
+                              {latestHistoryImport.requested_posts}
+                            </strong>
+                          </div>
+                          <progress
+                            max={latestHistoryImport.requested_posts}
+                            value={Math.min(
+                              latestHistoryImport.imported_posts,
+                              latestHistoryImport.requested_posts,
+                            )}
+                            aria-label="Server-reported imported posts"
+                          />
+                        </div>
+                      )}
+                  </>
+                ) : (
+                  <StateNotice
+                    state="empty"
+                    title="No import has been started"
+                    body="The server reports no existing history import. Starting or resuming provider work is unavailable from this screen."
+                  />
+                )}
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={refreshHistoryImportStatus}
+                  disabled={historyImportsBusy}
+                >
+                  {historyImportsBusy ? 'Checking status…' : 'Refresh status'}
+                </button>
+                {import.meta.env.DEV && (
+                  <div className="import-fixture-preview">
+                    <p className="card-kicker">
+                      Development-only synthetic state fixture
+                    </p>
+                    <div className="fixture-selector">
+                      <label htmlFor="import-state-fixture">
+                        Development fixture (synthetic)
+                      </label>
+                      <select
+                        id="import-state-fixture"
+                        value={fixture}
+                        onChange={(event) =>
+                          setFixture(event.target.value as ImportState)
+                        }
+                      >
+                        {Object.keys(importFixtures).map((state) => (
+                          <option key={state} value={state}>
+                            {state.replaceAll('-', ' ')}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <StateNotice
+                      state={
+                        importState.state ??
+                        (importState.progress ? 'loading' : 'empty')
+                      }
+                      title={importState.title}
+                      body={importState.body}
+                    />
+                    {fixture !== 'not-started' && (
+                      <div className="fixture-progress">
+                        <div className="fixture-progress__label">
+                          <span>Synthetic fixture progress</span>
+                          <strong>{importState.progress ?? 0}%</strong>
+                        </div>
+                        <progress
+                          max="100"
+                          value={importState.progress ?? 0}
+                          aria-label="Synthetic import fixture progress"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
