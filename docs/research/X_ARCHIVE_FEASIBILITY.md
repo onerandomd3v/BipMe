@@ -91,3 +91,69 @@ From `apps/api`, run `uv run python tools/inspect_x_archive.py /absolute/path/to
 - X API, [Metrics](https://docs.x.com/x-api/fundamentals/metrics): current public metric fields include impressions, replies, reposts, quotes, likes and bookmarks; private/organic/promoted metrics require user context and are restricted to posts under 30 days old.
 
 The public archive documentation does not provide a downloadable sample archive or a versioned field schema. A current owner-provided sample and case-specific rights decision remain manual blockers.
+
+## COD-370 synthetic parser foundation
+
+`bipme.posts.archive.parse_synthetic_archive` is an internal, synthetic-fixture-only
+function, not an upload endpoint or production importer. Its explicit fixture marker
+is an accidental-use guard, **not proof of authorization or source rights**. A caller
+supplies the synthetic creator UUID; no archive content establishes ownership.
+The inspector CLI now delegates to `bipme.integrations.x_archive_inspection` so ZIP
+validation and inert decoding are shared. The original CLI command remains valid.
+
+Lifecycle: validate local regular-file ZIP and every member's metadata → select exactly
+one reviewed candidate path → read bounded bytes → decode strict UTF-8 and inert JSON →
+validate every record → return an immutable typed batch → construct transient canonical
+rows for synthetic database tests. No archive is extracted, copied, logged, uploaded,
+or deleted. The caller owns the input and its cleanup; the parser closes ZIP handles
+on failure and retains no temporary files. It does not promise secure erasure of Python
+objects or caller-owned files.
+
+The synthetic mapper intentionally supports only `id_str`, legacy timezone-bearing
+`created_at`, optional `full_text`, explicit reply/quote IDs and nested repost identity.
+Alternate fields are not silently treated as verified mappings. Unknown topology fields,
+ambiguous relationships, invalid counters, duplicate IDs and malformed records reject
+the batch; reposts are explicitly excluded and counted. Other unsupported fields are
+counted by record and not retained. This is a versioned candidate schema, **not detection
+or verification of an actual X export version**. Text is omitted unless explicitly
+requested for a synthetic fixture, and dataclass representations hide content.
+
+Publication time maps to `CanonicalPost.published_at`; import time is recorded only in
+provenance. `source_observed_at` stays null. Candidate likes/reposts/replies/quotes/bookmark
+counters retain count units, missingness and unknown measurement time in memory;
+**none becomes an OutcomeObservationRecord**. No impressions, age-aligned windows,
+media inference, profiles, embeddings, report analysis or provider calls are produced.
+The API history normalizer cannot be used directly: it assumes an actual provider-read
+observation time and generates mature cumulative observations. Canonical identity,
+creator ownership, topology and uniqueness reuse COD-345/COD-348 contracts instead.
+
+The deterministic import identity includes creator UUID, exact selected payload/path,
+mapping version and text-retention mode. Replay returns the same identity; syntactically
+changed payloads intentionally differ. PostgreSQL tests demonstrate rollback/retry,
+canonical uniqueness and foreign-owner conflicts. They do **not** establish a durable
+production resumable importer, concurrent receipt arbitration or import-status endpoint.
+A future writer must atomically coordinate creator-scoped receipts and canonical writes,
+check existing row ownership, reject mismatched replay input, preserve counts/provenance,
+and never overwrite official API evidence or resurrect deleted posts. Batches are
+all-or-nothing; no malformed record is silently discarded. No migration is added.
+
+Limits: shared inspector caps compressed ZIP at 256 MiB, 2,000 entries, 1 GiB declared
+expanded bytes and ratio 200; the mapper further caps selected payload at 4 MiB,
+10,000 records and JSON nesting at 64. Duplicate JSON keys and non-finite numbers are
+rejected. Only stored/deflated regular entries and directories are accepted; unrelated
+bodies are never opened. A five-second cooperative deadline is checked during record
+mapping. ZIP-directory loading, decompression and JSON decoding are bounded by input
+sizes, not a hard OS CPU/RSS deadline; isolated worker resource limits remain a production
+requirement. Parsing does not authenticate the ZIP or its purported author.
+
+Future Platform/Web handoff: after COD-369's written inspection, parsing, retention and
+processing approvals plus a verified current sample, design a bounded private upload
+and typed status API. Bind creator exclusively from COD-346's server-verified session,
+require CSRF, current consent and independently verified owner/source policy; X OAuth
+must remain optional. Supply coverage and exclusions without exposing private payloads.
+Do not wire this synthetic module into Web onboarding or existing report/evidence APIs.
+Before real use, define encrypted isolated temporary storage, crash cleanup, retention
+TTL, revocation and canonical/derived deletion, safe source updates, durable replay and
+concurrency behavior. Separate explicit approvals are needed for local analysis,
+embedding inference and any external processor transfer. No real archive is cleared by
+these tests, and neither COD-369 nor full COD-370 is completed by this foundation.

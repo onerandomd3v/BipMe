@@ -6,17 +6,12 @@ import json
 import stat
 import struct
 import zipfile
-from importlib.util import module_from_spec, spec_from_file_location
 from io import BytesIO
 from pathlib import Path
 
 import pytest
 
-TOOL_PATH = Path(__file__).parents[1] / "tools" / "inspect_x_archive.py"
-TOOL_SPEC = spec_from_file_location("inspect_x_archive", TOOL_PATH)
-assert TOOL_SPEC is not None and TOOL_SPEC.loader is not None
-inspector = module_from_spec(TOOL_SPEC)
-TOOL_SPEC.loader.exec_module(inspector)
+from bipme.integrations import x_archive_inspection as inspector
 
 
 def _archive(path: Path, entries: list[tuple[str, bytes, int | None]]) -> Path:

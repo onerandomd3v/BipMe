@@ -2801,3 +2801,75 @@ def test_cod363_schedules_idempotent_windows_and_persists_partial_snapshot(
     assert not session.is_modified(post, include_collections=False)
     session.rollback()
     assert session.get(CanonicalPost, post.id).availability == "available"
+
+
+def test_synthetic_archive_mapping_replay_ownership_and_rollback(session: Session, tmp_path: Path):
+    """Test-only writer demonstrates constraints; no production archive importer exists."""
+    import json
+    import zipfile
+
+    from bipme.posts.archive import parse_synthetic_archive, synthetic_canonical_posts
+
+    owner = _creator(session)
+    other = _creator(session)
+    owner_id, other_id = owner.id, other.id
+    session.commit()
+    path = tmp_path / "synthetic.zip"
+    external_id = str(uuid4().int)[:28]
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "data/tweets.json",
+            json.dumps(
+                [
+                    {
+                        "id_str": external_id,
+                        "created_at": "Mon Nov 09 10:00:00 +0000 2026",
+                        "full_text": "synthetic text",
+                        "favorite_count": "5",
+                    }
+                ]
+            ),
+        )
+    batch = parse_synthetic_archive(path, creator_id=owner_id, synthetic_fixture=True, now=NOW)
+    # Caller-owned transaction can be interrupted and retried without partial evidence.
+    session.add_all(synthetic_canonical_posts(batch))
+    session.flush()
+    session.rollback()
+    assert (
+        session.scalar(select(CanonicalPost).where(CanonicalPost.external_post_id == external_id))
+        is None
+    )
+    session.add_all(synthetic_canonical_posts(batch))
+    session.commit()
+    stored = session.scalar(
+        select(CanonicalPost).where(CanonicalPost.external_post_id == external_id)
+    )
+    assert stored is not None and stored.creator_id == owner_id
+    assert stored.source == "x_archive_synthetic_v1"
+    assert stored.source_observed_at is None
+    assert stored.provenance["import_id"] == batch.import_identity
+    assert stored.text is None
+    assert (
+        session.scalar(
+            select(OutcomeObservationRecord).where(OutcomeObservationRecord.post_id == stored.id)
+        )
+        is None
+    )
+    # A future writer must resolve this uniqueness conflict, never overwrite a row.
+    with pytest.raises(IntegrityError), session.begin_nested():
+        session.add_all(synthetic_canonical_posts(batch))
+        session.flush()
+    foreign = parse_synthetic_archive(path, creator_id=other_id, synthetic_fixture=True, now=NOW)
+    with pytest.raises(IntegrityError), session.begin_nested():
+        session.add_all(synthetic_canonical_posts(foreign))
+        session.flush()
+    assert (
+        session.scalar(
+            select(CanonicalPost).where(CanonicalPost.external_post_id == external_id)
+        ).creator_id
+        == owner_id
+    )
+    # Recovery/replay lookup uses the existing global provider identity and owner check.
+    assert session.scalars(
+        select(CanonicalPost).where(CanonicalPost.external_post_id == external_id)
+    ).all() == [stored]
