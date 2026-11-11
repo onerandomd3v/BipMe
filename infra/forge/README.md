@@ -178,6 +178,7 @@ Render outside Git or in the ignored directory. Keep the previous rendered relea
 privately for rollback. Do not apply the source JSON containing placeholders.
 
 ```bash
+set -euo pipefail
 export SHA='<reviewed-full-40-character-git-sha>'
 export STORAGE_CLASS='<organizer-confirmed-class>'
 python3 infra/forge/render.py --sha "$SHA" --storage-class "$STORAGE_CLASS" --pull-secret regcred
@@ -218,6 +219,7 @@ to encrypted operator storage outside the namespace. Never delete the PVC or use
 `kubectl delete -f` on the foundation. A PVC is persistence, not an off-cluster backup.
 
 ```bash
+set -euo pipefail
 kubectl -n team17 scale deployment/app deployment/api deployment/worker --replicas=0
 kubectl -n team17 wait --for=delete pod -l app.kubernetes.io/name=app --timeout=180s
 kubectl -n team17 wait --for=delete pod -l app.kubernetes.io/name=api --timeout=180s
@@ -273,6 +275,7 @@ then use PG17 tools to recreate **only** `bipme_demo` and restore. The following
 is destructive recovery, not part of normal rollout:
 
 ```bash
+set -euo pipefail
 sha256sum -c "$BACKUP.sha256"
 kubectl -n team17 exec db-0 -- dropdb -U bipme --force bipme_demo
 kubectl -n team17 exec db-0 -- createdb -U bipme -O bipme bipme_demo
