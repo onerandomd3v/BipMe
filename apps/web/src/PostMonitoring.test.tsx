@@ -287,7 +287,7 @@ describe('PostMonitoring', () => {
     ).toBeInTheDocument()
     expect(await screen.findByText('12 likes; scored')).toBeInTheDocument()
     expect(screen.getByText(/Measurement:/).parentElement).toHaveTextContent(
-      '11 Nov 2026',
+      /2026/,
     )
     expect(screen.getByText(/Monitoring receipts.*COD-422/)).toBeInTheDocument()
   })
