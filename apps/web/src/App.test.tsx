@@ -16,6 +16,7 @@ import {
 const api = vi.hoisted(() => ({
   health: vi.fn(),
   session: vi.fn(),
+  privateSession: vi.fn(),
   subscribeSessionInvalidation: vi.fn(),
   profile: vi.fn(),
   dataPermissions: vi.fn(),
@@ -123,6 +124,28 @@ describe('App session boundary', () => {
     )
     expect(
       screen.queryByText(new RegExp(latestReportFixture.latest_report!.id)),
+    ).not.toBeInTheDocument()
+  })
+
+  it('uses the server-backed private sign-in without exposing a demo switch', async () => {
+    api.session.mockResolvedValue({ authenticated: false, csrf_token: '' })
+    api.privateSession.mockResolvedValue({
+      authenticated: true,
+      csrf_token: 'csrf-after-sign-in',
+    })
+    window.history.replaceState(null, '', '/')
+    render(<App />)
+    const secret = await screen.findByLabelText('Private sign-in secret')
+    fireEvent.input(secret, {
+      target: { value: 'a'.repeat(32) },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in privately' }))
+    expect(api.privateSession).toHaveBeenCalledWith('a'.repeat(32))
+    expect(
+      await screen.findByText('Creator Intelligence Report'),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText('Private sign-in secret'),
     ).not.toBeInTheDocument()
   })
 

@@ -409,4 +409,14 @@ uv run python -m bipme.devtools.synthetic_demo --synthetic-demo --reset
 
 The reset deletes that creator's reports, assessments, synthetic posts/profiles/embeddings/observations, session, goals, and consent revisions. It will refuse if the database contains any other creator or non-demo/source activity. To remove the empty local database itself after reset, connect to the local postgres database and run DROP DATABASE bipme_synthetic_demo; never run that against any other target.
 
+### COD-425 presenter walkthrough
+
+After the COD-424 seed and API are running, open `http://127.0.0.1:5173/`. Use the **Authorized operator access** form with the private sign-in secret held by the API process; the secret is sent only to `POST /api/auth/private/session` and is not stored in browser storage. Grant personal-history processing through the normal permission flow/API, then refresh or build the report from the Dashboard. The browser uses the existing authenticated `/api/v1/creators/me/*` routes; it does not select a creator from a query parameter or browser flag.
+
+Walk the presenter through: Dashboard report → **Analyze a Draft** → comparable evidence and creator-relative Outlook → **Content History** → **Post Monitoring** → manually linked synthetic publication → monitoring windows → Postmortem. The exact label **“Synthetic demonstration data — not live X evidence”** appears only when the backend response carries the synthetic source/provenance signal. History, draft evidence, monitoring and postmortem retain their explicit missing, unavailable, version-unknown and budget-limited states.
+
+The deterministic browser happy path should run through the COD-367 Playwright harness when that branch/PR is available; COD-425 does not duplicate its browser infrastructure. Keep the selected failure assertion for unavailable or missing backend data alongside that harness.
+
+This walkthrough does not perform X OAuth, archive upload, automatic publishing or paid X reads. The CLI-only simulated publication link is intentionally version-unverified and may have no scheduled monitoring receipts. To reset, stop the API and run the COD-424 `--synthetic-demo --reset` command against the dedicated local demo database; never reset a shared or production database.
+
 Verify the loader and policy with uv run pytest -q tests/test_synthetic_demo.py tests/test_synthetic_demo_postgres.py. The PostgreSQL integration file skips unless BIPME_TEST_DATABASE_URL points to a disposable test database. The demo path uses the ordinary creator-report, draft-analysis and postmortem algorithms; insufficient samples, unknown publication version, and missing/pending metrics remain visible as such.
