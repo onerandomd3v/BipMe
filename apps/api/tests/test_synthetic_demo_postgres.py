@@ -187,7 +187,12 @@ def test_postgres_seed_is_idempotent_and_preserves_synthetic_lineage(
             now=SEEDED_AT,
         )
         db.commit()
-        assert first == second
+        stable_fields = {key for key in first if key != "recorded_observations"}
+        assert {key: first[key] for key in stable_fields} == {
+            key: second[key] for key in stable_fields
+        }
+        assert first["recorded_observations"] == 2
+        assert second["recorded_observations"] == 0
         assert db.scalar(select(func.count()).select_from(CanonicalPost)) == 2
         assert db.scalar(select(func.count()).select_from(PostProfileRecord)) == 2
         assert db.scalar(select(func.count()).select_from(PostEmbedding)) == 2

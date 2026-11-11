@@ -83,9 +83,11 @@ class SyntheticDemoEmbedder:
 
     @property
     def identity(self) -> EmbeddingIdentity:
+        """Return the synthetic-only vector identity."""
         return EMBEDDING_IDENTITY
 
     def encode(self, texts: Sequence[str], *, role: EmbeddingRole) -> list[list[float]]:
+        """Encode text as deterministic normalized token-hash vectors."""
         if role not in {"query", "passage"}:
             raise ValueError("unsupported embedding role")
         result = []
@@ -105,10 +107,12 @@ class SyntheticDemoEmbedder:
 
 
 def _enabled(name: str) -> bool:
+    """Read an explicit truthy environment flag."""
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _require_environment(creator_id: UUID, confirmed: bool) -> None:
+    """Refuse runs without explicit demo, creator, and local database authorization."""
     environment = os.getenv("BIPME_ENVIRONMENT", "").strip().lower()
     if not confirmed:
         raise SyntheticDemoError("pass --synthetic-demo to confirm synthetic-only seeding")
@@ -144,6 +148,7 @@ def _require_environment(creator_id: UUID, confirmed: bool) -> None:
 
 
 def _read_archive(path: Path) -> tuple[list[dict[str, Any]], str]:
+    """Parse only the bounded allowlisted X archive entry as inert JSON."""
     if path.is_symlink() or not path.is_file():
         raise SyntheticDemoError(
             f"required synthetic archive is missing or not a regular file: {path}"
@@ -222,6 +227,7 @@ def _read_archive(path: Path) -> tuple[list[dict[str, Any]], str]:
 
 
 def _timestamp(value: object) -> datetime:
+    """Parse an aware post-publication timestamp into UTC."""
     if not isinstance(value, str) or not value.strip():
         raise SyntheticDemoError("synthetic post has no publication timestamp")
     try:
@@ -242,6 +248,7 @@ def _timestamp(value: object) -> datetime:
 def _post_parts(
     raw: dict[str, Any],
 ) -> tuple[str, datetime, str, Topology, str | None, str | None, tuple[MediaKind, ...]]:
+    """Validate one archive post and extract canonical descriptive fields."""
     raw_id = next(
         (raw.get(key) for key in ("id_str", "id", "tweet_id") if raw.get(key) is not None), None
     )
@@ -288,6 +295,7 @@ def _post_parts(
 
 
 def _read_scenarios(path: Path) -> tuple[list[dict[str, Any]], str]:
+    """Read a bounded UTF-8 monitoring scenario document and its digest."""
     if path.is_symlink() or not path.is_file():
         raise SyntheticDemoError(f"required monitoring scenarios are missing: {path}")
     if path.stat().st_size > MAX_SCENARIOS_BYTES:
@@ -306,6 +314,7 @@ def _read_scenarios(path: Path) -> tuple[list[dict[str, Any]], str]:
 
 
 def _scenario_time(value: object) -> datetime:
+    """Parse an explicit simulated observation timestamp into UTC."""
     if not isinstance(value, str):
         raise SyntheticDemoError("recorded scenario is missing explicit observed_at")
     try:
@@ -318,6 +327,7 @@ def _scenario_time(value: object) -> datetime:
 
 
 def _isolation_check(db: Session, creator_id: UUID) -> None:
+    """Reject databases containing records outside the dedicated synthetic lane."""
     creator_ids = set(db.scalars(select(Creator.id)).all())
     if creator_ids - {creator_id}:
         raise SyntheticDemoError("refused: database contains other creator records")
@@ -365,6 +375,7 @@ def _isolation_check(db: Session, creator_id: UUID) -> None:
 
 
 def _ensure_goal(db: Session, creator_id: UUID, now: datetime) -> None:
+    """Create the deterministic demo goal revision or reject a conflict."""
     goal = db.scalar(
         select(CreatorGoalRevision).where(
             CreatorGoalRevision.creator_id == creator_id, CreatorGoalRevision.revision == 1
@@ -396,6 +407,7 @@ def _seed_posts(
     now: datetime,
     embedder: TextEmbedder,
 ) -> dict[str, CanonicalPost]:
+    """Persist idempotent canonical posts, profiles, and synthetic embeddings."""
     prepared = [_post_parts(raw) for raw in raws]
     ids = [item[0] for item in prepared]
     if len(ids) != len(set(ids)):
@@ -543,6 +555,7 @@ def _seed_scenarios(
     posts: dict[str, CanonicalPost],
     scenario_hash: str,
 ) -> int:
+    """Persist supported explicit monitoring states and return newly inserted count."""
     recorded = 0
     seen: set[str] = set()
     for index, row in enumerate(scenarios):
@@ -625,7 +638,6 @@ def _seed_scenarios(
                 raise SyntheticDemoError(
                     "existing synthetic observation conflicts with scenario fixture"
                 )
-            recorded += 1
             continue
         db.add(
             OutcomeObservationRecord(
@@ -667,6 +679,7 @@ def seed_synthetic_demo(
     now: datetime | None = None,
     embedder: TextEmbedder | None = None,
 ) -> dict[str, int | str]:
+    """Seed the supplied demo fixtures transactionally through existing models."""
     _require_environment(creator_id, confirmed)
     if not synthetic_demo_enabled_for(creator_id):
         raise SyntheticDemoError("API synthetic-demo gate is not enabled for this creator")
@@ -702,6 +715,7 @@ def seed_synthetic_demo(
 
 
 def reset_synthetic_demo(db: Session, *, creator_id: UUID, confirmed: bool) -> None:
+    """Delete only rows owned by the dedicated synthetic demo creator."""
     _require_environment(creator_id, confirmed)
     _isolation_check(db, creator_id)
     try:
@@ -794,6 +808,7 @@ def link_synthetic_publication(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the gated seed, reset, or simulated publication CLI operation."""
     parser = argparse.ArgumentParser(description="Seed isolated BipMe synthetic creator evidence")
     parser.add_argument(
         "--synthetic-demo", action="store_true", help="confirm synthetic-only operation"
