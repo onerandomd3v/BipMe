@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.server
+import inspect
 import json
 import os
 import re
@@ -156,19 +157,18 @@ def main() -> None:
             "--network-alias",
             "bipme-mock-api",
             "python:3.13-alpine",
-            "sleep",
-            "300",
-        )
-        run("docker", "cp", str(Path(__file__)), f"{api_name}:/tmp/container-smoke.py")
-        run(
-            "docker",
-            "exec",
-            "--detach",
-            "--env",
-            "BIPME_CONTAINER_MOCK_API=1",
-            api_name,
             "python",
-            "/tmp/container-smoke.py",
+            "-u",
+            "-c",
+            "\n".join(
+                (
+                    "import http.server",
+                    "import json",
+                    "import time",
+                    inspect.getsource(MockApi),
+                    'http.server.ThreadingHTTPServer(("0.0.0.0", 8000), MockApi).serve_forever()',
+                )
+            ),
         )
         run(
             "docker",
@@ -310,7 +310,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    if os.environ.get("BIPME_CONTAINER_MOCK_API") == "1":
-        http.server.ThreadingHTTPServer(("0.0.0.0", 8000), MockApi).serve_forever()
-    else:
-        main()
+    main()
