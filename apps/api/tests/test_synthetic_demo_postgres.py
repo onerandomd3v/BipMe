@@ -13,10 +13,8 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from fastapi import Request
-from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, event, func, select, text
+from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from bipme.api.app import create_app
@@ -26,7 +24,6 @@ from bipme.api.dependencies import (
     get_current_time,
     get_db_session,
 )
-from bipme.api.errors import ApiError
 from bipme.api.source_policy import SYNTHETIC_DEMO_SOURCE
 from bipme.devtools.synthetic_demo import (
     SyntheticDemoError,
@@ -283,12 +280,6 @@ def test_postgres_demo_publication_link_is_synthetic_and_unverified(
 def test_authenticated_report_draft_and_postmortem_paths_use_seeded_demo_evidence(
     isolated_postgres: Engine, tmp_path: Path
 ) -> None:
-    database_errors: list[BaseException] = []
-    event.listen(
-        isolated_postgres,
-        "handle_error",
-        lambda context: database_errors.append(context.original_exception),
-    )
     archive, scenarios = _fixtures(tmp_path)
     factory = sessionmaker(isolated_postgres, expire_on_commit=False)
     with factory.begin() as db:
@@ -314,18 +305,6 @@ def test_authenticated_report_draft_and_postmortem_paths_use_seeded_demo_evidenc
     current_time = SEEDED_AT + timedelta(days=1)
     app = create_app()
 
-    async def expose_error_type(_request: Request, exc: ApiError) -> JSONResponse:
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "error": exc.code,
-                "context_type": type(exc.__context__).__name__,
-                "context_message": str(exc.__context__)[:300],
-            },
-        )
-
-    app.add_exception_handler(ApiError, expose_error_type)
-
     def db_session() -> Iterator[Session]:
         with factory() as db:
             yield db
@@ -340,7 +319,7 @@ def test_authenticated_report_draft_and_postmortem_paths_use_seeded_demo_evidenc
         headers={"Idempotency-Key": "cod424-postgres-report"},
         json={"data_sources": ["personal_history"]},
     )
-    assert report.status_code == 200, f"{report.text}; database errors: {database_errors!r}"
+    assert report.status_code == 200, report.text
     assert report.json()["coverage"] == "personal_only_partial"
     assert report.json()["processing_permissions"]["personal_history"]["status"] == "included"
     assert "Synthetic demonstration data — not live X evidence" in str(report.json()["evidence"])

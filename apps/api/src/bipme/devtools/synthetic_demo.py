@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from bipme.api.source_policy import SYNTHETIC_DEMO_SOURCE, synthetic_demo_enabled_for
+from bipme.intelligence.creator_goals import CREATOR_GOALS_VERSION
 from bipme.intelligence.embeddings import EmbeddingIdentity, EmbeddingRole, TextEmbedder
 from bipme.intelligence.post_profiles import (
     MediaKind,
@@ -374,16 +375,16 @@ def _ensure_goal(db: Session, creator_id: UUID, now: datetime) -> None:
             CreatorGoalRevision(
                 creator_id=creator_id,
                 revision=1,
-                goals_version="synthetic-demo-goals-v1",
+                goals_version=CREATOR_GOALS_VERSION,
                 recorded_at=now,
                 niche="synthetic software development",
                 intended_audience="synthetic independent developers",
                 priority_outcomes=["conversation", "useful replies"],
-                preferred_styles=["practical", "conversational"],
+                preferred_styles=["technical_explainer", "tutorial"],
                 language="en",
             )
         )
-    elif goal.goals_version != "synthetic-demo-goals-v1":
+    elif goal.goals_version != CREATOR_GOALS_VERSION:
         raise SyntheticDemoError("refused: demo creator has a conflicting goal revision")
 
 
