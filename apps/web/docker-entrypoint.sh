@@ -20,6 +20,6 @@ envsubst '${BIPME_API_UPSTREAM}' \
     > /etc/nginx/conf.d/default.conf
 envsubst '${BIPME_API_UPSTREAM}' \
     < /etc/nginx/templates/bipme-api-proxy.conf.template \
-    > /etc/nginx/snippets/bipme-api-proxy.conf
+    > /tmp/bipme-api-proxy.conf
 
 exec "$@"

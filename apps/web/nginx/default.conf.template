@@ -38,11 +38,11 @@ server {
     }
 
     location = /api {
-        include /etc/nginx/snippets/bipme-api-proxy.conf;
+        include /tmp/bipme-api-proxy.conf;
     }
 
     location ^~ /api/ {
-        include /etc/nginx/snippets/bipme-api-proxy.conf;
+        include /tmp/bipme-api-proxy.conf;
     }
 
     location ~* "^/assets/.+-[A-Za-z0-9_-]{8,}[.](?:avif|css|eot|gif|ico|jpe?g|js|png|svg|ttf|webp|woff2?)$" {
