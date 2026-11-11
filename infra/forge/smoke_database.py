@@ -1,6 +1,5 @@
 """Synthetic local Docker test: non-root PG, migrations, readiness, backup and restart."""
 
-import json
 import os
 from pathlib import Path
 import secrets

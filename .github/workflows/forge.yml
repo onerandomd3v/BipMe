@@ -5,6 +5,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+    tags: ['forge-*']
   workflow_dispatch:
 
 permissions:
@@ -19,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify release tag names the exact commit
+        if: startsWith(github.ref, 'refs/tags/')
+        run: test "$GITHUB_REF_NAME" = "forge-$GITHUB_SHA"
       - name: Check quota, isolation and release rendering
         run: |
           python3 infra/forge/test_manifests.py
@@ -57,8 +61,12 @@ jobs:
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.sha }}
         run: |
-          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+          if docker manifest inspect "$IMAGE" >/dev/null 2>manifest-error.txt; then
             echo 'Release tag already exists; retain its recorded digest. Never overwrite.' >&2
+            exit 1
+          fi
+          if ! grep -Eq 'manifest unknown|no such manifest' manifest-error.txt; then
+            echo 'Cannot establish release tag absence; refusing publication.' >&2
             exit 1
           fi
       - uses: docker/build-push-action@v6

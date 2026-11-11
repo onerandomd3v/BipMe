@@ -1,9 +1,8 @@
 """Offline checks of the Forge contract, including migration quota headroom."""
 
-import json
 import unittest
 
-from render import ROOT, render
+from render import render
 
 
 class ForgeContract(unittest.TestCase):

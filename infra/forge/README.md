@@ -94,8 +94,8 @@ docker build --platform linux/amd64 -f apps/web/Dockerfile -t bipme-forge-web:te
 python3 infra/forge/smoke_proxy.py
 ```
 
-`forge.yml` validates PRs without Kubernetes credentials; main pushes or deliberate
-workflow_dispatch builds publish the existing API/frontend Dockerfiles and a
+`forge.yml` validates PRs without Kubernetes credentials; main pushes, an explicit
+`forge-<full-git-sha>` Git tag, or deliberate workflow_dispatch builds publish the existing API/frontend Dockerfiles and a
 pgvector image wrapper. Images are `ghcr.io/onerandomd3v/bipme-api:<full-git-sha>`,
 `bipme-web:<full-git-sha>`, and `bipme-postgres:<full-git-sha>` under the same registry
 owner. Worker/migration use the exact API tag. No latest tags. CI refuses an existing
@@ -105,6 +105,16 @@ not deleting/retagging them. Record all three digests from the workflow summary 
 the private release record. Upstream base tags are mutable: a Git SHA identifies
 the once-published build, not a guarantee that rebuilding later gives identical bits.
 Do not change PostgreSQL major version during an application release.
+
+To publish a reviewed PR commit before merge, wait for all its CI checks to pass,
+then create and push its exact release tag. This publishes images only; no job has
+cluster credentials or deploys anything. Do not move or overwrite a release tag.
+
+```bash
+SHA=$(git rev-parse HEAD)
+git tag "forge-$SHA"
+git push origin "forge-$SHA"
+```
 
 For private GHCR packages, provision a read-only package pull credential in a private
 Docker config file **outside Git**, then after authorization:
@@ -346,7 +356,15 @@ interactive administration session, update both fields of bipme-db, then restart
 API/worker. Changing POSTGRES_PASSWORD alone **does not** alter an initialized DB.
 Never print values in command arguments, SQL logs, CI logs or support messages.
 
-Initial evidence: manifest budget and offline validations are automated. Local Docker
+Initial evidence (11 Nov 2026): CI passed strict Kubernetes 1.30 schema validation,
+the real-image Forge proxy/header/cookie/CSRF-origin smoke, non-root PG17 startup,
+repeat migrations, DB-aware readiness failure/recovery, dump/restore, persistence
+across DB restart and worker registration. In the resource-limited Docker smoke,
+one post-start snapshot was API 79.04MiB (0.09% CPU), worker 55.52MiB (34.82% CPU,
+still starting), DB 17.9MiB (0.03% CPU). These are neither peaks nor steady-load
+benchmarks; no inference ran. See [CI run 262](https://github.com/onerandomd3v/BipMe/actions/runs/43024448351)
+and [Forge validation run 2](https://github.com/onerandomd3v/BipMe/actions/runs/43024892741).
+Manifest budget and offline validations are automated. Local Docker
 image builds on 11 Nov 2026 were blocked by upstream layer-download EOF/TLS timeouts;
 CI runs the actual-image smoke tests independently. No Forge
 runtime, PVC binding, gateway, network isolation, restart durability, inference or
