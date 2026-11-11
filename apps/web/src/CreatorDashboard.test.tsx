@@ -186,9 +186,11 @@ describe('CreatorDashboard rendered states', () => {
       latest_report: null,
     })
     const { unmount } = render(<CreatorDashboard onAnalyzeDraft={vi.fn()} />)
-    expect(await screen.findByLabelText(/Allow processing/)).toBeChecked()
-    fireEvent.click(screen.getByLabelText(/Allow processing/))
-    expect(screen.getByLabelText(/Allow processing/)).not.toBeChecked()
+    expect(
+      await screen.findByLabelText(/Use my personal history/),
+    ).toBeChecked()
+    fireEvent.click(screen.getByLabelText(/Use my personal history/))
+    expect(screen.getByLabelText(/Use my personal history/)).not.toBeChecked()
     unmount()
   })
 

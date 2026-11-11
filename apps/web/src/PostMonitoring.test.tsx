@@ -208,7 +208,9 @@ describe('PostMonitoring', () => {
     expect(
       await screen.findByText('Original Distribution Outlook'),
     ).toBeInTheDocument()
-    expect(screen.getByText(/Monitoring receipts.*COD-422/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Saved monitoring only.*does not fetch new X data/),
+    ).toBeInTheDocument()
     const input = screen.getByLabelText('X post URL or numeric post ID')
     fireEvent.input(input, {
       target: { value: 'https://x.com/example/status/1900000000000000001' },
@@ -355,7 +357,9 @@ describe('PostMonitoring', () => {
     expect(screen.getByText(/Measurement:/).parentElement).toHaveTextContent(
       /2026/,
     )
-    expect(screen.getByText(/Monitoring receipts.*COD-422/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Saved monitoring only.*does not fetch new X data/),
+    ).toBeInTheDocument()
   })
 
   it('rejects a postmortem whose immutable original outlook does not match', async () => {
@@ -552,7 +556,7 @@ describe('PostMonitoring', () => {
     })
     render(<PostMonitoring assessmentId={assessmentId} client={fake} />)
     expect(
-      await screen.findByText('Outlook, evidence and limitations'),
+      await screen.findByText('Evidence and limitations'),
     ).toBeInTheDocument()
     expect(screen.getByText('sha256:outlook-fixture')).toBeInTheDocument()
     expect(screen.getByText('replies')).toBeInTheDocument()

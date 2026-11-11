@@ -116,8 +116,7 @@ function ReportEvidenceSection({ report }: { report: Report }) {
       <section className="report-section" aria-labelledby="history-title">
         <div className="report-section__heading">
           <div>
-            <p className="card-kicker">Your history</p>
-            <h2 id="history-title">What your permitted history shows</h2>
+            <h2 id="history-title">Your history</h2>
           </div>
           <span className="metric-pill">
             {observations.length} observations
@@ -145,60 +144,73 @@ function ReportEvidenceSection({ report }: { report: Report }) {
                 </div>
                 <p>{String(finding.summary ?? 'Observed pattern')}</p>
                 <small>
-                  Metric: {String(finding.metric ?? 'not specified')} · Sample:{' '}
-                  {String(finding.effective_sample_size ?? 'not reported')} ·
-                  Evidence:{' '}
-                  {stringList(finding.evidence_ids).join(', ') || 'not cited'}
+                  {String(finding.evidence_strength ?? 'Unknown')} evidence ·{' '}
+                  {String(
+                    finding.effective_sample_size ?? 'Sample not reported',
+                  )}{' '}
+                  posts
                 </small>
+                <details className="evidence-details">
+                  <summary>Evidence details</summary>
+                  <p>
+                    Metric: {String(finding.metric ?? 'not specified')} · IDs:{' '}
+                    {stringList(finding.evidence_ids).join(', ') || 'not cited'}
+                  </p>
+                </details>
               </article>
             ))}
           </div>
         )}
-        <div className="source-summary">
-          <strong>Sources</strong>
-          {sources.length === 0 ? (
-            <span>No source snapshot was included.</span>
-          ) : (
-            sources.map((source, index) => (
-              <span key={`${String(source.source_id)}-${index}`}>
-                {String(source.source_id ?? 'Unnamed source')} · observed{' '}
-                {dateLabel(source.observed_at)}
-              </span>
-            ))
-          )}
-        </div>
-        {observations.length > 0 && (
-          <div className="observation-list" aria-label="Observed metrics">
-            {observations.slice(0, 8).map((observation, index) => (
-              <div
-                className="observation"
-                key={`${String(observation.post_id)}-${String(observation.metric)}-${index}`}
-              >
-                <strong>
-                  {String(observation.metric ?? 'Metric not named')}
-                </strong>
-                <span>
-                  {String(
-                    observation.metric_definition ?? 'Definition not reported',
-                  )}{' '}
-                  · {String(observation.window ?? 'Window not reported')}
-                </span>
-                <small>
-                  Value: {String(observation.value ?? 'not observed')} ·
-                  observed {dateLabel(observation.observed_at)} · post{' '}
-                  {String(observation.post_id ?? 'not cited')}
-                </small>
+        {(sources.length > 0 || observations.length > 0) && (
+          <details className="screen-details">
+            <summary>Source and metric details</summary>
+            <div className="source-summary">
+              <strong>Sources</strong>
+              {sources.length === 0 ? (
+                <span>No source snapshot was included.</span>
+              ) : (
+                sources.map((source, index) => (
+                  <span key={`${String(source.source_id)}-${index}`}>
+                    {String(source.source_id ?? 'Unnamed source')} · observed{' '}
+                    {dateLabel(source.observed_at)}
+                  </span>
+                ))
+              )}
+            </div>
+            {observations.length > 0 && (
+              <div className="observation-list" aria-label="Observed metrics">
+                {observations.slice(0, 8).map((observation, index) => (
+                  <div
+                    className="observation"
+                    key={`${String(observation.post_id)}-${String(observation.metric)}-${index}`}
+                  >
+                    <strong>
+                      {String(observation.metric ?? 'Metric not named')}
+                    </strong>
+                    <span>
+                      {String(
+                        observation.metric_definition ??
+                          'Definition not reported',
+                      )}{' '}
+                      · {String(observation.window ?? 'Window not reported')}
+                    </span>
+                    <small>
+                      Value: {String(observation.value ?? 'not observed')} ·
+                      observed {dateLabel(observation.observed_at)} · post{' '}
+                      {String(observation.post_id ?? 'not cited')}
+                    </small>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </details>
         )}
       </section>
 
       <section className="report-section" aria-labelledby="niche-title">
         <div className="report-section__heading">
           <div>
-            <p className="card-kicker">What’s happening in your niche</p>
-            <h2 id="niche-title">Permissioned niche evidence</h2>
+            <h2 id="niche-title">Niche evidence</h2>
           </div>
           <span className="metric-pill metric-pill--muted">
             {nicheState.label}
@@ -211,7 +223,10 @@ function ReportEvidenceSection({ report }: { report: Report }) {
               This snapshot does not contain enough permitted niche evidence to
               claim current niche trends or private signals.
             </p>
-            <small>{nicheState.detail}</small>
+            <details className="evidence-details">
+              <summary>Why this is unavailable</summary>
+              <p>{nicheState.detail}</p>
+            </details>
           </div>
         ) : (
           <div className="finding-list">
@@ -236,8 +251,7 @@ function ReportEvidenceSection({ report }: { report: Report }) {
       <section className="report-section" aria-labelledby="experiments-title">
         <div className="report-section__heading">
           <div>
-            <p className="card-kicker">Testable next steps</p>
-            <h2 id="experiments-title">Hypotheses, not promises</h2>
+            <h2 id="experiments-title">Ideas to test</h2>
           </div>
           <span className="metric-pill">{suggestions.length} ideas</span>
         </div>
@@ -392,13 +406,12 @@ function OnboardingForm({
           1
         </div>
         <div>
-          <p className="card-kicker">Start with your context</p>
-          <h2 id="onboarding-title">Set up your Creator Intelligence Report</h2>
+          <p className="card-kicker">Personalize your report</p>
+          <h2 id="onboarding-title">Creator Intelligence Report</h2>
         </div>
       </div>
       <p className="muted-copy">
-        These are declared goals, not inferred audience facts. BipMe will use
-        them to organize permitted evidence and show what is still unknown.
+        Tell us who you create for and what matters most to you.
       </p>
       {error !== null && (
         <div
@@ -498,11 +511,10 @@ function OnboardingForm({
           onChange={(event) => setAllowHistory(event.target.checked)}
         />
         <span>
-          <strong>Allow processing of my personal history</strong>
+          <strong>Use my personal history in this report</strong>
           <small>
-            This is a revocable, creator-owned permission. Niche discovery
-            remains unavailable until its separate official-source policy gates
-            pass.
+            You can change this permission later. Niche evidence is currently
+            unavailable.
           </small>
         </span>
       </label>
@@ -514,9 +526,6 @@ function OnboardingForm({
         >
           {saving ? 'Preparing your report…' : 'Build my report'}
         </button>
-        <span className="form-hint">
-          No draft is required. No X search is made.
-        </span>
       </div>
     </form>
   )
@@ -817,12 +826,7 @@ export function CreatorDashboard({
           {apiProblemMessage(error)}
         </div>
       )}
-      {hasSyntheticProvenance(report) && (
-        <SyntheticDemoNotice>
-          This report and its evidence come from the backend-isolated demo
-          creator.
-        </SyntheticDemoNotice>
-      )}
+      {hasSyntheticProvenance(report) && <SyntheticDemoNotice />}
       <section className="report-hero" aria-labelledby="report-title">
         <div>
           <p className="eyebrow">
@@ -831,9 +835,8 @@ export function CreatorDashboard({
           </p>
           <h2 id="report-title">A grounded view of what you can learn next</h2>
           <p className="muted-copy">
-            Built from your declared context and the evidence BipMe was
-            permitted to process. It describes associations and gaps, not
-            guaranteed reach.
+            Based on your goals and permitted history. Patterns are not
+            guarantees of reach.
           </p>
         </div>
         <div className="report-hero__actions">

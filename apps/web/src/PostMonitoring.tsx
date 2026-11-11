@@ -963,27 +963,15 @@ export function PostMonitoring({
         publication,
         monitoring,
         postmortem,
-      }) && (
-        <SyntheticDemoNotice>
-          This assessment, publication link and monitoring record use the
-          isolated backend seed.
-        </SyntheticDemoNotice>
-      )}
+      }) && <SyntheticDemoNotice />}
       <section className="workspace-card" aria-labelledby="assessment-title">
         <div className="workspace-card__header">
-          <div className="workspace-card__mark" aria-hidden="true">
-            ✓
-          </div>
           <div>
-            <p className="card-kicker">Immutable pre-publication record</p>
+            <p className="card-kicker">Your draft assessment</p>
             <h2 id="assessment-title">Original Distribution Outlook</h2>
           </div>
         </div>
         <dl className="detail-list">
-          <div>
-            <dt>Assessment ID</dt>
-            <dd>{assessment.assessment_id}</dd>
-          </div>
           <div>
             <dt>Assessed</dt>
             <dd>{formatDate(assessment.assessed_at)}</dd>
@@ -996,35 +984,23 @@ export function PostMonitoring({
                 : 'Insufficient evidence'}
             </dd>
           </div>
-          <div>
-            <dt>Forecast metrics</dt>
-            <dd>{metrics.length}</dd>
-          </div>
         </dl>
         <p className="workspace-card__note">
-          This original assessment is preserved. Publication results never
-          overwrite its timestamp, evidence or forecast.
+          This saved outlook stays unchanged when you link a published post.
         </p>
+        <details className="evidence-details">
+          <summary>Assessment ID</summary>
+          <code>{assessment.assessment_id}</code>
+        </details>
       </section>
 
       <section className="workspace-card" aria-labelledby="outlook-title">
         <div className="workspace-card__header">
           <div>
-            <p className="card-kicker">Original evidence snapshot</p>
-            <h2 id="outlook-title">Outlook, evidence and limitations</h2>
+            <h2 id="outlook-title">Evidence and limitations</h2>
           </div>
         </div>
         <dl className="detail-list">
-          <div>
-            <dt>Input fingerprint</dt>
-            <dd>
-              <code>{assessment.input_fingerprint}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Retrieval state</dt>
-            <dd>{assessment.retrieval_state}</dd>
-          </div>
           <div>
             <dt>Evidence coverage</dt>
             <dd>
@@ -1037,6 +1013,13 @@ export function PostMonitoring({
             <dd>{comparableEvidence.length} supported items</dd>
           </div>
         </dl>
+        <details className="evidence-details">
+          <summary>Assessment diagnostics</summary>
+          <p>Retrieval state: {assessment.retrieval_state}</p>
+          <p>
+            Input fingerprint: <code>{assessment.input_fingerprint}</code>
+          </p>
+        </details>
 
         <div className="monitoring-detail-grid">
           {metrics.length === 0 ? (
@@ -1313,11 +1296,8 @@ export function PostMonitoring({
           <p role="status">Loading monitoring windows.</p>
         )}
         <p className="workspace-card__note">
-          This screen reads persisted monitoring only. It does not perform paid
-          X reads, schedule receipts or turn unavailable readings into zeros.
-          Monitoring receipts now come from the COD-422 read contract. The
-          COD-422 monitoring read contract is the source for these
-          creator-scoped receipt and observation details.
+          Saved monitoring only. Viewing this page does not fetch new X data;
+          unavailable observations are never shown as zero.
         </p>
       </section>
 

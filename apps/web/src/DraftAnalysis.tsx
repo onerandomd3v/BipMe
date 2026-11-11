@@ -640,12 +640,13 @@ function ResultView({
   return (
     <div className="draft-results">
       {hasSyntheticProvenance({ response, evidence }) && (
-        <SyntheticDemoNotice>
-          The assessment and comparable evidence use the isolated backend seed.
-        </SyntheticDemoNotice>
+        <SyntheticDemoNotice />
       )}
       <div className="draft-result-actions">
-        <p className="form-hint">Assessment {response.assessment_id}</p>
+        <details className="evidence-details">
+          <summary>Assessment details</summary>
+          <p className="form-hint">Assessment {response.assessment_id}</p>
+        </details>
         <button
           className="button button--secondary"
           type="button"
@@ -733,25 +734,28 @@ function ResultView({
                     No outlook is supported for this metric.
                   </p>
                 )}
-                <p className="form-hint">
-                  Eligible posts: {metric.eligible_post_count}; effective
-                  sample: {numberLabel(metric.effective_sample_size)}
-                </p>
-                <p className="form-hint">
-                  Derived creator-relative summary · exclusions:{' '}
-                  {pairLabels(metric.exclusion_counts)}
-                </p>
-                {metric.limitations.length > 0 && (
+                <details className="evidence-details">
+                  <summary>Sample and metric details</summary>
                   <p className="form-hint">
-                    Metric limitations: {metric.limitations.join(' · ')}
+                    Eligible posts: {metric.eligible_post_count}; effective
+                    sample: {numberLabel(metric.effective_sample_size)}
                   </p>
-                )}
-                {metric.statistics && (
                   <p className="form-hint">
-                    Outliers: {metric.statistics.outlier_count}; upper outliers:{' '}
-                    {metric.statistics.upper_outlier_count}
+                    Derived creator-relative summary · exclusions:{' '}
+                    {pairLabels(metric.exclusion_counts)}
                   </p>
-                )}
+                  {metric.limitations.length > 0 && (
+                    <p className="form-hint">
+                      Metric limitations: {metric.limitations.join(' · ')}
+                    </p>
+                  )}
+                  {metric.statistics && (
+                    <p className="form-hint">
+                      Outliers: {metric.statistics.outlier_count}; upper
+                      outliers: {metric.statistics.upper_outlier_count}
+                    </p>
+                  )}
+                </details>
               </article>
             ))}
           </div>
@@ -844,34 +848,37 @@ function ResultView({
           BipMe does not know X's hidden ranking system, and these associations
           do not prove causality or guarantee future reach.
         </p>
-        <ul>
-          {[...response.limitations, ...response.assumptions].map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-          {response.retrieval_coverage_limitations.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-          <li>Assessment exclusions: {pairLabels(response.exclusions)}.</li>
-          <li>
-            Retrieval candidates: {response.retrieval_candidate_count};
-            eligible: {response.retrieval_eligible_count}; excluded:{' '}
-            {response.retrieval_excluded_count}.
-          </li>
-          {response.retrieval_exclusions.length > 0 && (
+        <details className="screen-details">
+          <summary>Sample quality and limitations</summary>
+          <ul>
+            {[...response.limitations, ...response.assumptions].map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+            {response.retrieval_coverage_limitations.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+            <li>Assessment exclusions: {pairLabels(response.exclusions)}.</li>
             <li>
-              Retrieval exclusion reasons:{' '}
-              {response.retrieval_exclusions
-                .flatMap((item) => item.reasons)
-                .join(', ')}
+              Retrieval candidates: {response.retrieval_candidate_count};
+              eligible: {response.retrieval_eligible_count}; excluded:{' '}
+              {response.retrieval_excluded_count}.
             </li>
-          )}
-          {response.retrieval_truncated && (
-            <li>
-              Candidate retrieval was truncated; this is not a complete eligible
-              sample.
-            </li>
-          )}
-        </ul>
+            {response.retrieval_exclusions.length > 0 && (
+              <li>
+                Retrieval exclusion reasons:{' '}
+                {response.retrieval_exclusions
+                  .flatMap((item) => item.reasons)
+                  .join(', ')}
+              </li>
+            )}
+            {response.retrieval_truncated && (
+              <li>
+                Candidate retrieval was truncated; this is not a complete
+                eligible sample.
+              </li>
+            )}
+          </ul>
+        </details>
       </section>
     </div>
   )
