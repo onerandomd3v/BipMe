@@ -21,7 +21,6 @@ type ViewState =
   | 'empty'
   | 'rate-limited'
   | 'insufficient-evidence'
-type ApiHealth = 'checking' | 'available' | 'unavailable'
 type SessionStatus =
   'checking' | 'authenticated' | 'unauthenticated' | 'unavailable'
 
@@ -38,10 +37,10 @@ type Page = {
 const pages: Page[] = [
   {
     id: 'dashboard',
-    label: 'Dashboard',
+    label: 'Overview',
     path: '/',
     aliases: ['/dashboard'],
-    description: 'Your private creator intelligence workspace.',
+    description: 'Your creator report and next steps.',
     stateTitle: 'Your report is not ready yet',
     stateBody:
       'A report can appear here after a private BipMe session and permitted creator evidence are available.',
@@ -51,43 +50,51 @@ const pages: Page[] = [
     label: 'Connections',
     path: '/connections',
     aliases: ['/connection'],
-    description: 'Manage authorized sources for your creator history.',
+    description: 'Manage sources for your creator history.',
     stateTitle: 'Sign-in required',
     stateBody:
-      'A private BipMe session is required to view or manage data sources. Sign-in is not available in this development interface.',
+      'This demo does not connect to X. The workspace uses only data already permitted for your account.',
   },
   {
     id: 'history',
     label: 'Content History',
     path: '/content-history',
     aliases: ['/history'],
-    description: 'Review your permitted publishing history and its evidence.',
+    description: 'See your posts and the evidence behind them.',
     stateTitle: 'Your history is not available',
     stateBody:
-      'No creator records are shown in this development interface. History requires a private session and an authorized data source.',
+      'Your history needs an authorized source. No posts can be shown until data is imported.',
   },
   {
     id: 'draft',
     label: 'Analyze a Draft',
     path: '/draft-analysis',
     aliases: ['/draft'],
-    description:
-      'Consider a draft using eligible evidence from your own history.',
+    description: 'Compare a draft with your own history.',
     stateTitle: 'Draft analysis is not available',
     stateBody:
-      'Draft guidance requires an authenticated session and eligible historical evidence. This navigation foundation does not analyze drafts.',
+      'A saved report and enough comparable posts are needed before draft analysis is available.',
   },
   {
     id: 'monitoring',
     label: 'Post Monitoring',
     path: '/post-monitoring',
     aliases: ['/monitoring'],
-    description: 'Review real, timestamped observations after publishing.',
+    description: 'Review what happened after publishing.',
     stateTitle: 'Post monitoring is not available',
     stateBody:
-      'Monitoring requires an authenticated session and authorized observations. This navigation foundation does not collect post metrics.',
+      'Post monitoring appears after a draft assessment is linked to a published post.',
   },
 ]
+
+const navigationPages = pages.filter((page) => page.id !== 'connections')
+const pageIcons: Record<View, string> = {
+  dashboard: '⌂',
+  connections: '↔',
+  history: '▤',
+  draft: '✎',
+  monitoring: '◷',
+}
 
 const pathToView = new Map<string, View>(
   pages.flatMap((page) => [
@@ -147,7 +154,7 @@ const stateMessages: Record<
   },
   unauthenticated: {
     title: 'Sign-in required',
-    body: 'A private BipMe session is required to access creator data. This interface does not provide sign-in.',
+    body: 'Sign in to view your creator workspace.',
     symbol: '↗',
   },
   error: {
@@ -201,57 +208,8 @@ export function StateNotice({
   )
 }
 
-function DevelopmentStatePreview() {
-  const [open, setOpen] = useState(false)
-  const [state, setState] = useState<ViewState>('unauthenticated')
-
-  if (!import.meta.env.DEV) return null
-
-  return (
-    <section className="state-preview" aria-labelledby="state-preview-title">
-      <div className="state-preview__heading">
-        <div>
-          <p className="eyebrow">Development fixture</p>
-          <h2 id="state-preview-title">Shared interface states</h2>
-          <p className="state-preview__description">
-            Preview only. These controls do not authenticate or load creator
-            data.
-          </p>
-        </div>
-        <button
-          className="button button--secondary"
-          type="button"
-          aria-expanded={open}
-          aria-controls="state-fixture"
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? 'Hide preview' : 'Preview states'}
-        </button>
-      </div>
-      {open && (
-        <div className="state-preview__body" id="state-fixture">
-          <label htmlFor="state-fixture-select">State fixture</label>
-          <select
-            id="state-fixture-select"
-            value={state}
-            onChange={(event) => setState(event.target.value as ViewState)}
-          >
-            {Object.keys(stateMessages).map((value) => (
-              <option key={value} value={value}>
-                {value.replaceAll('-', ' ')}
-              </option>
-            ))}
-          </select>
-          <StateNotice state={state} />
-        </div>
-      )}
-    </section>
-  )
-}
-
 export function App() {
   const { view, navigate, navigateToMonitoring, locationKey } = useView()
-  const [health, setHealth] = useState<ApiHealth>('checking')
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('checking')
   const [privateSecret, setPrivateSecret] = useState('')
   const [privateLoginError, setPrivateLoginError] = useState<string | null>(
@@ -277,20 +235,6 @@ export function App() {
   useEffect(() => {
     if (view !== 'draft') setDraftContext(null)
   }, [view])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    apiClient
-      .health(controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted)
-          setHealth(data.status === 'ok' ? 'available' : 'unavailable')
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setHealth('unavailable')
-      })
-    return () => controller.abort()
-  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -343,23 +287,6 @@ export function App() {
         : sessionStatus === 'unavailable'
           ? 'error'
           : 'empty'
-  const sessionLabel =
-    sessionStatus === 'checking'
-      ? 'Checking sign-in'
-      : sessionStatus === 'authenticated'
-        ? 'Private session active'
-        : sessionStatus === 'unauthenticated'
-          ? 'Sign-in required'
-          : 'Sign-in status unavailable'
-  const sessionDescription =
-    sessionStatus === 'checking'
-      ? 'Checking the private session with the BipMe API.'
-      : sessionStatus === 'authenticated'
-        ? 'A private BipMe session is active in this browser.'
-        : sessionStatus === 'unauthenticated'
-          ? 'No private BipMe session is active in this browser.'
-          : 'The BipMe API could not verify the private session.'
-
   const closeDrawer = () => setDrawerOpen(false)
 
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
@@ -437,6 +364,71 @@ export function App() {
     setDrawerOpen(false)
   }
 
+  if (sessionStatus !== 'authenticated') {
+    return (
+      <main className="sign-in-screen">
+        <a className="sign-in-brand" href="/" aria-label="BipMe home">
+          <span className="brand-mark" aria-hidden="true">
+            b,
+          </span>
+          <span className="brand-name">
+            bip<span>me</span>
+            <small>Creator intelligence</small>
+          </span>
+        </a>
+        <section className="sign-in-card" aria-labelledby="sign-in-title">
+          {sessionStatus === 'checking' ? (
+            <StateNotice
+              state="loading"
+              title="Checking your session"
+              body=""
+            />
+          ) : (
+            <>
+              <p className="card-kicker">Private creator workspace</p>
+              <h1 id="sign-in-title">Welcome back</h1>
+              <p className="muted-copy">
+                Sign in to see your report and content history.
+              </p>
+              {sessionStatus === 'unavailable' && (
+                <p className="form-error" role="alert">
+                  BipMe could not reach the sign-in service. Check that the API
+                  is running, then try again.
+                </p>
+              )}
+              {privateLoginError && (
+                <p className="form-error" role="alert">
+                  {privateLoginError}
+                </p>
+              )}
+              <form className="private-sign-in" onSubmit={signIn}>
+                <label htmlFor="private-sign-in-secret">
+                  Private sign-in secret
+                </label>
+                <input
+                  id="private-sign-in-secret"
+                  type="password"
+                  autoComplete="current-password"
+                  minLength={32}
+                  value={privateSecret}
+                  onChange={(event) => setPrivateSecret(event.target.value)}
+                  required
+                />
+                <button
+                  className="button button--primary"
+                  type="submit"
+                  disabled={privateLoginPending}
+                >
+                  {privateLoginPending ? 'Signing in…' : 'Sign in'}
+                </button>
+              </form>
+            </>
+          )}
+        </section>
+      </main>
+    )
+  }
+
   return (
     <div className="app-layout">
       <a className="skip-link" href="#main-content">
@@ -487,8 +479,7 @@ export function App() {
         </div>
 
         <nav aria-label="Workspace">
-          <p className="nav-heading">Workspace</p>
-          {pages.map((item, index) => (
+          {navigationPages.map((item) => (
             <a
               className="nav-link"
               key={item.id}
@@ -497,39 +488,14 @@ export function App() {
               onClick={(event) => onNavigate(event, item.id)}
             >
               <span className="nav-icon" aria-hidden="true">
-                {['⌂', '↔', '▤', '✎', '◷'][index]}
+                {pageIcons[item.id]}
               </span>
               <span>{item.label}</span>
             </a>
           ))}
         </nav>
 
-        <div className="sidebar-status">
-          <div className="session-status">
-            <span
-              className={`status-dot status-dot--${sessionStatus === 'authenticated' ? 'available' : sessionStatus === 'unavailable' ? 'unavailable' : sessionStatus === 'checking' ? 'checking' : 'neutral'}`}
-              aria-hidden="true"
-            />
-            {sessionLabel}
-          </div>
-          <p>{sessionDescription}</p>
-          <div className="sidebar-divider" />
-          <div className="health-status" aria-live="polite">
-            <span
-              className={`status-dot status-dot--${health}`}
-              aria-hidden="true"
-            />
-            <span>
-              API health ·{' '}
-              {health === 'checking'
-                ? 'Checking'
-                : health === 'available'
-                  ? 'Available'
-                  : 'Unavailable'}
-            </span>
-          </div>
-          <p>Health status is separate from sign-in.</p>
-        </div>
+        <p className="sidebar-caption">Private creator workspace</p>
       </aside>
 
       <div className="content-wrap">
@@ -552,28 +518,21 @@ export function App() {
               </span>{' '}
               bip<span>me</span>
             </span>
-            <span className="topbar-separator" aria-hidden="true">
-              /
-            </span>
-            <span className="topbar-context">Private workspace</span>
           </div>
-          <span className="environment-tag">
-            <span className="environment-tag__dot" aria-hidden="true" />
-            Development · Authenticated API preview
-          </span>
         </header>
 
-        <main id="main-content" className="main-content">
-          <div className="page-heading">
-            <p className="eyebrow">
-              <span className="eyebrow__dot" aria-hidden="true" />
-              Creator intelligence overview
-            </p>
-            <h1 id="page-title" tabIndex={-1}>
-              {page.label}
-            </h1>
-            <p className="intro">{page.description}</p>
-          </div>
+        <main
+          id="main-content"
+          className={`main-content main-content--${view}`}
+        >
+          {view !== 'dashboard' && (
+            <div className="page-heading">
+              <h1 id="page-title" tabIndex={-1}>
+                {page.label}
+              </h1>
+              <p className="intro">{page.description}</p>
+            </div>
+          )}
 
           {view === 'dashboard' && sessionStatus === 'authenticated' ? (
             <CreatorDashboard
@@ -638,59 +597,9 @@ export function App() {
                     : undefined
                 }
               />
-              {sessionStatus === 'unauthenticated' && (
-                <form className="private-sign-in" onSubmit={signIn}>
-                  <div>
-                    <p className="card-kicker">Authorized operator access</p>
-                    <h2>Sign in to the private creator workspace</h2>
-                    <p className="muted-copy">
-                      Use the server-provisioned private sign-in secret. It is
-                      submitted only to BipMe and is cleared after the request;
-                      no provider token is stored in this browser.
-                    </p>
-                  </div>
-                  <label htmlFor="private-sign-in-secret">
-                    Private sign-in secret
-                  </label>
-                  <input
-                    id="private-sign-in-secret"
-                    type="password"
-                    autoComplete="current-password"
-                    minLength={32}
-                    value={privateSecret}
-                    onChange={(event) => setPrivateSecret(event.target.value)}
-                    required
-                  />
-                  {privateLoginError && (
-                    <p className="form-error" role="alert">
-                      {privateLoginError}
-                    </p>
-                  )}
-                  <button
-                    className="button button--primary"
-                    type="submit"
-                    disabled={privateLoginPending}
-                  >
-                    {privateLoginPending ? 'Signing in…' : 'Sign in privately'}
-                  </button>
-                </form>
-              )}
-              <p className="workspace-card__note">
-                BipMe will show observed creator data only after access and
-                evidence are available.
-              </p>
-              {view === 'draft' && draftContext && (
-                <p className="workspace-card__note" role="status">
-                  Draft analysis context is available from report{' '}
-                  {draftContext.reportId}; this route does not persist private
-                  evidence and will safely require a fresh handoff after a
-                  refresh.
-                </p>
-              )}
             </section>
           )}
 
-          <DevelopmentStatePreview />
           <footer className="page-footer">
             BipMe <span aria-hidden="true">·</span> Private creator intelligence
           </footer>

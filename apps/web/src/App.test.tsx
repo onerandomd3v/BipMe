@@ -120,7 +120,7 @@ describe('App session boundary', () => {
 
     api.invalidate?.()
     await waitFor(() =>
-      expect(screen.getByText('Sign-in required')).toBeInTheDocument(),
+      expect(screen.getByText('Welcome back')).toBeInTheDocument(),
     )
     expect(
       screen.queryByText(new RegExp(latestReportFixture.latest_report!.id)),
@@ -139,7 +139,7 @@ describe('App session boundary', () => {
     fireEvent.input(secret, {
       target: { value: 'a'.repeat(32) },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in privately' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
     expect(api.privateSession).toHaveBeenCalledWith('a'.repeat(32))
     expect(
       await screen.findByText('Creator Intelligence Report'),
@@ -155,7 +155,7 @@ describe('App session boundary', () => {
     await screen.findByText('Creator Intelligence Report')
     fireEvent.click(screen.getByRole('button', { name: 'Analyze a Draft' }))
     expect(await screen.findByText(/Using report context/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Overview' }))
     await screen.findByText('Creator Intelligence Report')
     fireEvent.click(screen.getByRole('link', { name: 'Analyze a Draft' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('cannot submit')
@@ -173,9 +173,13 @@ describe('App session boundary', () => {
         name: 'Metric series discovered in loaded history',
       }),
     ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument()
     expect(
-      screen.getByText('Development · Authenticated API preview'),
-    ).toBeInTheDocument()
+      screen.queryByRole('link', { name: 'Connections' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Development · Authenticated API preview'),
+    ).not.toBeInTheDocument()
   })
 
   it('switches monitoring assessment context across browser history', async () => {
@@ -252,7 +256,7 @@ describe('App session boundary', () => {
       screen.getByRole('button', { name: 'Verify and attach post' }),
     )
     api.invalidate?.()
-    expect(await screen.findByText('Sign-in required')).toBeInTheDocument()
+    expect(await screen.findByText('Welcome back')).toBeInTheDocument()
     resolvePublication?.()
     expect(
       screen.queryByText('Original Distribution Outlook'),
