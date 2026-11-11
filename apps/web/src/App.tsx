@@ -4,6 +4,7 @@ import {
   useState,
   type KeyboardEvent,
   type MouseEvent,
+  type FormEvent,
 } from 'react'
 import { ApiRequestError, apiClient } from './api/client'
 import { CreatorHistoryDashboard } from './CreatorHistoryDashboard'
@@ -252,6 +253,11 @@ export function App() {
   const { view, navigate, navigateToMonitoring, locationKey } = useView()
   const [health, setHealth] = useState<ApiHealth>('checking')
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('checking')
+  const [privateSecret, setPrivateSecret] = useState('')
+  const [privateLoginError, setPrivateLoginError] = useState<string | null>(
+    null,
+  )
+  const [privateLoginPending, setPrivateLoginPending] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [draftContext, setDraftContext] = useState<DraftAnalysisContext | null>(
     null,
@@ -355,6 +361,28 @@ export function App() {
           : 'The BipMe API could not verify the private session.'
 
   const closeDrawer = () => setDrawerOpen(false)
+
+  const signIn = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (privateLoginPending) return
+    setPrivateLoginPending(true)
+    setPrivateLoginError(null)
+    try {
+      const session = await apiClient.privateSession(privateSecret)
+      setSessionStatus(
+        session.authenticated ? 'authenticated' : 'unauthenticated',
+      )
+    } catch (error) {
+      setPrivateLoginError(
+        error instanceof ApiRequestError && error.status === 401
+          ? 'The private sign-in secret was rejected.'
+          : 'Private sign-in is unavailable. Check the API configuration and try again.',
+      )
+    } finally {
+      setPrivateSecret('')
+      setPrivateLoginPending(false)
+    }
+  }
 
   const openDrawer = () => {
     setDrawerOpen(true)
@@ -610,6 +638,43 @@ export function App() {
                     : undefined
                 }
               />
+              {sessionStatus === 'unauthenticated' && (
+                <form className="private-sign-in" onSubmit={signIn}>
+                  <div>
+                    <p className="card-kicker">Authorized operator access</p>
+                    <h2>Sign in to the private creator workspace</h2>
+                    <p className="muted-copy">
+                      Use the server-provisioned private sign-in secret. It is
+                      submitted only to BipMe and is cleared after the request;
+                      no provider token is stored in this browser.
+                    </p>
+                  </div>
+                  <label htmlFor="private-sign-in-secret">
+                    Private sign-in secret
+                  </label>
+                  <input
+                    id="private-sign-in-secret"
+                    type="password"
+                    autoComplete="current-password"
+                    minLength={32}
+                    value={privateSecret}
+                    onChange={(event) => setPrivateSecret(event.target.value)}
+                    required
+                  />
+                  {privateLoginError && (
+                    <p className="form-error" role="alert">
+                      {privateLoginError}
+                    </p>
+                  )}
+                  <button
+                    className="button button--primary"
+                    type="submit"
+                    disabled={privateLoginPending}
+                  >
+                    {privateLoginPending ? 'Signing in…' : 'Sign in privately'}
+                  </button>
+                </form>
+              )}
               <p className="workspace-card__note">
                 BipMe will show observed creator data only after access and
                 evidence are available.

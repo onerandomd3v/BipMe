@@ -8,6 +8,7 @@ import {
   profileFixture,
   reportFixture,
 } from './api/fixtures'
+import { SYNTHETIC_DEMO_LABEL } from './syntheticDemo'
 
 const api = vi.hoisted(() => ({
   profile: vi.fn(),
@@ -70,6 +71,29 @@ describe('CreatorDashboard rendered states', () => {
         goalsRevision: reportFixture.goals_revision,
       }),
     )
+  })
+
+  it('labels a report only when its backend evidence identifies synthetic data', async () => {
+    render(<CreatorDashboard onAnalyzeDraft={vi.fn()} />)
+    await screen.findByText('Creator Intelligence Report')
+    expect(screen.queryByText(SYNTHETIC_DEMO_LABEL)).not.toBeInTheDocument()
+
+    api.latestReport.mockResolvedValue({
+      ...latestReportFixture,
+      latest_report: {
+        ...reportFixture,
+        evidence: {
+          sources: [
+            {
+              authorization_basis: 'synthetic_demo_fixture',
+              coverage_note: SYNTHETIC_DEMO_LABEL,
+            },
+          ],
+        },
+      },
+    })
+    render(<CreatorDashboard onAnalyzeDraft={vi.fn()} />)
+    expect(await screen.findByText(SYNTHETIC_DEMO_LABEL)).toBeInTheDocument()
   })
 
   it('requires accessible confirmation and supports cancellation before deletion', async () => {
