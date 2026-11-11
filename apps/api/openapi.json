@@ -1836,6 +1836,349 @@
         "title": "MetricPreference",
         "type": "object"
       },
+      "MonitoringObservationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "metric": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Metric",
+            "type": "string"
+          },
+          "metric_definition": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Metric Definition",
+            "type": "string"
+          },
+          "missing_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_returned",
+                  "invalid_value"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Reason"
+          },
+          "observed_age_seconds": {
+            "title": "Observed Age Seconds",
+            "type": "number"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "authorized_x_api",
+              "unknown"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "observed",
+              "missing",
+              "invalid"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unit": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "window_key": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Window Key",
+            "type": "string"
+          },
+          "window_kind": {
+            "enum": [
+              "mature_cumulative",
+              "age_aligned"
+            ],
+            "title": "Window Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "metric",
+          "metric_definition",
+          "unit",
+          "value",
+          "state",
+          "published_at",
+          "observed_at",
+          "observed_age_seconds",
+          "window_kind",
+          "window_key",
+          "source"
+        ],
+        "title": "MonitoringObservationResponse",
+        "type": "object"
+      },
+      "MonitoringPublicationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable",
+              "deleted"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "canonical_post_id": {
+            "format": "uuid",
+            "title": "Canonical Post Id",
+            "type": "string"
+          },
+          "external_post_id": {
+            "title": "External Post Id",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "version_match_state": {
+            "enum": [
+              "match",
+              "mismatch",
+              "unknown"
+            ],
+            "title": "Version Match State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "canonical_post_id",
+          "external_post_id",
+          "published_at",
+          "availability",
+          "version_match_state"
+        ],
+        "title": "MonitoringPublicationResponse",
+        "type": "object"
+      },
+      "MonitoringReadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assessed_at": {
+            "format": "date-time",
+            "title": "Assessed At",
+            "type": "string"
+          },
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "original_outlook": {
+            "$ref": "#/components/schemas/DraftAnalysisResponse"
+          },
+          "published_post": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringPublicationResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": [
+              "publication_pending",
+              "publication_unavailable",
+              "monitoring_unavailable",
+              "monitoring_pending",
+              "monitoring_running",
+              "monitoring_partial",
+              "monitoring_complete",
+              "needs_reconciliation"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/MonitoringWindowResponse"
+            },
+            "title": "Windows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "state",
+          "assessment_id",
+          "assessed_at",
+          "original_outlook",
+          "published_post",
+          "windows"
+        ],
+        "title": "MonitoringReadResponse",
+        "type": "object"
+      },
+      "MonitoringWindowResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "due_at": {
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "execution_state": {
+            "enum": [
+              "not_scheduled",
+              "pending",
+              "running",
+              "completed",
+              "skipped",
+              "missed",
+              "cancelled",
+              "unavailable",
+              "rate_limited",
+              "budget_blocked",
+              "needs_reconciliation",
+              "failed",
+              "unknown"
+            ],
+            "title": "Execution State",
+            "type": "string"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "measurement_state": {
+            "enum": [
+              "not_available",
+              "partial",
+              "available"
+            ],
+            "title": "Measurement State",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/MonitoringObservationResponse"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
+          "window_key": {
+            "title": "Window Key",
+            "type": "string"
+          },
+          "window_kind": {
+            "const": "age_aligned",
+            "default": "age_aligned",
+            "title": "Window Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_key",
+          "due_at",
+          "scheduled_at",
+          "finished_at",
+          "execution_state",
+          "measurement_state",
+          "failure_code",
+          "receipt_id",
+          "observations"
+        ],
+        "title": "MonitoringWindowResponse",
+        "type": "object"
+      },
       "ObservationProvenance": {
         "additionalProperties": false,
         "properties": {
@@ -3941,6 +4284,106 @@
         "summary": "Read one of the authenticated creator's immutable assessments",
         "tags": [
           "creator analysis"
+        ]
+      }
+    },
+    "/api/v1/creators/me/draft-assessments/{assessment_id}/monitoring": {
+      "get": {
+        "description": "Reads only the authenticated creator's persisted assessment, publication, durable monitoring receipts and outcome observations. This GET never calls X, enqueues work, reserves usage or mutates persisted state.",
+        "operationId": "read_monitoring_api_v1_creators_me_draft_assessments__assessment_id__monitoring_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringReadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Read creator-scoped monitoring receipts and observations",
+        "tags": [
+          "monitoring"
         ]
       }
     },
