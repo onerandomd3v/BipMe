@@ -128,6 +128,7 @@ def _seed_history(
                     published_at=published,
                     availability="available",
                     topology="original",
+                    source="x_creator_authorized_history",
                 )
             )
             db.add(
@@ -339,6 +340,48 @@ def test_opted_in_report_is_deterministic_personal_only_and_creator_scoped(
     assert latest.status_code == 200
     assert latest.json()["status"] == "available"
     assert latest.json()["latest_report"]["id"] == body["id"]
+
+
+def test_synthetic_demo_report_uses_source_gate_and_labels_lineage(
+    report_api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, factory = report_api
+    monkeypatch.setenv("BIPME_ENVIRONMENT", "development")
+    monkeypatch.setenv("BIPME_SYNTHETIC_DEMO_ENABLED", "true")
+    monkeypatch.setenv("BIPME_SYNTHETIC_DEMO_CREATOR_ID", str(CREATOR_ID))
+    monkeypatch.setenv("BIPME_CREATOR_ID", str(CREATOR_ID))
+    monkeypatch.setenv("BIPME_EMBEDDING_PROVIDER", "synthetic_demo")
+    _create_profile(client)
+    _grant_personal_history(client)
+    post_ids = _seed_history(factory)
+    with factory.begin() as db:
+        for post_id in post_ids:
+            post = db.get(CanonicalPost, post_id)
+            assert post is not None
+            post.source = "synthetic_demo_fixture"
+            post.provenance = {
+                "source": "synthetic_demo_fixture",
+                "synthetic_demo": True,
+            }
+
+    response = client.post(
+        "/api/v1/creators/me/report",
+        headers={"Idempotency-Key": "report-synthetic-demo-001"},
+        json={"data_sources": ["personal_history"]},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["coverage"] == "personal_only_partial"
+    assert "Synthetic demonstration data — not live X evidence" in str(body["evidence"])
+    assert "synthetic_demo_fixture" in str(body["evidence"])
+    with factory() as db:
+        snapshot = db.scalar(
+            select(CreatorReportSnapshot).where(CreatorReportSnapshot.creator_id == CREATOR_ID)
+        )
+        assert snapshot is not None
+        assert snapshot.permission_snapshot["personal_history"]["status"] == "included"
+        assert snapshot.permission_snapshot["personal_history"]["source_policy_enabled"] is True
 
 
 def test_reused_idempotency_key_with_different_profile_conflicts(report_api) -> None:

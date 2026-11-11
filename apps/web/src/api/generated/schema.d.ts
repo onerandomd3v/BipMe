@@ -1044,7 +1044,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "authorized_x_api" | "archive" | "unknown";
+            source: "authorized_x_api" | "archive" | "unknown" | "synthetic_demo";
             /**
              * Started At
              * Format: date-time
@@ -1135,7 +1135,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "authorized_x_api" | "archive" | "unknown";
+            source: "authorized_x_api" | "archive" | "unknown" | "synthetic_demo";
             /**
              * State
              * @enum {string}
@@ -1311,7 +1311,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "authorized_x_api" | "archive" | "unknown";
+            source: "authorized_x_api" | "archive" | "unknown" | "synthetic_demo";
         };
         /** PostEvidence */
         PostEvidence: {
@@ -1343,7 +1343,9 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "authorized_x_api" | "archive" | "unknown";
+            source: "authorized_x_api" | "archive" | "unknown" | "synthetic_demo";
+            /** Source Label */
+            source_label?: string | null;
             /** Source Observed At */
             source_observed_at: string | null;
             /** Source Url */

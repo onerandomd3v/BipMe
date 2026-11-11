@@ -354,3 +354,55 @@ client.GET('/api/v1/creators/me/history/imports', {
 Batch items are ordered by publication time/ID, not request order. Match IDs explicitly and treat omitted IDs as unavailable without inferring their ownership. Render disclosure states, null text/URL, observation truncation, source freshness and empty evidence honestly. Decimal metric values arrive as strings: never coalesce null to zero. Use each exact metric definition/unit/window; never substitute another series or newer observations for original prediction evidence. Observation provenance is deliberately narrow. An archive/unknown-source metadata-only card does not establish permission to display its text or metrics. Import status does not prove sufficient analytical evidence. The current policy and creator permission apply even to a historical assessment read; revocation is not bypassed by an old cursor.
 
 Run `BIPME_TEST_DATABASE_URL=... uv run pytest -q tests/test_evidence_api.py` against disposable PostgreSQL for auth/isolation, cursor, temporal, permission, provenance and query-count checks. Read routes do not need X credentials. The API returns 401/403 through existing auth, 404 for hidden/missing detail, 422 for invalid bounds/cursors/cutoffs, and sanitized 503 for store failure.
+
+## COD-424 isolated synthetic demo
+
+The demo loader is an explicitly invoked CLI tool; there is no HTTP seed route. It reads only the exact data/tweets.js ZIP entry as JSON (including the archive's inert window.YTD.tweets... = [...] wrapper), ignores all other archive payloads, and makes no X, embedding, or synthesis provider calls. The archive's engagement counters are retained only as excluded-source metadata; they never become metric observations. Only the separate monitoring scenarios can create observed, missing, or invalid rows, and each recorded row must carry its explicit simulated observed_at. pending and skipped scenarios create no observation.
+
+The two fixture files are local inputs, not checked-in data. Supply bipme_synthetic_x_archive.zip and bipme_synthetic_monitoring_scenarios.json in the repository root, or pass explicit --archive and --scenarios paths. If either is missing, the CLI prints the missing path(s) and exits without connecting to PostgreSQL or changing data. The scenario JSON accepts an object containing scenarios or a top-level array. Each recorded row names scenario_id, post_id, metric, metric_definition, metric_unit, state, window_kind, window_key, and an ISO observed_at; value is required for observed and omitted/null for missing or invalid. pending/skipped rows need only a state and are ignored.
+
+Use a separate PostgreSQL database and a dedicated creator UUID. The seed refuses production/unknown environments, absent confirmation, disabled demo settings, mismatched creator IDs/database name, any other creator, X identity/connection, import/job/provider activity, non-synthetic posts/observations, or embeddings outside the synthetic vector identity. The seed does not grant personal-history consent: sign in through BipMe's existing private creator session and grant consent in the normal UI/API. Report and postmortem processing accepts only the synthetic source for that configured demo creator while the explicit demo gate and synthetic embedder are enabled. Ordinary X processing remains behind the existing consent and operator-rights gates; a report never mixes synthetic and authorized-X source pools.
+
+PowerShell setup from the repository root (use the development-only PostgreSQL service; do not point these variables at a shared or production database):
+
+```powershell
+docker compose up -d --wait db
+$dbContainer = docker compose ps -q db
+docker exec $dbContainer psql -U bipme -d postgres -c "CREATE DATABASE bipme_synthetic_demo;"
+$demoCreatorId = [guid]::NewGuid().ToString()
+$env:BIPME_ENVIRONMENT = 'development'
+$env:BIPME_SYNTHETIC_DEMO_ENABLED = 'true'
+$env:BIPME_SYNTHETIC_DEMO_CREATOR_ID = $demoCreatorId
+$env:BIPME_SYNTHETIC_DEMO_DATABASE_NAME = 'bipme_synthetic_demo'
+$env:BIPME_CREATOR_ID = $demoCreatorId
+$env:BIPME_PRIVATE_LOGIN_SECRET = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
+$env:BIPME_EMBEDDING_PROVIDER = 'synthetic_demo'
+$env:BIPME_DATABASE_URL = 'postgresql+psycopg://bipme:bipme_local_only@127.0.0.1:5432/bipme_synthetic_demo'
+Set-Location apps/api
+uv sync --locked --group dev
+uv run alembic upgrade head
+uv run python -m bipme.devtools.synthetic_demo --synthetic-demo --archive ../../bipme_synthetic_x_archive.zip --scenarios ../../bipme_synthetic_monitoring_scenarios.json
+uv run uvicorn bipme.api.app:app --reload
+```
+
+The login secret stays in the API process environment; do not paste it into a Vite variable, commit it, or print it. Sign in with the existing private-session UI, opt in to personal-history processing, then call POST /api/v1/creators/me/report with {"data_sources":["personal_history"]} and an Idempotency-Key. Submit a draft through POST /api/v1/creators/me/draft-assessments with an Idempotency-Key; the synthetic vector adapter uses a separate 384-dimensional identity and no model download/network. Use GET /api/v1/creators/me/history/posts to inspect the synthetic source label.
+
+To demonstrate the existing postmortem GET without paid X verification, pass the saved assessment UUID and an explicit publication time later than its assessment time:
+
+```powershell
+$assessmentId = '<saved-assessment-uuid>'
+$publishedAt = [DateTimeOffset]::Now.ToString('o')
+uv run python -m bipme.devtools.synthetic_demo --synthetic-demo --link-assessment $assessmentId --published-at $publishedAt
+```
+
+This CLI-only simulated link is labeled synthetic, has no metric observation, and keeps version_match_state=unknown; the authenticated postmortem endpoint therefore reports an honest version_unverified state. It does not claim that an X publication or matching draft was verified. The monitoring GET may report no scheduled windows because the simulation creates no worker receipts or X jobs.
+
+Rerunning the seed with the same files is idempotent. Conflicting fixture content for an existing deterministic key fails rather than overwriting it. Reset only the dedicated demo creator with:
+
+```powershell
+uv run python -m bipme.devtools.synthetic_demo --synthetic-demo --reset
+```
+
+The reset deletes that creator's reports, assessments, synthetic posts/profiles/embeddings/observations, session, goals, and consent revisions. It will refuse if the database contains any other creator or non-demo/source activity. To remove the empty local database itself after reset, connect to the local postgres database and run DROP DATABASE bipme_synthetic_demo; never run that against any other target.
+
+Verify the loader and policy with uv run pytest -q tests/test_synthetic_demo.py tests/test_synthetic_demo_postgres.py. The PostgreSQL integration file skips unless BIPME_TEST_DATABASE_URL points to a disposable test database. The demo path uses the ordinary creator-report, draft-analysis and postmortem algorithms; insufficient samples, unknown publication version, and missing/pending metrics remain visible as such.

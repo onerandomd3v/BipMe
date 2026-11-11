@@ -13,7 +13,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from bipme.api.creator_reports import _latest_permission, _x_history_policy_verified_at
+from bipme.api.creator_reports import _latest_permission
 from bipme.api.dependencies import (
     AuthenticatedCreator,
     get_authenticated_creator,
@@ -21,9 +21,9 @@ from bipme.api.dependencies import (
     get_db_session,
 )
 from bipme.api.errors import ApiError
-from bipme.api.evidence import KNOWN_X_SOURCES
 from bipme.api.schemas import AcceptedHypothesis as AcceptedHypothesisSchema
 from bipme.api.schemas import DraftAnalysisResponse, ErrorResponse, StrictModel
+from bipme.api.source_policy import SYNTHETIC_DEMO_SOURCE, allowed_personal_history_sources
 from bipme.intelligence.baselines import BaselineStatistics, OutcomeObservation
 from bipme.intelligence.outlooks import (
     ComparableEvidence,
@@ -491,12 +491,12 @@ def read_postmortem(
                 limitations=("The linked publication is unavailable.",),
             )
         permission = _latest_permission(db, creator.creator_id)
+        allowed_sources = allowed_personal_history_sources(creator.creator_id, now)
         processing_allowed = bool(
             permission
             and permission.allowed
             and permission.recorded_at <= now
-            and _x_history_policy_verified_at(now) is not None
-            and post.source in KNOWN_X_SOURCES
+            and post.source in allowed_sources
         )
         if not processing_allowed:
             return PostmortemReadResponse(
@@ -522,7 +522,7 @@ def read_postmortem(
                     CanonicalPost.creator_id == creator.creator_id,
                     CanonicalPost.platform == "x",
                     CanonicalPost.availability == "available",
-                    CanonicalPost.source.in_(KNOWN_X_SOURCES),
+                    CanonicalPost.source.in_(allowed_sources),
                     or_(
                         and_(
                             OutcomeObservationRecord.post_id == post.id,
@@ -579,7 +579,14 @@ def read_postmortem(
                 published_post=_publication_response(post),
                 original_outlook=outlook,
                 postmortem=_evaluation(result, outlook),
-                limitations=result.limitations,
+                limitations=(
+                    *result.limitations,
+                    *(
+                        ("Synthetic demonstration data — not live X evidence.",)
+                        if post.source == SYNTHETIC_DEMO_SOURCE
+                        else ()
+                    ),
+                ),
             )
         except (KeyError, TypeError, ValueError, ValidationError) as exc:
             raise ApiError(
