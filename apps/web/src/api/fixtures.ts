@@ -135,6 +135,63 @@ export const postmortemFixture = {
   limitations: ['No linked publication is available yet.'],
 } satisfies components['schemas']['PostmortemReadResponse']
 
+export const monitoringFixture = {
+  assessment_id: draftAssessmentFixture.assessment_id,
+  assessed_at: draftAssessmentFixture.assessed_at,
+  limitations: ['Only persisted observations are shown.'],
+  original_outlook: draftAssessmentFixture,
+  published_post: {
+    availability: 'available',
+    canonical_post_id: publicationLinkFixture.canonical_post_id,
+    external_post_id: publicationLinkFixture.external_post_id,
+    published_at: publicationLinkFixture.published_at,
+    version_match_state: publicationLinkFixture.version_match_state,
+  },
+  state: 'monitoring_partial',
+  windows: [
+    {
+      window_key: '1h',
+      window_kind: 'age_aligned',
+      due_at: '2026-11-10T14:00:00Z',
+      scheduled_at: null,
+      finished_at: null,
+      execution_state: 'not_scheduled',
+      measurement_state: 'not_available',
+      failure_code: 'budget_blocked',
+      receipt_id: null,
+      observations: [],
+    },
+    {
+      window_key: '24h',
+      window_kind: 'age_aligned',
+      due_at: '2026-11-11T13:00:00Z',
+      scheduled_at: '2026-11-11T13:00:01Z',
+      finished_at: '2026-11-11T13:01:00Z',
+      execution_state: 'completed',
+      measurement_state: 'available',
+      failure_code: null,
+      receipt_id: '00000000-0000-4000-8000-000000000367',
+      observations: [
+        {
+          id: '00000000-0000-4000-8000-000000000368',
+          metric: 'impressions',
+          metric_definition: 'Post impressions',
+          unit: 'count',
+          value: '42',
+          state: 'observed',
+          missing_reason: null,
+          published_at: publicationLinkFixture.published_at,
+          observed_at: '2026-11-11T13:00:59Z',
+          observed_age_seconds: 86400,
+          source: 'authorized_x_api',
+          window_key: '24h',
+          window_kind: 'age_aligned',
+        },
+      ],
+    },
+  ],
+} satisfies components['schemas']['MonitoringReadResponse']
+
 export const historyImportFixture = {
   items: [
     {

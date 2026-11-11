@@ -86,6 +86,15 @@ describe('API client', () => {
       state: 'publication_pending',
       original_outlook: { assessment_id: assessmentId },
     })
+    const monitoring = await client.monitoring(assessmentId)
+    expect(monitoring).toMatchObject({
+      assessment_id: assessmentId,
+      state: 'monitoring_partial',
+    })
+    expect(monitoring.windows[0]).toMatchObject({
+      window_key: '1h',
+      execution_state: 'not_scheduled',
+    })
     await expect(
       client.linkPublication(assessmentId, {
         post_url_or_id: '1900000000000000001',
@@ -129,6 +138,18 @@ describe('API client', () => {
       ),
     )
     await expect(client.postmortem(assessmentId)).rejects.toMatchObject({
+      status: 200,
+      code: 'malformed_response',
+    })
+
+    server.resetHandlers()
+    server.use(
+      http.get(
+        `*/api/v1/creators/me/draft-assessments/${assessmentId}/monitoring`,
+        () => new HttpResponse('{not-json', { status: 200 }),
+      ),
+    )
+    await expect(client.monitoring(assessmentId)).rejects.toMatchObject({
       status: 200,
       code: 'malformed_response',
     })

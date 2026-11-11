@@ -15,6 +15,12 @@ type PostmortemObservation =
   components['schemas']['PostmortemObservationResponse']
 type PostmortemPublication =
   components['schemas']['PostmortemPublicationResponse']
+type MonitoringRead = components['schemas']['MonitoringReadResponse']
+type MonitoringWindow = components['schemas']['MonitoringWindowResponse']
+type MonitoringObservation =
+  components['schemas']['MonitoringObservationResponse']
+type MonitoringPublication =
+  components['schemas']['MonitoringPublicationResponse']
 
 function malformedResponse(message: string) {
   return new ApiRequestError({
@@ -330,6 +336,129 @@ function isPostmortemRead(value: unknown): value is PostmortemRead {
   )
 }
 
+function isMonitoringPublication(
+  value: unknown,
+): value is MonitoringPublication {
+  return Boolean(
+    isRecord(value) &&
+    UUID_PATTERN.test(String(value.canonical_post_id)) &&
+    isUnsignedUint64(value.external_post_id) &&
+    isDateTime(value.published_at) &&
+    ['available', 'unavailable', 'deleted'].includes(
+      String(value.availability),
+    ) &&
+    ['match', 'mismatch', 'unknown'].includes(
+      String(value.version_match_state),
+    ),
+  )
+}
+
+function isMonitoringObservation(
+  value: unknown,
+): value is MonitoringObservation {
+  return Boolean(
+    isRecord(value) &&
+    UUID_PATTERN.test(String(value.id)) &&
+    typeof value.metric === 'string' &&
+    typeof value.metric_definition === 'string' &&
+    typeof value.unit === 'string' &&
+    (value.value === null || typeof value.value === 'string') &&
+    ['observed', 'missing', 'invalid'].includes(String(value.state)) &&
+    isDateTime(value.published_at) &&
+    isDateTime(value.observed_at) &&
+    isFiniteNumber(value.observed_age_seconds) &&
+    typeof value.window_key === 'string' &&
+    ['mature_cumulative', 'age_aligned'].includes(String(value.window_kind)) &&
+    ['authorized_x_api', 'unknown'].includes(String(value.source)) &&
+    (value.missing_reason === null ||
+      value.missing_reason === undefined ||
+      ['not_returned', 'invalid_value'].includes(String(value.missing_reason))),
+  )
+}
+
+function isMonitoringWindow(value: unknown): value is MonitoringWindow {
+  return Boolean(
+    isRecord(value) &&
+    typeof value.window_key === 'string' &&
+    value.window_key.length > 0 &&
+    value.window_kind === 'age_aligned' &&
+    isDateTime(value.due_at) &&
+    (value.scheduled_at === null || isDateTime(value.scheduled_at)) &&
+    (value.finished_at === null || isDateTime(value.finished_at)) &&
+    [
+      'not_scheduled',
+      'pending',
+      'running',
+      'completed',
+      'skipped',
+      'missed',
+      'cancelled',
+      'unavailable',
+      'rate_limited',
+      'budget_blocked',
+      'needs_reconciliation',
+      'failed',
+      'unknown',
+    ].includes(String(value.execution_state)) &&
+    ['not_available', 'partial', 'available'].includes(
+      String(value.measurement_state),
+    ) &&
+    (value.failure_code === null || typeof value.failure_code === 'string') &&
+    (value.receipt_id === null ||
+      UUID_PATTERN.test(String(value.receipt_id))) &&
+    Array.isArray(value.observations) &&
+    value.observations.every(isMonitoringObservation),
+  )
+}
+
+function isMonitoringRead(value: unknown): value is MonitoringRead {
+  return Boolean(
+    isRecord(value) &&
+    UUID_PATTERN.test(String(value.assessment_id)) &&
+    isDateTime(value.assessed_at) &&
+    [
+      'publication_pending',
+      'publication_unavailable',
+      'monitoring_unavailable',
+      'monitoring_pending',
+      'monitoring_running',
+      'monitoring_partial',
+      'monitoring_complete',
+      'needs_reconciliation',
+    ].includes(String(value.state)) &&
+    isStringArray(value.limitations) &&
+    isAssessment(value.original_outlook) &&
+    (value.published_post === null ||
+      isMonitoringPublication(value.published_post)) &&
+    Array.isArray(value.windows) &&
+    value.windows.every(isMonitoringWindow),
+  )
+}
+
+function validateMonitoringIdentity(
+  value: MonitoringRead,
+  assessment: Assessment,
+  publication: Publication | null,
+) {
+  const monitoringPublication = value.published_post
+  return (
+    value.assessment_id === assessment.assessment_id &&
+    value.assessed_at === assessment.assessed_at &&
+    value.original_outlook.assessment_id === assessment.assessment_id &&
+    value.original_outlook.assessed_at === assessment.assessed_at &&
+    value.original_outlook.input_fingerprint === assessment.input_fingerprint &&
+    (!publication ||
+      !monitoringPublication ||
+      (monitoringPublication.canonical_post_id ===
+        publication.canonical_post_id &&
+        monitoringPublication.external_post_id ===
+          publication.external_post_id &&
+        monitoringPublication.published_at === publication.published_at &&
+        monitoringPublication.version_match_state ===
+          publication.version_match_state))
+  )
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
@@ -480,6 +609,7 @@ export function PostMonitoring({
   const [assessment, setAssessment] = useState<Assessment | null>(null)
   const [publication, setPublication] = useState<Publication | null>(null)
   const [postmortem, setPostmortem] = useState<PostmortemRead | null>(null)
+  const [monitoring, setMonitoring] = useState<MonitoringRead | null>(null)
   const [input, setInput] = useState('')
   const [loadState, setLoadState] = useState<
     'loading' | 'ready' | 'unavailable'
@@ -489,6 +619,7 @@ export function PostMonitoring({
     string | null
   >(null)
   const [postmortemError, setPostmortemError] = useState<string | null>(null)
+  const [monitoringError, setMonitoringError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const requestGeneration = useRef(0)
@@ -499,10 +630,12 @@ export function PostMonitoring({
     setAssessment(null)
     setPublication(null)
     setPostmortem(null)
+    setMonitoring(null)
     setInput('')
     setSubmitError(null)
     setPublicationErrorState(null)
     setPostmortemError(null)
+    setMonitoringError(null)
     if (!assessmentId || !UUID_PATTERN.test(assessmentId)) {
       setLoadState('unavailable')
       setLoadError(
@@ -604,7 +737,11 @@ export function PostMonitoring({
               postmortemResult.original_outlook.assessed_at !==
                 result.assessed_at ||
               postmortemResult.original_outlook.input_fingerprint !==
-                result.input_fingerprint
+                result.input_fingerprint ||
+              (postmortemResult.published_post !== null &&
+                postmortemResult.postmortem !== null &&
+                postmortemResult.postmortem.published_post_id !==
+                  postmortemResult.published_post.canonical_post_id)
             )
               throw new ApiRequestError({
                 code: 'postmortem_assessment_mismatch',
@@ -627,6 +764,45 @@ export function PostMonitoring({
                 : 'The postmortem response was unavailable.',
             )
           })
+
+        if (typeof client.monitoring !== 'function') {
+          setMonitoringError(
+            'The monitoring client is unavailable in this frontend build.',
+          )
+        } else {
+          client
+            .monitoring(assessmentId, controller.signal)
+            .then((monitoringResult) => {
+              if (
+                controller.signal.aborted ||
+                generation !== requestGeneration.current
+              )
+                return
+              if (!isMonitoringRead(monitoringResult))
+                throw malformedResponse('The monitoring response was invalid.')
+              if (!validateMonitoringIdentity(monitoringResult, result, null))
+                throw new ApiRequestError({
+                  code: 'monitoring_assessment_mismatch',
+                  message:
+                    'The monitoring response does not match this assessment.',
+                  status: 409,
+                })
+              setMonitoring(monitoringResult)
+              setMonitoringError(null)
+            })
+            .catch((error: unknown) => {
+              if (
+                controller.signal.aborted ||
+                generation !== requestGeneration.current
+              )
+                return
+              setMonitoringError(
+                error instanceof ApiRequestError
+                  ? error.message
+                  : 'The monitoring response was unavailable.',
+              )
+            })
+        }
       })
       .catch((error: unknown) => {
         if (
@@ -663,7 +839,11 @@ export function PostMonitoring({
       if (generation !== requestGeneration.current) return
       if (!isPublication(result))
         throw malformedResponse('The publication response was invalid.')
-      if (result.assessment_id !== assessment.assessment_id) {
+      if (
+        result.assessment_id !== assessment.assessment_id ||
+        result.assessed_at !== assessment.assessed_at ||
+        result.assessed_fingerprint !== assessment.input_fingerprint
+      ) {
         setSubmitError(
           'The publication response did not match the original assessment.',
         )
@@ -685,7 +865,11 @@ export function PostMonitoring({
             postmortemResult.original_outlook.assessed_at !==
               assessment.assessed_at ||
             postmortemResult.original_outlook.input_fingerprint !==
-              assessment.input_fingerprint
+              assessment.input_fingerprint ||
+            (postmortemResult.published_post !== null &&
+              postmortemResult.postmortem !== null &&
+              postmortemResult.postmortem.published_post_id !==
+                postmortemResult.published_post.canonical_post_id)
           )
             throw new ApiRequestError({
               code: 'postmortem_assessment_mismatch',
@@ -701,6 +885,30 @@ export function PostMonitoring({
             error instanceof ApiRequestError
               ? error.message
               : 'The postmortem response was unavailable.',
+          )
+        }
+      }
+      if (typeof client.monitoring === 'function') {
+        try {
+          const monitoringResult = await client.monitoring(assessmentId)
+          if (generation !== requestGeneration.current) return
+          if (!isMonitoringRead(monitoringResult))
+            throw malformedResponse('The monitoring response was invalid.')
+          if (!validateMonitoringIdentity(monitoringResult, assessment, result))
+            throw new ApiRequestError({
+              code: 'monitoring_assessment_mismatch',
+              message:
+                'The monitoring response does not match this assessment.',
+              status: 409,
+            })
+          setMonitoring(monitoringResult)
+          setMonitoringError(null)
+        } catch (error) {
+          if (generation !== requestGeneration.current) return
+          setMonitoringError(
+            error instanceof ApiRequestError
+              ? error.message
+              : 'The monitoring response was unavailable.',
           )
         }
       }
@@ -987,6 +1195,118 @@ export function PostMonitoring({
         )}
       </section>
 
+      <section className="workspace-card" aria-labelledby="monitoring-title">
+        <div className="workspace-card__header">
+          <div>
+            <p className="card-kicker">Read-only creator monitoring</p>
+            <h2 id="monitoring-title">Observation windows</h2>
+          </div>
+        </div>
+        {monitoring ? (
+          <div role="status">
+            <p>
+              <strong>Monitoring state:</strong>{' '}
+              {monitoring.state.replaceAll('_', ' ')}
+            </p>
+            {monitoring.published_post && (
+              <p>
+                <strong>Monitoring publication:</strong>{' '}
+                {monitoring.published_post.external_post_id} ·{' '}
+                {monitoring.published_post.availability}
+              </p>
+            )}
+            <div className="monitoring-detail-grid">
+              {monitoring.windows.map((window) => (
+                <article
+                  className="monitoring-detail-card"
+                  key={window.window_key}
+                >
+                  <h3>{window.window_key}</h3>
+                  <p>
+                    <strong>Due:</strong> {formatDate(window.due_at)}
+                  </p>
+                  <p>
+                    <strong>Scheduled:</strong>{' '}
+                    {window.scheduled_at
+                      ? formatDate(window.scheduled_at)
+                      : 'Not scheduled'}
+                  </p>
+                  <p>
+                    <strong>Finished:</strong>{' '}
+                    {window.finished_at
+                      ? formatDate(window.finished_at)
+                      : 'Not finished'}
+                  </p>
+                  <p>
+                    <strong>Execution:</strong>{' '}
+                    {window.execution_state.replaceAll('_', ' ')}
+                  </p>
+                  <p>
+                    <strong>Measurement:</strong>{' '}
+                    {window.measurement_state.replaceAll('_', ' ')}
+                  </p>
+                  {window.receipt_id && (
+                    <p>
+                      <strong>Receipt:</strong> {window.receipt_id}
+                    </p>
+                  )}
+                  {window.failure_code && (
+                    <p className="workspace-card__note">
+                      <strong>Limitation:</strong>{' '}
+                      {window.failure_code.replaceAll('_', ' ')}
+                    </p>
+                  )}
+                  {window.execution_state === 'not_scheduled' && (
+                    <p className="workspace-card__note">
+                      No receipt was scheduled for this window.
+                    </p>
+                  )}
+                  {window.observations.length > 0 ? (
+                    window.observations.map((observation) => (
+                      <p key={observation.id}>
+                        <strong>{observation.metric}:</strong>{' '}
+                        {observation.value === null
+                          ? 'Unavailable'
+                          : observation.value}{' '}
+                        {observation.unit} · {observation.state} ·{' '}
+                        {observation.source} · observed{' '}
+                        {formatDate(observation.observed_at)} · age{' '}
+                        {observation.observed_age_seconds}s
+                        {observation.missing_reason &&
+                          ` · ${observation.missing_reason.replaceAll('_', ' ')}`}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="workspace-card__note">
+                      No observation was returned; no zero value was inferred.
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
+            {monitoring.limitations.length > 0 && (
+              <div className="monitoring-detail-card">
+                <h3>Monitoring limitations</h3>
+                {monitoring.limitations.map((item) => (
+                  <p key={item}>{item}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : monitoringError ? (
+          <p role="status">{monitoringError}</p>
+        ) : (
+          <p role="status">Loading monitoring windows.</p>
+        )}
+        <p className="workspace-card__note">
+          This screen reads persisted monitoring only. It does not perform paid
+          X reads, schedule receipts or turn unavailable readings into zeros.
+          Monitoring receipts now come from the COD-422 read contract. The
+          COD-422 monitoring read contract is the source for these
+          creator-scoped receipt and observation details.
+        </p>
+      </section>
+
       <section className="workspace-card" aria-labelledby="postmortem-title">
         <div className="workspace-card__header">
           <div>
@@ -1084,10 +1404,9 @@ export function PostMonitoring({
           <p role="status">Loading the evidence-aware postmortem.</p>
         )}
         <p className="workspace-card__note">
-          Monitoring receipts, scheduled-window status, missed readings and
-          budget reconciliation remain unavailable until COD-422 exposes the
-          creator-scoped monitoring read contract. This screen never fabricates
-          observations or treats a missing reading as zero.
+          Postmortem conclusions remain evidence-aware and never treat a missing
+          reading as zero. Monitoring lifecycle details are shown in the
+          read-only observation windows above.
         </p>
       </section>
     </div>

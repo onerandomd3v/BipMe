@@ -13,6 +13,7 @@ import {
   historyPostsFixture,
   publicationLinkFixture,
   postmortemFixture,
+  monitoringFixture,
 } from './fixtures'
 
 export const apiHandlers = [
@@ -58,6 +59,10 @@ export const apiHandlers = [
   http.get(
     '*/api/v1/creators/me/draft-assessments/:assessmentId/postmortem',
     () => HttpResponse.json(postmortemFixture),
+  ),
+  http.get(
+    '*/api/v1/creators/me/draft-assessments/:assessmentId/monitoring',
+    () => HttpResponse.json(monitoringFixture),
   ),
   http.get('*/api/v1/creators/me/history/imports', () =>
     HttpResponse.json(historyImportFixture),

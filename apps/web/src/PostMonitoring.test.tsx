@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { PostMonitoring } from './PostMonitoring'
 import { ApiRequestError, type ApiClient } from './api/client'
 import type { components } from './api/generated/schema'
+import { monitoringFixture } from './api/fixtures'
 
 const assessmentId = '00000000-0000-4000-8000-000000000365'
 
@@ -123,12 +124,62 @@ function client(overrides: Partial<ApiClient> = {}) {
       postmortem: null,
       limitations: ['No linked publication is available yet.'],
     }),
+    monitoring: vi.fn().mockResolvedValue(monitoringFixture),
     linkPublication: vi.fn().mockResolvedValue(publication),
     ...overrides,
   } as unknown as ApiClient
 }
 
 describe('PostMonitoring', () => {
+  it('renders monitoring lifecycle without inventing unsupplied windows or values', async () => {
+    const validMonitoring = {
+      ...monitoringFixture,
+      original_outlook: assessment,
+      published_post: null,
+    }
+    const fake = client({
+      monitoring: vi.fn().mockResolvedValue(validMonitoring),
+    })
+    render(<PostMonitoring assessmentId={assessmentId} client={fake} />)
+    expect(await screen.findByText('Observation windows')).toBeInTheDocument()
+    expect(screen.getByText('1h')).toBeInTheDocument()
+    expect(screen.getByText('Not scheduled')).toBeInTheDocument()
+    expect(
+      screen.getByText('No receipt was scheduled for this window.'),
+    ).toBeInTheDocument()
+    const observation = screen.getByText(
+      (_, element) =>
+        element?.tagName === 'P' &&
+        element.textContent?.includes('impressions') === true,
+    )
+    expect(observation).toHaveTextContent('42')
+    expect(observation).toHaveTextContent('86400s')
+    expect(screen.queryByText('skipped')).not.toBeInTheDocument()
+  })
+
+  it('keeps the assessment visible when monitoring is malformed', async () => {
+    const validMonitoring = {
+      ...monitoringFixture,
+      original_outlook: assessment,
+      published_post: null,
+    }
+    const fake = client({
+      monitoring: vi.fn().mockResolvedValue({
+        ...validMonitoring,
+        windows: [
+          { ...validMonitoring.windows[0], observations: [{ bad: true }] },
+        ],
+      }),
+    })
+    render(<PostMonitoring assessmentId={assessmentId} client={fake} />)
+    expect(
+      await screen.findByText('Original Distribution Outlook'),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText('The monitoring response was invalid.'),
+    ).toBeInTheDocument()
+  })
+
   it('does not call APIs for a missing or invalid assessment identity', () => {
     const fake = client()
     render(<PostMonitoring assessmentId={null} client={fake} />)
