@@ -14,7 +14,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, func, select, text
+from sqlalchemy import Engine, create_engine, event, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from bipme.api.app import create_app
@@ -280,6 +280,12 @@ def test_postgres_demo_publication_link_is_synthetic_and_unverified(
 def test_authenticated_report_draft_and_postmortem_paths_use_seeded_demo_evidence(
     isolated_postgres: Engine, tmp_path: Path
 ) -> None:
+    database_errors: list[BaseException] = []
+    event.listen(
+        isolated_postgres,
+        "handle_error",
+        lambda context: database_errors.append(context.original_exception),
+    )
     archive, scenarios = _fixtures(tmp_path)
     factory = sessionmaker(isolated_postgres, expire_on_commit=False)
     with factory.begin() as db:
@@ -319,7 +325,7 @@ def test_authenticated_report_draft_and_postmortem_paths_use_seeded_demo_evidenc
         headers={"Idempotency-Key": "cod424-postgres-report"},
         json={"data_sources": ["personal_history"]},
     )
-    assert report.status_code == 200, report.text
+    assert report.status_code == 200, f"{report.text}; database errors: {database_errors!r}"
     assert report.json()["coverage"] == "personal_only_partial"
     assert report.json()["processing_permissions"]["personal_history"]["status"] == "included"
     assert "Synthetic demonstration data — not live X evidence" in str(report.json()["evidence"])

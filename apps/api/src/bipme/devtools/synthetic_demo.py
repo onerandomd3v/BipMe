@@ -494,7 +494,9 @@ def _seed_posts(
                     features=features,
                 )
             )
-        elif existing_profile.features != features:
+        elif json.dumps(existing_profile.features, sort_keys=True) != json.dumps(
+            features, sort_keys=True
+        ):
             raise SyntheticDemoError("existing synthetic post profile conflicts with archive")
         identity = embedder.identity
         existing_embedding = db.scalar(
