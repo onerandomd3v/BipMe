@@ -332,7 +332,7 @@ def test_authenticated_report_draft_and_postmortem_paths_use_seeded_demo_evidenc
         headers={"Idempotency-Key": "cod424-postgres-draft"},
         json={"text": "A practical synthetic Python debugging checklist"},
     )
-    assert draft.status_code == 200, draft.text
+    assert draft.status_code == 201, draft.text
     assessment_id = UUID(draft.json()["assessment_id"])
     assert draft.json()["versions"]["embedding_identity"].startswith(
         "bipme/synthetic-demo-hash-embedding@"
