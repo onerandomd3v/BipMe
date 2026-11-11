@@ -259,6 +259,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/creators/me/draft-assessments/{assessment_id}/monitoring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read creator-scoped monitoring receipts and observations
+         * @description Reads only the authenticated creator's persisted assessment, publication, durable monitoring receipts and outcome observations. This GET never calls X, enqueues work, reserves usage or mutates persisted state.
+         */
+        get: operations["read_monitoring_api_v1_creators_me_draft_assessments__assessment_id__monitoring_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creators/me/draft-assessments/{assessment_id}/postmortem": {
         parameters: {
             query?: never;
@@ -1147,6 +1167,141 @@ export interface components {
              * @enum {string}
              */
             window_kind: "mature_cumulative" | "age_aligned";
+        };
+        /** MonitoringObservationResponse */
+        MonitoringObservationResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Metric */
+            metric: string;
+            /** Metric Definition */
+            metric_definition: string;
+            /** Missing Reason */
+            missing_reason?: string | null;
+            /** Observed Age Seconds */
+            observed_age_seconds: number;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "authorized_x_api" | "unknown";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "observed" | "missing" | "invalid";
+            /** Unit */
+            unit: string;
+            /** Value */
+            value: number | null;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "mature_cumulative" | "age_aligned";
+        };
+        /** MonitoringPublicationResponse */
+        MonitoringPublicationResponse: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "available" | "unavailable" | "deleted";
+            /**
+             * Canonical Post Id
+             * Format: uuid
+             */
+            canonical_post_id: string;
+            /** External Post Id */
+            external_post_id: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /**
+             * Version Match State
+             * @enum {string}
+             */
+            version_match_state: "match" | "mismatch" | "unknown";
+        };
+        /** MonitoringReadResponse */
+        MonitoringReadResponse: {
+            /**
+             * Assessed At
+             * Format: date-time
+             */
+            assessed_at: string;
+            /**
+             * Assessment Id
+             * Format: uuid
+             */
+            assessment_id: string;
+            /**
+             * Limitations
+             * @default []
+             */
+            limitations: string[];
+            original_outlook: components["schemas"]["DraftAnalysisResponse"];
+            published_post: components["schemas"]["MonitoringPublicationResponse"] | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "publication_pending" | "publication_unavailable" | "monitoring_unavailable" | "monitoring_pending" | "monitoring_running" | "monitoring_partial" | "monitoring_complete" | "needs_reconciliation";
+            /** Windows */
+            windows: components["schemas"]["MonitoringWindowResponse"][];
+        };
+        /** MonitoringWindowResponse */
+        MonitoringWindowResponse: {
+            /**
+             * Due At
+             * Format: date-time
+             */
+            due_at: string;
+            /**
+             * Execution State
+             * @enum {string}
+             */
+            execution_state: "not_scheduled" | "pending" | "running" | "completed" | "skipped" | "missed" | "cancelled" | "unavailable" | "rate_limited" | "budget_blocked" | "needs_reconciliation" | "failed" | "unknown";
+            /** Failure Code */
+            failure_code: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Measurement State
+             * @enum {string}
+             */
+            measurement_state: "not_available" | "partial" | "available";
+            /** Observations */
+            observations: components["schemas"]["MonitoringObservationResponse"][];
+            /** Receipt Id */
+            receipt_id: string | null;
+            /** Scheduled At */
+            scheduled_at: string | null;
+            /** Window Key */
+            window_key: string;
+            /**
+             * Window Kind
+             * @default age_aligned
+             * @constant
+             */
+            window_kind: "age_aligned";
         };
         /** ObservationProvenance */
         ObservationProvenance: {
@@ -2262,6 +2417,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftAnalysisResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    read_monitoring_api_v1_creators_me_draft_assessments__assessment_id__monitoring_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                assessment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitoringReadResponse"];
                 };
             };
             /** @description Unauthorized */
