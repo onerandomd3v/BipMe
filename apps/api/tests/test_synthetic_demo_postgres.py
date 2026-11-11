@@ -320,6 +320,7 @@ def test_authenticated_report_draft_and_postmortem_paths_use_seeded_demo_evidenc
             content={
                 "error": exc.code,
                 "context_type": type(exc.__context__).__name__,
+                "context_message": str(exc.__context__)[:300],
             },
         )
 
