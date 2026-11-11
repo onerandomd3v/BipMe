@@ -264,7 +264,7 @@ pnpm build
 pnpm format:check
 ```
 
-`pnpm format:check` is available locally but is **not currently a CI step**. Add browser E2E tests when actual user flows are introduced. `api-checks`, `web-checks` and `workspace-checks` are the three existing GitHub Actions jobs.
+`pnpm format:check` is available locally but is **not currently a CI step**. Browser E2E tests run with `pnpm test:e2e`; the suite uses deterministic in-browser API fixtures and aborts external requests, so it does not require live X credentials or a running API. `api-checks`, `web-checks`, `web-e2e-checks` and `workspace-checks` are the GitHub Actions jobs relevant to routine verification.
 
 ## OpenAPI and Web handoff
 
