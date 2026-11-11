@@ -160,3 +160,21 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+
+  web-container-checks:
+    name: web-container-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate independent frontend Compose configuration
+        run: docker compose --env-file infra/frontend/.env.example -f infra/frontend/compose.yaml config --quiet
+      - name: Build production frontend image
+        run: docker compose --env-file infra/frontend/.env.example -f infra/frontend/compose.yaml build web
+      - name: Verify container routing, health and static delivery
+        env:
+          BIPME_WEB_SMOKE_IMAGE: bipme-web:local
+        run: python3 apps/web/scripts/container-smoke.py
+      - name: Remove frontend smoke image
+        if: always()
+        run: docker image rm bipme-web:local || true

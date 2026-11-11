@@ -1,0 +1,28 @@
+name: bipme-frontend
+
+services:
+  web:
+    image: ${BIPME_WEB_IMAGE:-bipme-web:local}
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    environment:
+      BIPME_API_UPSTREAM: ${BIPME_API_UPSTREAM:?Set BIPME_API_UPSTREAM to the FastAPI origin, without a path}
+    init: true
+    ports:
+      - "${BIPME_WEB_HOST:-127.0.0.1}:${BIPME_WEB_PORT:-8080}:8080"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - api
+
+networks:
+  api:
+    external: true
+    name: ${BIPME_WEB_NETWORK:?Set BIPME_WEB_NETWORK to the externally managed API network}
