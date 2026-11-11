@@ -11,6 +11,7 @@ import { PostMonitoring } from './PostMonitoring'
 import { ApiRequestError, type ApiClient } from './api/client'
 import type { components } from './api/generated/schema'
 import { monitoringFixture } from './api/fixtures'
+import { SYNTHETIC_DEMO_LABEL } from './syntheticDemo'
 
 const assessmentId = '00000000-0000-4000-8000-000000000365'
 
@@ -155,6 +156,20 @@ describe('PostMonitoring', () => {
     expect(observation).toHaveTextContent('42')
     expect(observation).toHaveTextContent('86400s')
     expect(screen.queryByText('skipped')).not.toBeInTheDocument()
+  })
+
+  it('accepts and labels backend synthetic monitoring provenance', async () => {
+    const fake = client({
+      monitoring: vi.fn().mockResolvedValue({
+        ...monitoringFixture,
+        original_outlook: assessment,
+        limitations: [SYNTHETIC_DEMO_LABEL],
+      }),
+    })
+    render(<PostMonitoring assessmentId={assessmentId} client={fake} />)
+    expect(
+      (await screen.findAllByText(SYNTHETIC_DEMO_LABEL)).length,
+    ).toBeGreaterThan(0)
   })
 
   it('keeps the assessment visible when monitoring is malformed', async () => {

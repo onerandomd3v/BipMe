@@ -6,6 +6,7 @@ import {
   type BaselineQuery,
 } from './api/client'
 import type { components } from './api/generated/schema'
+import { hasSyntheticProvenance, SyntheticDemoNotice } from './syntheticDemo'
 
 type EvidencePage = components['schemas']['EvidencePage']
 type ImportPage = components['schemas']['ImportPage']
@@ -30,7 +31,12 @@ const DISCLOSURES = [
   'not_known_at_cutoff',
 ] as const
 const FRESHNESS_VALUES = ['recorded', 'unknown', 'not_known_at_cutoff'] as const
-const SOURCES = ['authorized_x_api', 'archive', 'unknown'] as const
+const SOURCES = [
+  'authorized_x_api',
+  'archive',
+  'unknown',
+  'synthetic_demo',
+] as const
 const SAFE_SOURCE_HOSTS = new Set(['x.com', 'twitter.com'])
 const SOURCE_POST_PATH = /^\/i\/status\/[1-9][0-9]{0,19}$/
 
@@ -258,6 +264,11 @@ export function CreatorHistoryDashboard({
           />
         </div>
       </section>
+      {hasSyntheticProvenance({ latestImport, page }) && (
+        <SyntheticDemoNotice>
+          History and observations are from the isolated backend seed.
+        </SyntheticDemoNotice>
+      )}
       {latestImport && latestImport.status !== 'complete' && (
         <section className="history-notice" role="status">
           <strong>{importStatusLabel(latestImport.status)}</strong>
@@ -735,7 +746,9 @@ function sourceLabel(source: unknown) {
     ? 'Official X API'
     : source === 'archive'
       ? 'Creator archive'
-      : 'Source unknown'
+      : source === 'synthetic_demo'
+        ? 'Synthetic demonstration data'
+        : 'Source unknown'
 }
 function isDisclosure(value: unknown): value is Disclosure {
   return (
