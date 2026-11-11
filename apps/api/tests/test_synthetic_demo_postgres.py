@@ -295,6 +295,7 @@ def test_authenticated_report_draft_and_postmortem_paths_use_seeded_demo_evidenc
             CreatorProcessingPermission(
                 creator_id=CREATOR_ID,
                 revision=1,
+                source_kind="personal_history",
                 allowed=True,
                 policy_version="synthetic-demo-user-consent",
                 recorded_at=SEEDED_AT,
