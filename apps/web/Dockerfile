@@ -14,6 +14,7 @@ FROM nginx/nginx-unprivileged:stable-alpine AS runtime
 
 COPY --from=build --chown=nginx:nginx /workspace/apps/web/dist/ /usr/share/nginx/html/
 COPY apps/web/nginx/default.conf.template /etc/nginx/templates/default.conf.template
+COPY apps/web/nginx/snippets/bipme-api-proxy.conf /etc/nginx/templates/bipme-api-proxy.conf.template
 COPY apps/web/nginx/snippets/ /etc/nginx/snippets/
 COPY --chmod=755 apps/web/docker-entrypoint.sh /usr/local/bin/bipme-web-entrypoint
 
