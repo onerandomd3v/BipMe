@@ -3,6 +3,11 @@ map $http_x_forwarded_proto $bipme_forwarded_proto {
     default $scheme;
 }
 
+map $http_host $bipme_forwarded_host {
+    default $http_host;
+    "" $host;
+}
+
 server {
     listen 8080;
     server_name _;

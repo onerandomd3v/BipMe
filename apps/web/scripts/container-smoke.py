@@ -60,6 +60,8 @@ class MockApi(http.server.BaseHTTPRequestHandler):
                 "method": self.command,
                 "path": self.path,
                 "body": body.decode("utf-8"),
+                "host": self.headers.get("Host"),
+                "forwarded_host": self.headers.get("X-Forwarded-Host"),
                 "cookie": self.headers.get("Cookie"),
                 "csrf": self.headers.get("X-CSRF-Token"),
                 "authorization": self.headers.get("Authorization"),
@@ -257,6 +259,9 @@ def main() -> None:
         require(api_data["method"] == "POST", "API proxy changed the request method.")
         require(api_data["path"] == "/api/echo?cursor=next%2Fitem&limit=2", "API proxy changed path or query string.")
         require(api_data["body"] == '{"message":"hello"}', "API proxy changed the request body.")
+        expected_host = f"127.0.0.1:{web_port}"
+        require(api_data["host"] == expected_host, "API proxy did not preserve the request authority and port.")
+        require(api_data["forwarded_host"] == expected_host, "API proxy did not preserve the forwarded authority and port.")
         require(api_data["cookie"] == headers["Cookie"], "API proxy did not forward the session cookie.")
         require(api_data["csrf"] == headers["X-CSRF-Token"], "API proxy did not forward the CSRF header.")
         require(api_data["authorization"] == headers["Authorization"], "API proxy did not forward Authorization.")
