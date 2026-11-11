@@ -280,7 +280,7 @@ def test_monitoring_returns_windows_states_and_actual_observation_time(monitorin
         "age:12h",
         "age:24h",
     }
-    assert windows["age:5m"]["execution_state"] == "pending"
+    assert windows["age:5m"]["execution_state"] == "unknown"
     assert windows["age:15m"]["execution_state"] == "completed"
     observations = {item["metric"]: item for item in windows["age:15m"]["observations"]}
     assert observations["impressions"]["observed_at"] == (
@@ -382,6 +382,124 @@ def test_monitoring_validates_receipt_identity_and_due_time(monitoring_api) -> N
     assert "integrity validation" in " ".join(body["limitations"])
 
 
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        (
+            {
+                "id": 99,
+                "queue_name": "bipme",
+                "task_name": "bipme.jobs.runtime.dispatch_receipt",
+                "args": {"receipt_id": "receipt"},
+                "status": "todo",
+            },
+            "todo",
+        ),
+        (
+            {
+                "id": 99,
+                "queue_name": "other",
+                "task_name": "bipme.jobs.runtime.dispatch_receipt",
+                "args": {"receipt_id": "receipt"},
+                "status": "todo",
+            },
+            "unknown",
+        ),
+        (
+            {
+                "id": 100,
+                "queue_name": "bipme",
+                "task_name": "bipme.jobs.runtime.dispatch_receipt",
+                "args": {"receipt_id": "receipt"},
+                "status": "todo",
+            },
+            "unknown",
+        ),
+        (
+            {
+                "id": 99,
+                "queue_name": "bipme",
+                "task_name": "other.task",
+                "args": {"receipt_id": "receipt"},
+                "status": "todo",
+            },
+            "unknown",
+        ),
+        (
+            {
+                "id": 99,
+                "queue_name": "bipme",
+                "task_name": "bipme.jobs.runtime.dispatch_receipt",
+                "args": {"receipt_id": "wrong"},
+                "status": "todo",
+            },
+            "unknown",
+        ),
+        (
+            {
+                "id": 99,
+                "queue_name": "bipme",
+                "task_name": "bipme.jobs.runtime.dispatch_receipt",
+                "args": [],
+                "status": "todo",
+            },
+            "unknown",
+        ),
+        (
+            {
+                "id": 99,
+                "queue_name": "bipme",
+                "task_name": "bipme.jobs.runtime.dispatch_receipt",
+                "args": {"receipt_id": "receipt"},
+                "status": "not-a-procrastinate-status",
+            },
+            "unknown",
+        ),
+        (None, "unknown"),
+    ],
+)
+def test_monitoring_runner_identity_is_fail_closed(monitoring_api, row, expected) -> None:
+    from bipme.api.monitoring import _runner_status
+
+    _, factory = monitoring_api
+    with factory() as db:
+        receipt = db.scalar(select(ScheduledJob).where(ScheduledJob.creator_id == CREATOR_ID))
+        assert receipt is not None
+        receipt.runner_job_id = 99
+        candidate = None if row is None else {**row}
+        if candidate is not None and candidate.get("args") == {"receipt_id": "receipt"}:
+            candidate["args"] = {"receipt_id": str(receipt.id)}
+
+        class Database:
+            def execute(self, *_args, **_kwargs):
+                class Result:
+                    def mappings(self):
+                        return self
+
+                    def one_or_none(self):
+                        return candidate
+
+                return Result()
+
+        result = _runner_status(Database(), receipt)  # type: ignore[arg-type]
+        assert result == expected
+
+
+def test_monitoring_nonterminal_contradictory_runner_is_unknown(monitoring_api) -> None:
+    from bipme.api.monitoring import _execution_state
+
+    _, factory = monitoring_api
+    with factory() as db:
+        receipt = db.scalar(select(ScheduledJob).where(ScheduledJob.creator_id == CREATOR_ID))
+        assert receipt is not None
+        receipt.outcome = None
+        assert _execution_state(receipt, "unknown") == "unknown"
+        assert _execution_state(receipt, "succeeded") == "unknown"
+        assert _execution_state(receipt, "failed") == "unknown"
+        receipt.outcome = "succeeded"
+        assert _execution_state(receipt, "unknown") == "completed"
+
+
 def test_monitoring_allowlists_missing_reason_and_observation_identity(monitoring_api) -> None:
     client, factory = monitoring_api
     with factory.begin() as db:
@@ -426,6 +544,69 @@ def test_monitoring_allowlists_missing_reason_and_observation_identity(monitorin
     by_metric = {item["metric"]: item for item in observations}
     assert by_metric["likes"]["missing_reason"] is None
     assert "retweets" not in by_metric
+
+
+def test_monitoring_excludes_future_observations_using_server_time(monitoring_api) -> None:
+    client, factory = monitoring_api
+    due_at = NOW - timedelta(minutes=45)
+    with factory.begin() as db:
+        db.add_all(
+            (
+                OutcomeObservationRecord(
+                    post_id=POST_ID,
+                    creator_id=CREATOR_ID,
+                    published_at=NOW - timedelta(hours=1),
+                    metric_name="replies",
+                    metric_definition="replies-v1",
+                    metric_unit="count",
+                    metric_value=Decimal("7.1234567890"),
+                    state="observed",
+                    window_kind="age_aligned",
+                    window_key="age:15m",
+                    observed_at=NOW,
+                    idempotency_key=f"x-post-observation:{POST_ID}:age:15m:replies",
+                    provenance={
+                        "source": "x_authorized_post_metrics",
+                        "endpoint": "/2/tweets/{id}",
+                        "scheduled_at": due_at.isoformat(),
+                        "window_key": "age:15m",
+                        "observed_age_seconds": 60 * 60,
+                    },
+                ),
+                OutcomeObservationRecord(
+                    post_id=POST_ID,
+                    creator_id=CREATOR_ID,
+                    published_at=NOW - timedelta(hours=1),
+                    metric_name="reposts",
+                    metric_definition="reposts-v1",
+                    metric_unit="count",
+                    metric_value=Decimal("8"),
+                    state="observed",
+                    window_kind="age_aligned",
+                    window_key="age:15m",
+                    observed_at=NOW + timedelta(seconds=1),
+                    idempotency_key=f"x-post-observation:{POST_ID}:age:15m:reposts",
+                    provenance={
+                        "source": "x_authorized_post_metrics",
+                        "endpoint": "/2/tweets/{id}",
+                        "scheduled_at": due_at.isoformat(),
+                        "window_key": "age:15m",
+                        "observed_age_seconds": 60 * 60 + 1,
+                    },
+                ),
+            )
+        )
+
+    response = client.get(f"/api/v1/creators/me/draft-assessments/{ASSESSMENT_ID}/monitoring")
+    assert response.status_code == 200
+    body = response.json()
+    observations = next(item for item in body["windows"] if item["window_key"] == "age:15m")[
+        "observations"
+    ]
+    by_metric = {item["metric"]: item for item in observations}
+    assert Decimal(by_metric["replies"]["value"]) == Decimal("7.1234567890")
+    assert by_metric["replies"]["observed_at"] == NOW.isoformat().replace("+00:00", "Z")
+    assert "reposts" not in by_metric
 
 
 def test_monitoring_auth_failure_uses_standard_error_contract(monitoring_api) -> None:

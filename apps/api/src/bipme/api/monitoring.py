@@ -8,6 +8,7 @@ from typing import Annotated, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from procrastinate.jobs import Status
 from pydantic import Field, ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -24,6 +25,7 @@ from bipme.api.errors import ApiError
 from bipme.api.evidence import KNOWN_X_SOURCES
 from bipme.api.schemas import DraftAnalysisResponse, ErrorResponse, StrictModel
 from bipme.jobs.metric_snapshots import HANDLER_NAME, OBSERVATION_WINDOWS
+from bipme.jobs.service import QUEUE, TASK_NAME
 from bipme.persistence.models import (
     CanonicalPost,
     DraftAssessment,
@@ -132,6 +134,7 @@ _PUBLIC_MISSING_REASONS = {"not_returned", "invalid_value"}
 _METRIC_SOURCE = "x_authorized_post_metrics"
 _METRIC_SOURCE_ENDPOINT = "/2/tweets/{id}"
 _WINDOWS_BY_KEY = {window.key: window for window in OBSERVATION_WINDOWS}
+_KNOWN_RUNNER_STATUSES = {status.value for status in Status}
 
 
 def _safe_failure_code(value: str | None) -> str | None:
@@ -164,22 +167,25 @@ def _execution_state(receipt: ScheduledJob, runner_status: str | None) -> Execut
         if failure in {"ambiguous_billing", "duplicate_request", "cached_evidence_invalid"}:
             return "needs_reconciliation"
         return "failed"
-    if runner_status == "doing":
-        return "running"
-    if runner_status == "failed":
-        return "failed"
-    if runner_status in {"todo", "succeeded"} or runner_status is None:
-        return "pending"
+    if receipt.outcome is None:
+        if runner_status == Status.DOING.value:
+            return "running"
+        if runner_status == Status.TODO.value:
+            return "pending"
     return "unknown"
 
 
-def _runner_status(db: Session, runner_job_id: int | None) -> str | None:
+def _runner_status(db: Session, receipt: ScheduledJob) -> str:
+    runner_job_id = receipt.runner_job_id
     if runner_job_id is None:
-        return None
+        return "unknown"
     try:
         row = (
             db.execute(
-                text("SELECT status::text AS status FROM procrastinate_jobs WHERE id = :job_id"),
+                text(
+                    "SELECT id, queue_name, task_name, args, status::text AS status "
+                    "FROM procrastinate_jobs WHERE id = :job_id"
+                ),
                 {"job_id": runner_job_id},
             )
             .mappings()
@@ -189,8 +195,22 @@ def _runner_status(db: Session, runner_job_id: int | None) -> str | None:
         # A receipt remains useful when the optional queue table is temporarily
         # unavailable; never turn that into a fabricated terminal state.
         db.rollback()
-        return None
-    return None if row is None else str(row["status"])
+        return "unknown"
+    if row is None:
+        return "unknown"
+    args = row.get("args")
+    status = row.get("status")
+    if (
+        row.get("id") != runner_job_id
+        or row.get("queue_name") != QUEUE
+        or row.get("task_name") != TASK_NAME
+        or not isinstance(args, dict)
+        or args.get("receipt_id") != str(receipt.id)
+        or not isinstance(status, str)
+        or status not in _KNOWN_RUNNER_STATUSES
+    ):
+        return "unknown"
+    return status
 
 
 def _publication(post: CanonicalPost) -> MonitoringPublicationResponse:
@@ -426,6 +446,7 @@ def read_monitoring(
                         OutcomeObservationRecord.published_at == post.published_at,
                         OutcomeObservationRecord.window_kind == "age_aligned",
                         OutcomeObservationRecord.window_key.in_(tuple(_WINDOWS_BY_KEY)),
+                        OutcomeObservationRecord.observed_at <= now,
                     )
                     .order_by(
                         OutcomeObservationRecord.observed_at,
@@ -468,9 +489,7 @@ def read_monitoring(
                 failure_code = None
                 receipt_id = None
             else:
-                execution_state = _execution_state(
-                    receipt, _runner_status(db, receipt.runner_job_id)
-                )
+                execution_state = _execution_state(receipt, _runner_status(db, receipt))
                 scheduled_at = receipt.scheduled_at
                 finished_at = receipt.finished_at
                 failure_code = _safe_failure_code(receipt.failure_code)

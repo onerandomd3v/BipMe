@@ -57,7 +57,7 @@ from bipme.jobs.runtime import (
     create_runtime,
     run_worker_supervised,
 )
-from bipme.jobs.service import IdempotencyConflict, schedule_job
+from bipme.jobs.service import QUEUE, IdempotencyConflict, schedule_job
 from bipme.persistence.base import EncryptedTokenEnvelope
 from bipme.persistence.contracts import (
     comparable_candidate_from_records,
@@ -1407,6 +1407,65 @@ def test_monitoring_read_validates_receipts_observations_and_decimal_precision(
         "outcome_observations": session.scalar(text("SELECT count(*) FROM outcome_observations")),
         "api_usage_ledger": session.scalar(text("SELECT count(*) FROM api_usage_ledger")),
     } == before
+
+
+def test_monitoring_runner_identity_is_validated_in_postgres(session: Session) -> None:
+    from bipme.api.monitoring import _execution_state, _runner_status
+
+    creator = _creator(session)
+    app = App(connector=SyncPsycopgConnector())
+
+    @app.task(name=TASK_NAME, queue=QUEUE)
+    def dispatch(receipt_id: str) -> None:
+        del receipt_id
+
+    receipt = schedule_job(
+        session,
+        app,
+        creator_id=creator.id,
+        idempotency_key="monitoring:runner:identity",
+        handler_name="bipme.jobs.metric_snapshot",
+        arguments={"post_id": str(uuid4()), "window_key": "age:5m"},
+        scheduled_at=NOW,
+    )
+    runner_id = receipt.runner_job_id
+    assert runner_id is not None
+    session.commit()
+    assert _runner_status(session, receipt) == "todo"
+
+    def set_runner(column: str, value: object) -> None:
+        session.execute(
+            text(f"UPDATE procrastinate_jobs SET {column} = :value WHERE id = :id"),
+            {"value": value, "id": runner_id},
+        )
+        session.commit()
+        session.refresh(receipt)
+
+    set_runner("queue_name", "wrong-queue")
+    assert _runner_status(session, receipt) == "unknown"
+    set_runner("queue_name", QUEUE)
+
+    set_runner("task_name", "wrong.task")
+    assert _runner_status(session, receipt) == "unknown"
+    set_runner("task_name", TASK_NAME)
+
+    set_runner("args", '{"receipt_id":"wrong"}')
+    assert _runner_status(session, receipt) == "unknown"
+    set_runner("args", f'{{"receipt_id":"{receipt.id}"}}')
+
+    set_runner("args", "[]")
+    assert _runner_status(session, receipt) == "unknown"
+    set_runner("args", f'{{"receipt_id":"{receipt.id}"}}')
+
+    set_runner("status", "aborting")
+    assert _runner_status(session, receipt) == "aborting"
+    assert _execution_state(receipt, "aborting") == "unknown"
+    set_runner("status", "todo")
+
+    session.execute(text("DELETE FROM procrastinate_jobs WHERE id = :id"), {"id": runner_id})
+    session.commit()
+    session.refresh(receipt)
+    assert _runner_status(session, receipt) == "unknown"
 
 
 def test_outcome_snapshots_are_idempotent_and_preserve_zero_missing_and_time(
