@@ -624,6 +624,7 @@ def _seed_scenarios(
                 raise SyntheticDemoError(
                     "existing synthetic observation conflicts with scenario fixture"
                 )
+            recorded += 1
             continue
         db.add(
             OutcomeObservationRecord(
