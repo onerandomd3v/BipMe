@@ -88,7 +88,34 @@ The `REQUIRED` and `OPTIONAL` labels in `apps/api/.env.example` apply only to th
 
 X configuration is operation-specific: OAuth identity reads need their OAuth credentials, encryption key, identity price, and daily ceiling. History import, metric snapshots, and published-post verification each have separate permission, current-pricing, and spend-control prerequisites. Keep an operation's settings blank and its gate disabled when that operation is not approved or in use.
 
-The web app currently consumes no custom environment variables and has no web `.env.example`. Any future `VITE_` value is public browser configuration; never place database credentials, session secrets, X credentials, Brev tokens, or Groq keys in it.
+The browser app consumes no custom environment variables. Any `VITE_` value is public browser configuration; never place database credentials, session secrets, X credentials, Brev tokens, or Groq keys in it. The production container instead reads its API upstream at runtime; see [Independent frontend container](#independent-frontend-container).
+
+### Independent frontend container
+
+The production web image builds the existing Vite app with Node 24 and pnpm 10.20.0, then serves only compiled static files from an unprivileged NGINX container. The API upstream is injected at container start; changing it does not require rebuilding the frontend. This Compose project is independent from `infra/api-worker/` and starts no API, worker, or database.
+
+From the repository root, create a separate frontend environment file and set the API origin and shared external Docker network:
+
+```bash
+cp infra/frontend/.env.example infra/frontend/.env
+# Edit BIPME_API_UPSTREAM to the API's origin and BIPME_WEB_NETWORK to its Docker network.
+docker network create bipme-services  # only when the deployment network does not already exist
+docker compose --env-file infra/frontend/.env -f infra/frontend/compose.yaml build web
+docker compose --env-file infra/frontend/.env -f infra/frontend/compose.yaml up -d
+```
+
+Required settings are `BIPME_API_UPSTREAM` (HTTP(S) origin only, with no path or embedded credentials) and `BIPME_WEB_NETWORK` (an existing network also attached to the API). Optional settings are `BIPME_WEB_HOST` (defaults to loopback `127.0.0.1`), `BIPME_WEB_PORT` (defaults to `8080`), and `BIPME_WEB_IMAGE` (defaults to `bipme-web:local`). Keep this `.env` separate from the API configuration. For an API container in another Compose project, attach it to the shared network with a stable alias, for example `docker network connect --alias bipme-api bipme-services <api-container>`, then use `http://bipme-api:8000`. NGINX refreshes Docker DNS resolution every 30 seconds. When HTTPS terminates at an external reverse proxy, have it set `X-Forwarded-Proto`; NGINX forwards `https` to the API only when that header is exactly `https`, and otherwise uses its own scheme. The frontend container does not depend on API container lifecycle; API downtime leaves static pages available while API calls fail normally.
+
+The container listens on port `8080`, runs as a non-root user, exposes `/healthz`, and sends NGINX access/error logs to container stdout/stderr. Check `docker compose ... ps`, `docker compose ... logs -f web`, or `docker inspect` health status. The `/api` proxy preserves request paths, queries, methods, bodies, cookies, CSRF/auth headers, response status and `Set-Cookie`; it disables proxy buffering and caching and marks API responses `private, no-store`. Static hashed assets receive one-year immutable caching; `index.html` is not cached aggressively. SPA route refresh falls back to the app shell.
+
+To update only the frontend after a web change, build and recreate its service with the same configuration:
+
+```bash
+docker compose --env-file infra/frontend/.env -f infra/frontend/compose.yaml build --pull web
+docker compose --env-file infra/frontend/.env -f infra/frontend/compose.yaml up -d --no-deps web
+```
+
+The API and worker do not need rebuilding for a frontend-only update. Put HTTPS termination, certificate renewal, and any public host/domain routing in the selected host's reverse proxy. Bind the container to loopback when that proxy runs on the same host. After selecting a hosting provider, configure its firewall/network attachment, persistent image source, secrets/config injection, health probe, TLS and backup/rollback procedures; none are provider-specific in this repository.
 
 ### Optional integrations
 
