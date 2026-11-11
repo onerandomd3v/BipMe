@@ -1,4 +1,11 @@
 # Local secrets and runtime configuration
+.worktrees/
+.kube/
+*kubeconfig*
+team*.yaml
+team*.yml
+*.dump
+infra/forge/rendered/
 .env
 .env.*
 !.env.example

@@ -4,6 +4,10 @@
 
 ## Prerequisites
 
+For the synthetic-only Team 17 Kubernetes release, see the [Forge runbook](../infra/forge/README.md).
+It uses the existing images, explicit quota budgets and a separate migration phase.
+Deployment requires replacement credentials from organizers and separate authorization.
+
 - Python **3.13**, with [uv](https://docs.astral.sh/uv/)
 - Node.js **24** and **pnpm 10**
 - Docker with Compose

@@ -1,0 +1,115 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "bipme-migrate-RELEASE_SHA",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "bipme-migrate-RELEASE_SHA"
+        }
+      },
+      "spec": {
+        "backoffLimit": 0,
+        "activeDeadlineSeconds": 600,
+        "ttlSecondsAfterFinished": 3600,
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/part-of": "bipme",
+              "app.kubernetes.io/name": "migrate"
+            }
+          },
+          "spec": {
+            "automountServiceAccountToken": false,
+            "nodeSelector": {
+              "kubernetes.io/os": "linux",
+              "kubernetes.io/arch": "amd64"
+            },
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 10001,
+              "runAsGroup": 10001,
+              "fsGroup": 10001,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "terminationGracePeriodSeconds": 120,
+            "containers": [
+              {
+                "name": "migrate",
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "readOnlyRootFilesystem": true
+                },
+                "image": "bipme-api:RELEASE_SHA",
+                "command": [
+                  "alembic",
+                  "upgrade",
+                  "head"
+                ],
+                "env": [
+                  {
+                    "name": "BIPME_DATABASE_URL",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "bipme-db",
+                        "key": "BIPME_DATABASE_URL"
+                      }
+                    }
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "50m",
+                    "memory": "64Mi"
+                  },
+                  "limits": {
+                    "cpu": "200m",
+                    "memory": "192Mi"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "checks",
+                    "mountPath": "/opt/forge",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "checks",
+                "configMap": {
+                  "name": "bipme-checks"
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {
+                  "sizeLimit": "32Mi"
+                }
+              }
+            ],
+            "restartPolicy": "Never"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,4 +1,15 @@
 .git
+.worktrees
+**/.git
+**/.kube
+**/*kubeconfig*
+**/team*.yaml
+**/team*.yml
+**/*.key
+**/*.pem
+**/*.dump
+**/secrets
+infra/forge/rendered
 **/.venv
 **/__pycache__
 **/.pytest_cache
