@@ -47,6 +47,8 @@ jobs:
         run: docker compose --env-file infra/api-worker/.env.example -f infra/api-worker/compose.yaml config --quiet
       - name: Build the shared API and worker image
         run: docker compose --env-file infra/api-worker/.env.example -f infra/api-worker/compose.yaml build api
+      - name: Verify Forge resource limits, persistence and database readiness
+        run: python3 infra/forge/smoke_database.py
       - name: Verify database migrations and independent service lifecycle
         shell: bash
         run: |

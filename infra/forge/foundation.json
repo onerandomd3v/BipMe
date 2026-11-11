@@ -1,0 +1,346 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "bipme-runtime",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "bipme-runtime"
+        }
+      },
+      "data": {
+        "BIPME_ENVIRONMENT": "production",
+        "BIPME_APP_ORIGIN": "https://team17.xtradot.co",
+        "BIPME_AUTH_COOKIE_SECURE": "true",
+        "BIPME_EMBEDDING_PROVIDER": "remote",
+        "BIPME_SYNTHETIC_DEMO_ENABLED": "false",
+        "BIPME_X_OAUTH_ENABLED": "false",
+        "BIPME_X_HISTORY_IMPORT_ENABLED": "false",
+        "BIPME_X_METRIC_SNAPSHOT_ENABLED": "false",
+        "BIPME_X_PUBLICATION_LINK_ENABLED": "false",
+        "BIPME_X_HISTORY_REPORT_PROCESSING_ALLOWED": "false",
+        "BIPME_REPORT_SYNTHESIS_ENABLED": "false",
+        "HF_HUB_OFFLINE": "1",
+        "TRANSFORMERS_OFFLINE": "1",
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "bipme-worker",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "bipme-worker"
+        }
+      },
+      "data": {
+        "BIPME_X_METRIC_SNAPSHOT_ENABLED": "false"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "app",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "app"
+        }
+      },
+      "spec": {
+        "type": "ClusterIP",
+        "selector": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "app"
+        },
+        "ports": [
+          {
+            "port": 80,
+            "targetPort": 8080
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "api",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "api"
+        }
+      },
+      "spec": {
+        "type": "ClusterIP",
+        "selector": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "api"
+        },
+        "ports": [
+          {
+            "port": 8000,
+            "targetPort": 8000
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "db",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "db"
+        }
+      },
+      "spec": {
+        "type": "ClusterIP",
+        "selector": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "db"
+        },
+        "ports": [
+          {
+            "port": 5432,
+            "targetPort": 5432
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "bipme-postgres",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "bipme-postgres"
+        }
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "storageClassName": "VERIFIED_STORAGE_CLASS",
+        "resources": {
+          "requests": {
+            "storage": "10Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "api-private",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "api-private"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/part-of": "bipme",
+            "app.kubernetes.io/name": "api"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/part-of": "bipme",
+                    "app.kubernetes.io/name": "app"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8000
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "db-private",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "db-private"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/part-of": "bipme",
+            "app.kubernetes.io/name": "db"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/part-of": "bipme",
+                    "app.kubernetes.io/name": "api"
+                  }
+                }
+              },
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/part-of": "bipme",
+                    "app.kubernetes.io/name": "worker"
+                  }
+                }
+              },
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/part-of": "bipme",
+                    "app.kubernetes.io/name": "migrate"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 5432
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "worker-private",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "worker-private"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/part-of": "bipme",
+            "app.kubernetes.io/name": "worker"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": []
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "bipme-egress",
+        "namespace": "team17",
+        "labels": {
+          "app.kubernetes.io/part-of": "bipme",
+          "app.kubernetes.io/name": "bipme-egress"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/part-of": "bipme"
+          }
+        },
+        "policyTypes": [
+          "Egress"
+        ],
+        "egress": [
+          {
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/part-of": "bipme",
+                    "app.kubernetes.io/name": "api"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8000
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/part-of": "bipme",
+                    "app.kubernetes.io/name": "db"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 5432
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
