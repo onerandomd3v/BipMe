@@ -104,6 +104,20 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
+def print_container_logs(container_name: str) -> None:
+    result = subprocess.run(
+        ["docker", "logs", container_name],
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.stdout:
+        print(f"{container_name} stdout:\n{result.stdout}")
+    if result.stderr:
+        print(f"{container_name} stderr:\n{result.stderr}")
+
+
 def main() -> None:
     with socket.socket() as socket_probe:
         socket_probe.bind(("127.0.0.1", 0))
@@ -112,6 +126,7 @@ def main() -> None:
     container_name = f"bipme-web-smoke-{os.getpid()}"
     api_name = f"{container_name}-api"
     network_name = f"{container_name}-network"
+    completed = False
     try:
         user = run("docker", "image", "inspect", "--format", "{{.Config.User}}", IMAGE, capture=True)
         require(user not in ("", "0", "root"), f"Image does not run as a non-root user: {user!r}")
@@ -170,12 +185,18 @@ def main() -> None:
             IMAGE,
         )
         base = f"http://127.0.0.1:{web_port}"
+        health_ready = False
         for _ in range(40):
-            response = fetch(f"{base}/healthz")
+            try:
+                response = fetch(f"{base}/healthz")
+            except (urllib.error.URLError, TimeoutError, ConnectionResetError):
+                time.sleep(0.25)
+                continue
             if response.status == 200:
+                health_ready = True
                 break
             time.sleep(0.25)
-        require(response.status == 200, "Health endpoint did not respond successfully.")
+        require(health_ready, "Health endpoint did not respond successfully.")
         require(response.read() == b"ok\n", "Health endpoint body was unexpected.")
         for _ in range(20):
             health = run(
@@ -260,7 +281,11 @@ def main() -> None:
         require(first_chunk == b"first" and elapsed < 0.8, "API streaming response was buffered by the proxy.")
 
         print("Frontend container smoke checks passed.")
+        completed = True
     finally:
+        if not completed:
+            print_container_logs(container_name)
+            print_container_logs(api_name)
         subprocess.run(
             ["docker", "rm", "--force", container_name],
             cwd=ROOT,
