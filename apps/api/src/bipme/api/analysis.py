@@ -54,7 +54,10 @@ from bipme.intelligence.retrieval import (
     VectorCandidateQuery,
     rank_comparable_candidates,
 )
-from bipme.persistence.contracts import outcome_observations_from_records
+from bipme.persistence.contracts import (
+    latest_observation_records,
+    outcome_observations_from_records,
+)
 from bipme.persistence.models import DraftAssessment as PersistedDraftAssessment
 from bipme.persistence.models import OutcomeObservationRecord
 from bipme.persistence.vector_candidates import PostgresVectorCandidateSource
@@ -134,45 +137,6 @@ def _same_metric_series(record: OutcomeObservationRecord, metric: MetricIdentity
     )
 
 
-def _latest_observation_records(
-    records: list[OutcomeObservationRecord], as_of: datetime
-) -> list[OutcomeObservationRecord]:
-    """Select one latest available snapshot per exact post and metric series."""
-    latest: dict[tuple[str, str, str, str, str, str], OutcomeObservationRecord] = {}
-    future: list[OutcomeObservationRecord] = []
-    for record in records:
-        if record.observed_at > as_of:
-            future.append(record)
-            continue
-        key = (
-            str(record.post_id),
-            record.metric_name,
-            record.metric_definition,
-            record.metric_unit,
-            record.window_kind,
-            record.window_key,
-        )
-        prior = latest.get(key)
-        if prior is None or (record.observed_at, str(record.id)) > (
-            prior.observed_at,
-            str(prior.id),
-        ):
-            latest[key] = record
-    return [latest[key] for key in sorted(latest)] + sorted(
-        future,
-        key=lambda record: (
-            str(record.post_id),
-            record.metric_name,
-            record.metric_definition,
-            record.metric_unit,
-            record.window_kind,
-            record.window_key,
-            record.observed_at,
-            str(record.id),
-        ),
-    )
-
-
 def _baseline_response(
     baseline: CreatorBaseline,
     metric: MetricIdentity,
@@ -236,7 +200,7 @@ def get_creator_baseline(
         window_key=window_key,
     )
     try:
-        records = _latest_observation_records(
+        records = latest_observation_records(
             _validate_series_support(session, creator.creator_id, identity, cutoff), cutoff
         )
         observations = outcome_observations_from_records(
@@ -511,7 +475,7 @@ def analyze_draft(
             if match_ids
             else []
         )
-        records = _latest_observation_records(
+        records = latest_observation_records(
             [record for record in records if _metric_matches(record, request)], assessed_at
         )
         outcomes = outcome_observations_from_records(records, weights_by_post_id=weights)

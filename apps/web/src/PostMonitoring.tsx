@@ -9,6 +9,12 @@ type Publication = components['schemas']['PublicationLinkResponse']
 type MetricEvidence = components['schemas']['MetricEvidenceResponse']
 type ComparableEvidence = components['schemas']['ComparableEvidenceResponse']
 type DecisionObservation = components['schemas']['DecisionObservationResponse']
+type PostmortemRead = components['schemas']['PostmortemReadResponse']
+type PostmortemMetric = components['schemas']['PostmortemMetricResponse']
+type PostmortemObservation =
+  components['schemas']['PostmortemObservationResponse']
+type PostmortemPublication =
+  components['schemas']['PostmortemPublicationResponse']
 
 function malformedResponse(message: string) {
   return new ApiRequestError({
@@ -217,6 +223,113 @@ function isPublication(value: unknown): value is Publication {
   )
 }
 
+function isPostmortemPublication(
+  value: unknown,
+): value is PostmortemPublication {
+  return Boolean(
+    isRecord(value) &&
+    UUID_PATTERN.test(String(value.canonical_post_id)) &&
+    isUnsignedUint64(value.external_post_id) &&
+    isDateTime(value.published_at) &&
+    (value.availability === 'available' ||
+      value.availability === 'unavailable' ||
+      value.availability === 'deleted') &&
+    (value.version_match_state === 'match' ||
+      value.version_match_state === 'mismatch' ||
+      value.version_match_state === 'unknown'),
+  )
+}
+
+function isPostmortemObservation(
+  value: unknown,
+): value is PostmortemObservation {
+  return Boolean(
+    isRecord(value) &&
+    typeof value.metric === 'string' &&
+    typeof value.metric_definition === 'string' &&
+    typeof value.unit === 'string' &&
+    isDateTime(value.observed_at) &&
+    UUID_PATTERN.test(String(value.post_id)) &&
+    isDateTime(value.published_at) &&
+    (value.state === 'observed' || value.state === 'missing') &&
+    (value.value === null || isFiniteNumber(value.value)) &&
+    typeof value.window_key === 'string' &&
+    (value.window_kind === 'mature_cumulative' ||
+      value.window_kind === 'age_aligned'),
+  )
+}
+
+function isPostmortemMetric(value: unknown): value is PostmortemMetric {
+  return Boolean(
+    isRecord(value) &&
+    typeof value.metric === 'string' &&
+    typeof value.metric_definition === 'string' &&
+    typeof value.unit === 'string' &&
+    (value.status === 'scored' ||
+      value.status === 'unavailable' ||
+      value.status === 'version_unverified') &&
+    (value.observed_at === null || isDateTime(value.observed_at)) &&
+    (value.observed_value === null || isFiniteNumber(value.observed_value)) &&
+    (value.historical_median === null ||
+      isFiniteNumber(value.historical_median)) &&
+    (value.deviation_from_median === null ||
+      isFiniteNumber(value.deviation_from_median)) &&
+    (value.relative_percentile === null ||
+      isFiniteNumber(value.relative_percentile)) &&
+    (value.within_reference_range === null ||
+      typeof value.within_reference_range === 'boolean') &&
+    isFiniteNumber(value.effective_sample_size) &&
+    isFiniteNumber(value.matched_sample_count) &&
+    isStringArray(value.limitations) &&
+    isStringArray(value.comparison_post_ids) &&
+    Array.isArray(value.comparison_observations) &&
+    value.comparison_observations.every(isPostmortemObservation),
+  )
+}
+
+function isPostmortem(value: unknown): boolean {
+  const hypothesis = isRecord(value) ? value.hypothesis_evaluation : null
+  return Boolean(
+    isRecord(value) &&
+    UUID_PATTERN.test(String(value.assessment_id)) &&
+    isStringArray(value.limitations) &&
+    Array.isArray(value.metric_comparisons) &&
+    value.metric_comparisons.every(isPostmortemMetric) &&
+    Array.isArray(value.observed_outcomes) &&
+    value.observed_outcomes.every(isPostmortemObservation) &&
+    (hypothesis === null ||
+      (isRecord(hypothesis) &&
+        typeof hypothesis.metric === 'string' &&
+        typeof hypothesis.status === 'string' &&
+        isFiniteNumber(hypothesis.matched_sample_count))) &&
+    (value.version_state === 'verified' ||
+      value.version_state === 'unverified') &&
+    typeof value.version === 'string' &&
+    UUID_PATTERN.test(String(value.published_post_id)),
+  )
+}
+
+function isPostmortemRead(value: unknown): value is PostmortemRead {
+  if (!isRecord(value)) return false
+  const state = value.state
+  return Boolean(
+    UUID_PATTERN.test(String(value.assessment_id)) &&
+    isDateTime(value.assessed_at) &&
+    (state === 'publication_pending' ||
+      state === 'publication_unavailable' ||
+      state === 'evidence_unavailable' ||
+      state === 'monitoring_pending' ||
+      state === 'insufficient_evidence' ||
+      state === 'version_unverified' ||
+      state === 'evaluated') &&
+    isStringArray(value.limitations) &&
+    isAssessment(value.original_outlook) &&
+    (value.published_post === null ||
+      isPostmortemPublication(value.published_post)) &&
+    (value.postmortem === null || isPostmortem(value.postmortem)),
+  )
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
@@ -366,11 +479,16 @@ export function PostMonitoring({
 }) {
   const [assessment, setAssessment] = useState<Assessment | null>(null)
   const [publication, setPublication] = useState<Publication | null>(null)
+  const [postmortem, setPostmortem] = useState<PostmortemRead | null>(null)
   const [input, setInput] = useState('')
   const [loadState, setLoadState] = useState<
     'loading' | 'ready' | 'unavailable'
   >('loading')
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [publicationErrorState, setPublicationErrorState] = useState<
+    string | null
+  >(null)
+  const [postmortemError, setPostmortemError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const requestGeneration = useRef(0)
@@ -380,8 +498,11 @@ export function PostMonitoring({
     const generation = ++requestGeneration.current
     setAssessment(null)
     setPublication(null)
+    setPostmortem(null)
     setInput('')
     setSubmitError(null)
+    setPublicationErrorState(null)
+    setPostmortemError(null)
     if (!assessmentId || !UUID_PATTERN.test(assessmentId)) {
       setLoadState('unavailable')
       setLoadError(
@@ -409,39 +530,103 @@ export function PostMonitoring({
           return
         }
         setAssessment(result)
-        return client
+        setLoadState('ready')
+
+        client
           .publication(assessmentId, controller.signal)
           .then((publicationResult) => {
+            if (
+              controller.signal.aborted ||
+              generation !== requestGeneration.current
+            )
+              return
             if (!isPublication(publicationResult))
               throw malformedResponse('The publication response was invalid.')
-            if (publicationResult.assessment_id !== assessmentId)
+            if (
+              publicationResult.assessment_id !== assessmentId ||
+              publicationResult.assessed_at !== result.assessed_at ||
+              publicationResult.assessed_fingerprint !==
+                result.input_fingerprint
+            )
               throw new ApiRequestError({
                 code: 'publication_assessment_mismatch',
                 message:
-                  'The saved publication does not belong to this assessment.',
+                  publicationResult.assessment_id !== assessmentId
+                    ? 'The saved publication does not belong to this assessment.'
+                    : 'The saved publication does not match this assessment.',
                 status: 409,
               })
-            return publicationResult
+            setPublication(publicationResult)
+            setPublicationErrorState(null)
           })
           .catch((error: unknown) => {
+            if (
+              controller.signal.aborted ||
+              generation !== requestGeneration.current
+            )
+              return
             if (
               error instanceof ApiRequestError &&
               error.status === 404 &&
               error.code === 'publication_not_linked'
+            ) {
+              setPublication(null)
+              setPublicationErrorState(null)
+              return
+            }
+            setPublicationErrorState(
+              publicationError(error) ??
+                'The publication status is unavailable.',
             )
-              return null
-            throw error
           })
-      })
-      .then((result) => {
-        if (
-          controller.signal.aborted ||
-          generation !== requestGeneration.current ||
-          result === undefined
-        )
+
+        if (!client.postmortem) {
+          setPostmortemError(
+            'The postmortem client is unavailable in this frontend build.',
+          )
           return
-        setPublication(result)
-        setLoadState('ready')
+        }
+        client
+          .postmortem(assessmentId, controller.signal)
+          .then((postmortemResult) => {
+            if (
+              controller.signal.aborted ||
+              generation !== requestGeneration.current
+            )
+              return
+            if (!isPostmortemRead(postmortemResult))
+              throw malformedResponse('The postmortem response was invalid.')
+            if (
+              postmortemResult.assessment_id !== result.assessment_id ||
+              postmortemResult.assessed_at !== result.assessed_at ||
+              postmortemResult.original_outlook.assessment_id !==
+                result.assessment_id ||
+              postmortemResult.original_outlook.assessed_at !==
+                result.assessed_at ||
+              postmortemResult.original_outlook.input_fingerprint !==
+                result.input_fingerprint
+            )
+              throw new ApiRequestError({
+                code: 'postmortem_assessment_mismatch',
+                message:
+                  'The postmortem response does not match this assessment.',
+                status: 409,
+              })
+            setPostmortem(postmortemResult)
+            setPostmortemError(null)
+          })
+          .catch((error: unknown) => {
+            if (
+              controller.signal.aborted ||
+              generation !== requestGeneration.current
+            )
+              return
+            setPostmortemError(
+              error instanceof ApiRequestError
+                ? error.message
+                : 'The postmortem response was unavailable.',
+            )
+          })
       })
       .catch((error: unknown) => {
         if (
@@ -450,7 +635,11 @@ export function PostMonitoring({
         )
           return
         setLoadState('unavailable')
-        setLoadError(publicationError(error) ?? 'No publication is linked yet.')
+        setLoadError(
+          error instanceof ApiRequestError
+            ? error.message
+            : apiProblemMessage(error),
+        )
       })
     return () => controller.abort()
   }, [assessmentId, client])
@@ -482,6 +671,39 @@ export function PostMonitoring({
       }
       setPublication(result)
       setInput('')
+      if (client.postmortem) {
+        try {
+          const postmortemResult = await client.postmortem(assessmentId)
+          if (generation !== requestGeneration.current) return
+          if (!isPostmortemRead(postmortemResult))
+            throw malformedResponse('The postmortem response was invalid.')
+          if (
+            postmortemResult.assessment_id !== assessment.assessment_id ||
+            postmortemResult.assessed_at !== assessment.assessed_at ||
+            postmortemResult.original_outlook.assessment_id !==
+              assessment.assessment_id ||
+            postmortemResult.original_outlook.assessed_at !==
+              assessment.assessed_at ||
+            postmortemResult.original_outlook.input_fingerprint !==
+              assessment.input_fingerprint
+          )
+            throw new ApiRequestError({
+              code: 'postmortem_assessment_mismatch',
+              message:
+                'The postmortem response does not match this assessment.',
+              status: 409,
+            })
+          setPostmortem(postmortemResult)
+          setPostmortemError(null)
+        } catch (error) {
+          if (generation !== requestGeneration.current) return
+          setPostmortemError(
+            error instanceof ApiRequestError
+              ? error.message
+              : 'The postmortem response was unavailable.',
+          )
+        }
+      }
     } catch (error) {
       if (generation !== requestGeneration.current) return
       setSubmitError(publicationError(error) ?? 'No publication is linked yet.')
@@ -712,6 +934,7 @@ export function PostMonitoring({
             <h2 id="publication-title">Published X post</h2>
           </div>
         </div>
+        {publicationErrorState && <p role="alert">{publicationErrorState}</p>}
         {publication ? (
           <div role="status">
             <p>
@@ -764,27 +987,107 @@ export function PostMonitoring({
         )}
       </section>
 
-      <section
-        className="workspace-card"
-        aria-labelledby="monitoring-unavailable-title"
-      >
+      <section className="workspace-card" aria-labelledby="postmortem-title">
         <div className="workspace-card__header">
           <div>
-            <p className="card-kicker">Contract status</p>
-            <h2 id="monitoring-unavailable-title">
-              Observations and postmortem
-            </h2>
+            <p className="card-kicker">Evidence-aware outcome</p>
+            <h2 id="postmortem-title">Postmortem and observations</h2>
           </div>
         </div>
-        <p>
-          Timestamped monitoring snapshots and the evidence-aware postmortem are
-          not available through an authenticated creator HTTP contract yet.
-        </p>
+        {postmortem ? (
+          <div role="status">
+            <p>
+              <strong>Evaluation state:</strong>{' '}
+              {postmortem.state.replaceAll('_', ' ')}
+            </p>
+            <p>
+              <strong>Assessment:</strong> {postmortem.assessment_id} · assessed{' '}
+              {formatDate(postmortem.assessed_at)}
+            </p>
+            {postmortem.published_post && (
+              <p>
+                <strong>Observed publication:</strong>{' '}
+                {postmortem.published_post.external_post_id} · published{' '}
+                {formatDate(postmortem.published_post.published_at)} ·{' '}
+                {postmortem.published_post.version_match_state === 'match'
+                  ? 'version matched'
+                  : postmortem.published_post.version_match_state === 'mismatch'
+                    ? 'version mismatch'
+                    : 'version unverified'}
+              </p>
+            )}
+            {postmortem.postmortem ? (
+              <div className="monitoring-detail-grid">
+                {postmortem.postmortem.metric_comparisons.map((metric) => (
+                  <article
+                    className="monitoring-detail-card"
+                    key={`${metric.metric}-${metric.window_key}`}
+                  >
+                    <h3>{metric.metric}</h3>
+                    <p>
+                      <strong>Observed:</strong>{' '}
+                      {metric.observed_value === null
+                        ? 'Unavailable'
+                        : metric.observed_value}{' '}
+                      {metric.unit}; {metric.status}
+                    </p>
+                    <p>
+                      <strong>Measurement:</strong>{' '}
+                      {metric.observed_at
+                        ? formatDate(metric.observed_at)
+                        : 'No actual observation timestamp'}{' '}
+                      · {metric.window_kind}:{metric.window_key}
+                    </p>
+                    {metric.reference_range && (
+                      <p>
+                        <strong>Historical reference:</strong>{' '}
+                        {metric.reference_range.lower_p25}–
+                        {metric.reference_range.upper_p75}, median{' '}
+                        {metric.reference_range.median_p50}
+                      </p>
+                    )}
+                    {metric.limitations.length > 0 && (
+                      <p className="workspace-card__note">
+                        Limitations: {metric.limitations.join(' ')}
+                      </p>
+                    )}
+                  </article>
+                ))}
+                {postmortem.postmortem.hypothesis_evaluation && (
+                  <article className="monitoring-detail-card">
+                    <h3>Hypothesis evaluation</h3>
+                    <p>
+                      The returned evaluation is{' '}
+                      {postmortem.postmortem.hypothesis_evaluation.status}.
+                    </p>
+                  </article>
+                )}
+              </div>
+            ) : (
+              <p className="workspace-card__note">
+                No eligible postmortem result was returned; no forecast accuracy
+                or causal conclusion is inferred.
+              </p>
+            )}
+            {postmortem.limitations.length > 0 && (
+              <div className="monitoring-detail-card">
+                <h3>Postmortem limitations</h3>
+                {postmortem.limitations.map((item) => (
+                  <p key={item}>{item}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : postmortemError ? (
+          <p role="alert">{postmortemError}</p>
+        ) : (
+          <p role="status">Loading the evidence-aware postmortem.</p>
+        )}
         <p className="workspace-card__note">
-          No metrics are displayed here, no missed snapshot is reconstructed,
-          and no causal or platform-amplification claim is made. Platform must
-          expose creator-scoped observation receipts; Intelligence must expose a
-          persisted postmortem result before this section can be completed.
+          Monitoring receipts, scheduled-window status, missed readings and
+          budget reconciliation remain unavailable until COD-422 exposes the
+          creator-scoped monitoring read contract. This screen never fabricates
+          observations or treats a missing reading as zero.
         </p>
       </section>
     </div>
