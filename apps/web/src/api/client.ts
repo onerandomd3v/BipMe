@@ -65,6 +65,9 @@ type PostEvidence = components['schemas']['PostEvidence']
 type ImportPage = components['schemas']['ImportPage']
 type HistoryImportResponse = components['schemas']['HistoryImportResponse']
 type CreatorBaseline = components['schemas']['CreatorBaselineResponse']
+type PublicationLink = components['schemas']['PublicationLinkResponse']
+type PostmortemRead = components['schemas']['PostmortemReadResponse']
+type MonitoringRead = components['schemas']['MonitoringReadResponse']
 
 export type HistoryPostsQuery = {
   limit?: number
@@ -465,6 +468,63 @@ export function createApiClient(fetchImplementation: typeof fetch = fetch) {
         signal,
       )
       return (await unwrap(result)) as DraftAnalysisResponse
+    },
+    async postmortem(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<PostmortemRead> {
+      const result = await request(
+        () =>
+          client.GET(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/postmortem',
+            { params: { path: { assessment_id: assessmentId } }, signal },
+          ),
+        signal,
+      )
+      return (await unwrap(result)) as PostmortemRead
+    },
+    async monitoring(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<MonitoringRead> {
+      const result = await request(
+        () =>
+          client.GET(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/monitoring',
+            { params: { path: { assessment_id: assessmentId } }, signal },
+          ),
+        signal,
+      )
+      return (await unwrap(result)) as MonitoringRead
+    },
+    async publication(
+      assessmentId: string,
+      signal?: AbortSignal,
+    ): Promise<PublicationLink> {
+      const result = await request(
+        () =>
+          client.GET(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/publication',
+            { params: { path: { assessment_id: assessmentId } }, signal },
+          ),
+        signal,
+      )
+      return unwrap(result)
+    },
+    async linkPublication(
+      assessmentId: string,
+      body: components['schemas']['PublicationLinkRequest'],
+      signal?: AbortSignal,
+    ): Promise<PublicationLink> {
+      const result = await request(
+        () =>
+          client.POST(
+            '/api/v1/creators/me/draft-assessments/{assessment_id}/publication',
+            { params: { path: { assessment_id: assessmentId } }, body, signal },
+          ),
+        signal,
+      )
+      return unwrap(result)
     },
     async historyPosts(
       params?: HistoryPostsQuery,

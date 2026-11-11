@@ -80,6 +80,118 @@ export const latestReportFixture = {
   latest_report: reportFixture,
 } satisfies components['schemas']['CreatorReportStateResponse']
 
+export const draftAssessmentFixture = {
+  accepted_hypothesis: null,
+  assessed_at: '2026-11-10T12:00:00Z',
+  assessment_id: '00000000-0000-4000-8000-000000000365',
+  assumptions: ['Only permitted creator-owned evidence is included.'],
+  comparable_evidence: [],
+  decision_state: 'insufficient_evidence',
+  exclusions: [],
+  input_fingerprint: 'sha256:cod-365-fixture',
+  limitations: ['No eligible comparable posts were available.'],
+  metrics: [],
+  observations: [],
+  retrieval_candidate_count: 0,
+  retrieval_coverage_limitations: ['History coverage is unavailable.'],
+  retrieval_eligible_count: 0,
+  retrieval_excluded_count: 0,
+  retrieval_exclusions: [],
+  retrieval_state: 'no_match',
+  retrieval_truncated: false,
+  retrieval_vector_candidate_count: 0,
+  suggested_hypothesis: null,
+  versions: {
+    baseline: 'baseline-v1',
+    decision: 'decision-v1',
+    decision_config: 'decision-config-v1',
+    embedding_identity: 'embedding-fixture',
+    profile: 'profile-v1',
+    ranking_config: 'ranking-config-v1',
+    retrieval: 'retrieval-v1',
+  },
+} satisfies components['schemas']['DraftAnalysisResponse']
+
+export const publicationLinkFixture = {
+  assessment_id: draftAssessmentFixture.assessment_id,
+  assessed_at: draftAssessmentFixture.assessed_at,
+  assessed_fingerprint: draftAssessmentFixture.input_fingerprint,
+  accepted_hypothesis: null,
+  canonical_post_id: '00000000-0000-4000-8000-000000000366',
+  external_post_id: '1900000000000000001',
+  published_at: '2026-11-10T13:00:00Z',
+  version_match_state: 'unknown',
+  linkage_state: 'linked',
+  linked_at: '2026-11-10T13:01:00Z',
+} satisfies components['schemas']['PublicationLinkResponse']
+
+export const postmortemFixture = {
+  state: 'publication_pending',
+  assessment_id: draftAssessmentFixture.assessment_id,
+  assessed_at: draftAssessmentFixture.assessed_at,
+  published_post: null,
+  original_outlook: draftAssessmentFixture,
+  postmortem: null,
+  limitations: ['No linked publication is available yet.'],
+} satisfies components['schemas']['PostmortemReadResponse']
+
+export const monitoringFixture = {
+  assessment_id: draftAssessmentFixture.assessment_id,
+  assessed_at: draftAssessmentFixture.assessed_at,
+  limitations: ['Only persisted observations are shown.'],
+  original_outlook: draftAssessmentFixture,
+  published_post: {
+    availability: 'available',
+    canonical_post_id: publicationLinkFixture.canonical_post_id,
+    external_post_id: publicationLinkFixture.external_post_id,
+    published_at: publicationLinkFixture.published_at,
+    version_match_state: publicationLinkFixture.version_match_state,
+  },
+  state: 'monitoring_partial',
+  windows: [
+    {
+      window_key: '1h',
+      window_kind: 'age_aligned',
+      due_at: '2026-11-10T14:00:00Z',
+      scheduled_at: null,
+      finished_at: null,
+      execution_state: 'not_scheduled',
+      measurement_state: 'not_available',
+      failure_code: 'budget_blocked',
+      receipt_id: null,
+      observations: [],
+    },
+    {
+      window_key: '24h',
+      window_kind: 'age_aligned',
+      due_at: '2026-11-11T13:00:00Z',
+      scheduled_at: '2026-11-11T13:00:01Z',
+      finished_at: '2026-11-11T13:01:00Z',
+      execution_state: 'completed',
+      measurement_state: 'available',
+      failure_code: null,
+      receipt_id: '00000000-0000-4000-8000-000000000367',
+      observations: [
+        {
+          id: '00000000-0000-4000-8000-000000000368',
+          metric: 'impressions',
+          metric_definition: 'Post impressions',
+          unit: 'count',
+          value: '42',
+          state: 'observed',
+          missing_reason: null,
+          published_at: publicationLinkFixture.published_at,
+          observed_at: '2026-11-11T13:00:59Z',
+          observed_age_seconds: 86400,
+          source: 'authorized_x_api',
+          window_key: '24h',
+          window_kind: 'age_aligned',
+        },
+      ],
+    },
+  ],
+} satisfies components['schemas']['MonitoringReadResponse']
+
 export const historyImportFixture = {
   items: [
     {

@@ -69,6 +69,92 @@ describe('API client', () => {
     await expect(client.deleteReports()).resolves.toBeUndefined()
   })
 
+  it('uses the typed assessment and publication endpoints through MSW', async () => {
+    const client = createApiClient()
+    await client.session()
+    const assessmentId = '00000000-0000-4000-8000-000000000365'
+    await expect(client.draftAssessment(assessmentId)).resolves.toMatchObject({
+      assessment_id: assessmentId,
+      input_fingerprint: 'sha256:cod-365-fixture',
+    })
+    await expect(client.publication(assessmentId)).resolves.toMatchObject({
+      assessment_id: assessmentId,
+      version_match_state: 'unknown',
+    })
+    await expect(client.postmortem(assessmentId)).resolves.toMatchObject({
+      assessment_id: assessmentId,
+      state: 'publication_pending',
+      original_outlook: { assessment_id: assessmentId },
+    })
+    const monitoring = await client.monitoring(assessmentId)
+    expect(monitoring).toMatchObject({
+      assessment_id: assessmentId,
+      state: 'monitoring_partial',
+    })
+    expect(monitoring.windows[0]).toMatchObject({
+      window_key: '1h',
+      execution_state: 'not_scheduled',
+    })
+    await expect(
+      client.linkPublication(assessmentId, {
+        post_url_or_id: '1900000000000000001',
+      }),
+    ).resolves.toMatchObject({ assessment_id: assessmentId })
+  })
+
+  it('normalizes typed assessment and publication GET failures through MSW', async () => {
+    const assessmentId = '00000000-0000-4000-8000-000000000365'
+    server.use(
+      http.get(`*/api/v1/creators/me/draft-assessments/${assessmentId}`, () =>
+        HttpResponse.json(
+          { error: { code: 'assessment_unavailable', message: 'Unavailable' } },
+          { status: 503 },
+        ),
+      ),
+    )
+    const client = createApiClient()
+    await expect(client.draftAssessment(assessmentId)).rejects.toMatchObject({
+      status: 503,
+      code: 'assessment_unavailable',
+    })
+
+    server.resetHandlers()
+    server.use(
+      http.get(
+        `*/api/v1/creators/me/draft-assessments/${assessmentId}/publication`,
+        () => new HttpResponse('{not-json', { status: 200 }),
+      ),
+    )
+    await expect(client.publication(assessmentId)).rejects.toMatchObject({
+      status: 200,
+      code: 'malformed_response',
+    })
+
+    server.resetHandlers()
+    server.use(
+      http.get(
+        `*/api/v1/creators/me/draft-assessments/${assessmentId}/postmortem`,
+        () => new HttpResponse('{not-json', { status: 200 }),
+      ),
+    )
+    await expect(client.postmortem(assessmentId)).rejects.toMatchObject({
+      status: 200,
+      code: 'malformed_response',
+    })
+
+    server.resetHandlers()
+    server.use(
+      http.get(
+        `*/api/v1/creators/me/draft-assessments/${assessmentId}/monitoring`,
+        () => new HttpResponse('{not-json', { status: 200 }),
+      ),
+    )
+    await expect(client.monitoring(assessmentId)).rejects.toMatchObject({
+      status: 200,
+      code: 'malformed_response',
+    })
+  })
+
   it('uses same-origin cookies and returns typed health data', async () => {
     fetchMock.mockResolvedValue(response({ status: 'ok' }))
     const client = createApiClient(fetchMock)

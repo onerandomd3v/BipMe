@@ -1250,6 +1250,33 @@ h2 {
 .observation-row small {
   grid-column: 1 / -1;
 }
+.monitoring-stack {
+  display: grid;
+  gap: 1rem;
+}
+.monitoring-detail-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+.monitoring-detail-card {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: #f8fafc;
+}
+.monitoring-detail-card h3 {
+  margin-top: 0;
+}
+.monitoring-detail-card ul {
+  display: grid;
+  gap: 0.5rem;
+  padding-left: 1.2rem;
+}
+.monitoring-detail-card code {
+  overflow-wrap: anywhere;
+}
 @media (max-width: 800px) {
   .history-summary-grid,
   .baseline-summary {
@@ -1257,6 +1284,9 @@ h2 {
   }
   .percentile-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .monitoring-detail-grid {
+    grid-template-columns: 1fr;
   }
 }
 @media (max-width: 520px) {

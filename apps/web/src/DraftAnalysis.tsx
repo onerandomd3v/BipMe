@@ -24,6 +24,7 @@ type Props = {
   context: DraftAnalysisContext | null
   onSessionExpired?: () => void
   onBackToDashboard?: () => void
+  onViewMonitoring?: (assessmentId: string) => void
   client?: ApiClient
 }
 
@@ -615,12 +616,14 @@ function ResultView({
   evidenceError,
   onReload,
   reloading,
+  onViewMonitoring,
 }: {
   response: DraftResponse
   evidence: PostEvidence[]
   evidenceError: string | null
   onReload: () => void
   reloading: boolean
+  onViewMonitoring?: (assessmentId: string) => void
 }) {
   const evidenceById = useMemo(
     () => new Map(evidence.map((item) => [item.id, item])),
@@ -640,6 +643,15 @@ function ResultView({
         >
           {reloading ? 'Refreshing…' : 'Refresh saved assessment'}
         </button>
+        {onViewMonitoring && (
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={() => onViewMonitoring(response.assessment_id)}
+          >
+            Open post monitoring
+          </button>
+        )}
       </div>
       <section className="draft-callout" aria-labelledby="draft-guidance-title">
         <p className="eyebrow">
@@ -858,6 +870,7 @@ export function DraftAnalysis({
   context,
   onSessionExpired,
   onBackToDashboard,
+  onViewMonitoring,
   client: clientProp,
 }: Props) {
   const client = clientProp ?? apiClient
@@ -1324,6 +1337,7 @@ export function DraftAnalysis({
           evidenceError={evidenceError}
           onReload={reload}
           reloading={reloading}
+          onViewMonitoring={onViewMonitoring}
         />
       )}
     </div>
